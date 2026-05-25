@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gallery | Jungle Pickleball, Ojochal, Costa Rica</title>
+    <meta name="description" content="Photos from Jungle Pickleball in Ojochal, Costa Rica: open play, tournaments, the community, and our indoor courts and amenities.">
+
+    <link rel="canonical" href="https://junglepickleball.com/gallery" />
+    <meta name="theme-color" content="#0f393b" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Jungle Pickleball Gallery" />
+    <meta property="og:description" content="Open play, tournaments, and the Jungle Pickleball community in Ojochal, Costa Rica." />
+    <meta property="og:image" content="https://junglepickleball.com/assets/gallery/Group-shot.jpg" />
+
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="assets/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+      function galleryPage() {
+        return {
+          lightbox: "",
+          images: [
+            "Group-shot.jpg", "Large-group-shot.jpg", "Team-photo.jpg", "Tournament-winners.jpg",
+            "Tournament-winners-2.jpg", "People-Gathering.jpg", "Fun-shot.jpg", "Court-shot.jpg",
+            "open-court-no-players.jpg", "Inside-out.jpg", "Lu-Dawson.jpg", "Susan.jpg",
+            "Roger-Worsham-2025-05-03-04.00.39.jpg", "Roger-Worsham-2025-05-03-04.00.42.jpg",
+            "WhatsApp-Image-2026-01-11-at-7.17.51-PM.jpeg", "WhatsApp-Image-2026-01-11-at-7.18.14-PM.jpeg",
+            "coldplunge.jpeg", "dinkwall.jpeg", "kitchen.jpeg", "diningarea.jpeg", "Weight-equipment.jpg",
+            "01.jpg", "02.jpg", "03.jpg", "04.jpg", "05.jpg", "06.jpg", "1.jpg", "2.jpg"
+          ],
+          src(name) { return "assets/gallery/" + name; },
+        };
+      }
+    </script>
+</head>
+<body class="bg-jungle text-white" x-data="galleryPage()" @keydown.escape.window="lightbox = ''">
+
+    <nav class="bg-[#0f393b]/95 backdrop-blur sticky top-0 w-full z-50 border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <a href="/" class="text-2xl md:text-3xl font-bold font-heading uppercase tracking-tighter text-white" aria-label="Jungle Pickleball home">
+                Jungle<span class="text-yellow-400">Pickleball</span>
+            </a>
+            <div class="flex items-center gap-6 font-heading text-lg tracking-wide">
+                <a href="/" class="text-white hover:text-yellow-400 transition">HOME</a>
+                <a href="https://wa.me/50689893111" class="bg-yellow-400 text-black px-6 py-2 rounded font-bold hover:bg-yellow-300 transition">BOOK COURT</a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="max-w-7xl mx-auto px-6 pt-16 pb-10 text-center">
+        <span class="text-yellow-400 font-bold tracking-widest uppercase text-sm">Court Vibes</span>
+        <h1 class="text-4xl md:text-6xl font-bold font-heading uppercase mt-2">The Gallery</h1>
+        <p class="text-green-200 mt-4 max-w-2xl mx-auto font-light">Open play, tournaments, and the community that makes Jungle Pickleball home. Tap any photo to view it full size.</p>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 pb-24">
+        <div class="columns-2 md:columns-3 lg:columns-4 gap-4">
+            <template x-for="img in images" :key="img">
+                <button type="button" @click="lightbox = src(img)" class="block w-full mb-4 break-inside-avoid rounded-xl overflow-hidden shadow-lg relative group bg-black/20 cursor-zoom-in" aria-label="View photo">
+                    <img :src="src(img)" alt="Jungle Pickleball photo" loading="lazy" class="w-full h-auto transition duration-500 group-hover:scale-105">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </button>
+            </template>
+        </div>
+    </main>
+
+    <div x-show="lightbox" x-cloak @click="lightbox = ''" class="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4">
+        <button type="button" @click="lightbox = ''" class="absolute top-5 right-6 text-white text-4xl font-light leading-none z-10" aria-label="Close photo">&times;</button>
+        <img :src="lightbox" @click="lightbox = ''" alt="Jungle Pickleball photo" class="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-out">
+    </div>
+
+    <footer class="bg-[#0c3637] border-t border-green-900 text-gray-400">
+        <div class="w-full h-2 bg-gradient-to-r from-yellow-500 via-green-500 to-yellow-500"></div>
+        <div class="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest">
+            <p>&copy; 2026 Jungle Pickleball. All Rights Reserved.</p>
+            <div class="flex items-center gap-3">
+                <span class="text-[10px] opacity-50">Built and hosted by</span>
+                <a href="https://wizardweb.ca" target="_blank" rel="noopener" class="text-white font-bold border border-white/20 px-3 py-1 rounded hover:bg-white hover:text-black transition">wizardweb.ca</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
