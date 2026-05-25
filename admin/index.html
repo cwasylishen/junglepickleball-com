@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Events Admin | Jungle Pickleball</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet" />
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    function admin() {
+      return {
+        view: "loading",
+        username: "", password: "", turnstileToken: "", siteKey: "",
+        loginError: "", loggingIn: false, widgetId: null,
+        events: [], loadError: "",
+        editing: null, saving: false, formError: "",
+
+        async init() {
+          try {
+            const cfg = await (await fetch("/api/config")).json();
+            this.siteKey = cfg.turnstileSiteKey || "";
+          } catch (e) { this.siteKey = ""; }
+          try {
+            const s = await (await fetch("/api/session")).json();
+            if (s.authed) { this.view = "manage"; this.loadEvents(); return; }
+          } catch (e) {}
+          this.showLogin();
+        },
+        showLogin() { this.view = "login"; this.$nextTick(() => this.renderTurnstile()); },
+        renderTurnstile() {
+          if (!this.siteKey) return; // no key configured yet
+          const tryRender = () => {
+            const el = document.getElementById("ts-widget");
+            if (window.turnstile && el) {
+              el.innerHTML = "";
+              this.widgetId = window.turnstile.render("#ts-widget", {
+                sitekey: this.siteKey,
+                callback: (t) => { this.turnstileToken = t; },
+                "error-callback": () => { this.turnstileToken = ""; },
+                "expired-callback": () => { this.turnstileToken = ""; },
+              });
+            } else { setTimeout(tryRender, 200); }
+          };
+          tryRender();
+        },
+        resetTurnstile() {
+          this.turnstileToken = "";
+          if (window.turnstile && this.widgetId !== null) window.turnstile.reset(this.widgetId);
+        },
+        unauth() { this.events = []; this.showLogin(); },
+
+        async login() {
+          this.loginError = ""; this.loggingIn = true;
+          try {
+            const r = await fetch("/api/login", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username: this.username, password: this.password, turnstileToken: this.turnstileToken }),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { this.loginError = d.error || "Login failed."; this.resetTurnstile(); return; }
+            this.password = ""; this.view = "manage"; this.loadEvents();
+          } catch (e) { this.loginError = "Network error. Please try again."; this.resetTurnstile(); }
+          finally { this.loggingIn = false; }
+        },
+        async logout() {
+          try { await fetch("/api/logout", { method: "POST" }); } catch (e) {}
+          this.username = ""; this.password = ""; this.unauth();
+        },
+        async loadEvents() {
+          this.loadError = "";
+          try {
+            const r = await fetch("/api/admin/events");
+            if (r.status === 401) return this.unauth();
+            const d = await r.json();
+            this.events = d.events || [];
+          } catch (e) { this.loadError = "Could not load events."; }
+        },
+        blank() { return { id: null, title: "", when: "", time: "", description: "", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: null, status: "active" }; },
+        addNew() { this.formError = ""; this.editing = this.blank(); },
+        edit(ev) { this.formError = ""; this.editing = JSON.parse(JSON.stringify(ev)); },
+        cancelEdit() { this.editing = null; this.formError = ""; },
+        async save() {
+          if (!this.editing.title || !this.editing.title.trim()) { this.formError = "Title is required."; return; }
+          this.saving = true; this.formError = "";
+          try {
+            const isNew = !this.editing.id;
+            const url = isNew ? "/api/admin/events" : "/api/admin/events/" + this.editing.id;
+            const r = await fetch(url, {
+              method: isNew ? "POST" : "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(this.editing),
+            });
+            if (r.status === 401) return this.unauth();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { this.formError = d.error || "Save failed."; return; }
+            this.editing = null; await this.loadEvents();
+          } catch (e) { this.formError = "Network error."; }
+          finally { this.saving = false; }
+        },
+        async toggleArchive(ev) {
+          try {
+            const r = await fetch("/api/admin/events/" + ev.id, {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...ev, status: ev.status === "archived" ? "active" : "archived" }),
+            });
+            if (r.status === 401) return this.unauth();
+            await this.loadEvents();
+          } catch (e) { this.loadError = "Update failed."; }
+        },
+        async remove(ev) {
+          if (!confirm('Permanently delete "' + ev.title + '"? This cannot be undone.')) return;
+          try {
+            const r = await fetch("/api/admin/events/" + ev.id, { method: "DELETE" });
+            if (r.status === 401) return this.unauth();
+            await this.loadEvents();
+          } catch (e) { this.loadError = "Delete failed."; }
+        },
+      };
+    }
+  </script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen" x-data="admin()" x-init="init()" x-cloak>
+
+  <!-- Loading -->
+  <div x-show="view === 'loading'" class="min-h-screen flex items-center justify-center text-slate-400">
+    Loading...
+  </div>
+
+  <!-- Login -->
+  <div x-show="view === 'login'" class="min-h-screen flex items-center justify-center px-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
+      <div class="text-center mb-6">
+        <div class="text-2xl font-bold uppercase tracking-tighter" style="font-family:'Oswald',sans-serif">
+          Jungle<span class="text-yellow-500">Pickleball</span>
+        </div>
+        <p class="text-sm text-slate-400 mt-1">Events Admin</p>
+      </div>
+      <form @submit.prevent="login()" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Username</label>
+          <input x-model="username" type="text" autocomplete="username" required
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Password</label>
+          <input x-model="password" type="password" autocomplete="current-password" required
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+        </div>
+        <div id="ts-widget" class="flex justify-center"></div>
+        <p x-show="!siteKey" class="text-xs text-amber-600 text-center">Turnstile is not configured yet. Set TURNSTILE_SITE_KEY to enable the bot check.</p>
+        <p x-show="loginError" x-text="loginError" class="text-sm text-red-600 text-center"></p>
+        <button type="submit" :disabled="loggingIn"
+          class="w-full bg-jungle text-white font-bold uppercase tracking-wide py-2.5 rounded-lg hover:bg-[#0c3637] transition disabled:opacity-50">
+          <span x-show="!loggingIn">Sign in</span>
+          <span x-show="loggingIn">Signing in...</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Manage -->
+  <div x-show="view === 'manage'">
+    <header class="bg-jungle text-white">
+      <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="font-bold uppercase tracking-tighter text-lg" style="font-family:'Oswald',sans-serif">
+          Jungle<span class="text-yellow-400">Pickleball</span> <span class="text-white/50 font-normal text-sm">Events</span>
+        </div>
+        <div class="flex items-center gap-4 text-sm">
+          <a href="/" target="_blank" class="text-white/80 hover:text-yellow-400">View site</a>
+          <button @click="logout()" class="text-white/80 hover:text-yellow-400">Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-8">
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-xl font-bold" style="font-family:'Oswald',sans-serif">Manage Events</h1>
+        <button @click="addNew()" class="bg-yellow-400 text-black font-bold px-4 py-2 rounded-lg hover:bg-yellow-300 transition">+ Add event</button>
+      </div>
+
+      <p x-show="loadError" x-text="loadError" class="text-sm text-red-600 mb-4"></p>
+
+      <div x-show="events.length === 0 && !loadError" class="text-slate-400 text-center py-12">No events yet. Add your first one.</div>
+
+      <div class="space-y-3">
+        <template x-for="ev in events" :key="ev.id">
+          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+            :class="ev.status === 'archived' ? 'opacity-60' : ''">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold" x-text="ev.title"></span>
+                <span x-show="ev.featured" class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-bold">Featured</span>
+                <span class="text-xs px-2 py-0.5 rounded-full"
+                  :class="ev.category === 'special' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'"
+                  x-text="ev.category"></span>
+                <span x-show="ev.status === 'archived'" class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold">Archived</span>
+              </div>
+              <div class="text-sm text-slate-500 mt-1">
+                <span x-text="ev.when"></span><span x-show="ev.time"> &middot; </span><span x-text="ev.time"></span>
+              </div>
+              <p class="text-sm text-slate-400 mt-1 truncate" x-text="ev.description"></p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button @click="edit(ev)" class="text-sm font-bold text-jungle hover:underline">Edit</button>
+              <button @click="toggleArchive(ev)" class="text-sm font-bold text-slate-500 hover:underline"
+                x-text="ev.status === 'archived' ? 'Restore' : 'Archive'"></button>
+              <button @click="remove(ev)" class="text-sm font-bold text-red-500 hover:underline">Delete</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit / Add modal -->
+  <div x-show="editing" x-cloak class="fixed inset-0 z-50 bg-black/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto" @click.self="cancelEdit()">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-8" x-show="editing" @keydown.escape.window="cancelEdit()">
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+        <h2 class="font-bold text-lg" style="font-family:'Oswald',sans-serif" x-text="editing && editing.id ? 'Edit event' : 'Add event'"></h2>
+        <button @click="cancelEdit()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none" aria-label="Close">&times;</button>
+      </div>
+      <div class="p-6 space-y-4" x-show="editing">
+        <template x-if="editing">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Title</label>
+              <input x-model="editing.title" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">When / Date</label>
+                <input x-model="editing.when" type="text" placeholder="e.g. Fridays or March 17, 2026" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Time</label>
+                <input x-model="editing.time" type="text" placeholder="e.g. 10:00 AM Start" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Description</label>
+              <textarea x-model="editing.description" rows="3" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400"></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Category</label>
+                <select x-model="editing.category" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                  <option value="weekly">Weekly</option>
+                  <option value="special">Special / Event</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Sort order</label>
+                <input x-model.number="editing.order" type="number" placeholder="auto" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-sm">
+              <input x-model="editing.featured" type="checkbox" class="rounded" />
+              <span>Highlight as featured (dark card with a button)</span>
+            </label>
+            <div class="grid grid-cols-2 gap-4" x-show="editing.featured">
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Button label</label>
+                <input x-model="editing.ctaLabel" type="text" placeholder="e.g. SIGN UP NOW" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Button link</label>
+                <input x-model="editing.ctaUrl" type="text" placeholder="https://wa.me/..." class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              </div>
+            </div>
+            <p x-show="formError" x-text="formError" class="text-sm text-red-600"></p>
+          </div>
+        </template>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+        <button @click="cancelEdit()" class="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold">Cancel</button>
+        <button @click="save()" :disabled="saving" class="px-5 py-2 rounded-lg bg-jungle text-white font-bold hover:bg-[#0c3637] transition disabled:opacity-50">
+          <span x-show="!saving">Save</span>
+          <span x-show="saving">Saving...</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

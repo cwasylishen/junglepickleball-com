@@ -32,6 +32,30 @@
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+      // Events render from the admin API, with these as a fallback if it is unreachable.
+      function eventsSection() {
+        return {
+          events: [
+            { id: "open-play", title: "Open Play", when: "Tuesdays & Thursdays", time: "10:00 AM Start", description: "Our most popular session. All skill levels welcome, so just rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
+            { id: "womens-open", title: "Women's Open", when: "Fridays", time: "8:30 AM Start", description: "A supportive and competitive session dedicated to our women players.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
+            { id: "sunday-swish", title: "The Sunday Swish", when: "Sunday Mornings", time: "8:30 AM Start", description: "Our top social mixer. A rotating-partners format with nine games guaranteed.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
+            { id: "alternating-opens", title: "Alternating Opens", when: "Mon, Wed, Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
+            { id: "st-patricks-open", title: "Luck Meets Skill, St. Patrick's Open", when: "March 17, 2026", time: "10:00 AM Start", description: "Wear green for mixed open play with food included (hot dogs and root beer floats). Prizes for the best green outfits. Members $15 / Non-members $30.", category: "special", featured: false, ctaLabel: "", ctaUrl: "" },
+            { id: "memorial-tournament", title: "Memorial Tournament", when: "March 21, 2026", time: "Practice 7:30 AM | Games 8:30 AM", description: "In memory of Dan Casey & Tony Gangi. A mixed doubles charity event supporting El Refugio Animal Shelter, with medals, live entertainment, and food. Members $30 / Non-members $40.", category: "special", featured: true, ctaLabel: "SIGN UP NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20sign%20up%20for%20the%20Memorial%20Tournament" },
+          ],
+          async load() {
+            try {
+              const r = await fetch("/api/events");
+              if (r.ok) {
+                const d = await r.json();
+                if (d && Array.isArray(d.events) && d.events.length) this.events = d.events;
+              }
+            } catch (e) { /* keep fallback */ }
+          },
+        };
+      }
+    </script>
 
     <script type="application/ld+json">
     {
@@ -286,7 +310,7 @@
         </div>
     </section>
 
-    <section id="events" class="py-24 bg-white border-y border-slate-200">
+    <section id="events" class="py-24 bg-white border-y border-slate-200" x-data="eventsSection()" x-init="load()">
         <div class="max-w-6xl mx-auto px-6">
             <div class="text-center mb-16">
                 <span class="text-green-600 font-bold tracking-widest uppercase text-sm">Play With Us</span>
@@ -294,48 +318,21 @@
             </div>
 
             <div class="grid md:grid-cols-3 gap-8">
-                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden bg-slate-50 border-t-4 border-green-600">
-                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">Tuesdays &amp; Thursdays</div>
-                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">Open Play</h3>
-                    <div class="font-bold mb-4 text-yellow-600">10:00 AM Start</div>
-                    <p class="mb-4 text-slate-600">Our most popular session. All skill levels welcome, so just rotate in and enjoy the game.</p>
-                </div>
-                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden bg-slate-50 border-t-4 border-green-600">
-                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">Fridays</div>
-                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">Women's Open</h3>
-                    <div class="font-bold mb-4 text-yellow-600">8:30 AM Start</div>
-                    <p class="mb-4 text-slate-600">A supportive and competitive session dedicated to our women players.</p>
-                </div>
-                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden bg-slate-50 border-t-4 border-green-600">
-                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">Sunday Mornings</div>
-                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">The Sunday Swish</h3>
-                    <div class="font-bold mb-4 text-yellow-600">8:30 AM Start</div>
-                    <p class="mb-4 text-slate-600">Our top social mixer. A rotating-partners format with nine games guaranteed.</p>
-                </div>
-                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden bg-slate-50 border-t-4 border-green-600">
-                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">Mon, Wed, Sat</div>
-                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">Alternating Opens</h3>
-                    <div class="font-bold mb-4 text-yellow-600">Check Availability</div>
-                    <p class="mb-4 text-slate-600">Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.</p>
-                </div>
-                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden bg-slate-50 border-t-4 border-green-600">
-                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">March 17, 2026</div>
-                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">Luck Meets Skill, St. Patrick's Open</h3>
-                    <div class="font-bold mb-4 text-yellow-600">10:00 AM Start</div>
-                    <p class="mb-4 text-slate-600">Wear green for mixed open play with food included (hot dogs and root beer floats). Prizes for the best green outfits. Members $15 / Non-members $30.</p>
-                </div>
-                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden bg-slate-900 border-2 border-yellow-400 transform md:-translate-y-4 shadow-2xl">
-                    <div class="absolute top-0 right-0 bg-yellow-400 text-black text-xs font-bold px-3 py-1 uppercase tracking-wider rounded-bl-lg">Tournament</div>
-                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-yellow-400">March 21, 2026</div>
-                    <h3 class="text-2xl font-bold mb-2 text-white">Memorial Tournament</h3>
-                    <div class="font-bold mb-4 text-gray-300">Practice 7:30 AM | Games 8:30 AM</div>
-                    <p class="mb-4 text-gray-400">In memory of Dan Casey &amp; Tony Gangi. A mixed doubles charity event supporting El Refugio Animal Shelter, with medals, live entertainment, and food. Members $30 / Non-members $40.</p>
-                    <div class="mt-auto pt-6 border-t border-white/10">
-                        <a href="https://wa.me/50689893111?text=I%20want%20to%20sign%20up%20for%20the%20Memorial%20Tournament" class="block w-full text-center bg-yellow-400 text-black font-bold py-2 rounded hover:bg-yellow-300 transition">
-                            SIGN UP NOW
-                        </a>
+                <template x-for="ev in events" :key="ev.id">
+                    <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden"
+                        :class="ev.featured ? 'bg-slate-900 border-2 border-yellow-400 md:-translate-y-4 shadow-2xl' : 'bg-slate-50 border-t-4 border-green-600'">
+                        <div x-show="ev.featured" class="absolute top-0 right-0 bg-yellow-400 text-black text-xs font-bold px-3 py-1 uppercase tracking-wider rounded-bl-lg">Tournament</div>
+                        <div class="text-sm font-bold uppercase tracking-wider mb-2" :class="ev.featured ? 'text-yellow-400' : 'text-slate-400'" x-text="ev.when"></div>
+                        <h3 class="text-2xl font-bold mb-2" :class="ev.featured ? 'text-white' : 'text-slate-800 group-hover:text-green-700'" x-text="ev.title"></h3>
+                        <div class="font-bold mb-4" :class="ev.featured ? 'text-gray-300' : 'text-yellow-600'" x-text="ev.time"></div>
+                        <p class="mb-4" :class="ev.featured ? 'text-gray-400' : 'text-slate-600'" x-text="ev.description"></p>
+                        <template x-if="ev.featured && ev.ctaLabel && ev.ctaUrl">
+                            <div class="mt-auto pt-6 border-t border-white/10">
+                                <a :href="ev.ctaUrl" class="block w-full text-center bg-yellow-400 text-black font-bold py-2 rounded hover:bg-yellow-300 transition" x-text="ev.ctaLabel"></a>
+                            </div>
+                        </template>
                     </div>
-                </div>
+                </template>
             </div>
         </div>
     </section>
