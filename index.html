@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en-US" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The ultimate pickleball destination in Ojochal, Costa Rica. 4 Indoor Courts, Free WiFi, and a vibrant community.">
+    <title>Jungle Pickleball | Ojochal, Costa Rica</title>
+    
+    <link rel="canonical" href="https://junglepickleball.com/" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Jungle Pickleball" />
+    <meta property="og:description" content="The ultimate pickleball destination in Ojochal, Costa Rica. 4 Indoor Courts, Free WiFi, and a vibrant community." />
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <style>
+        :root { --jungle-green: #0f393b; --neon-ball: #EAB308; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        h1, h2, h3, .font-heading { font-family: 'Oswald', sans-serif; }
+        .text-jungle { color: var(--jungle-green); }
+        .bg-jungle { background-color: var(--jungle-green); }
+        .clip-slant { clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%); }
+        [x-cloak] { display: none !important; }
+        
+        /* Hide Scrollbar for Sliders */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body x-data="{ mobileMenu: false, scrolled: false }" @scroll.window="scrolled = (window.pageYOffset > 50)">
+
+    <nav :class="scrolled ? 'bg-white/95 backdrop-blur shadow-md py-3' : 'bg-[#0f393b]/90 backdrop-blur py-4'" class="fixed w-full z-50 transition-all duration-300 border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 flex justify-between items-center">
+            <a href="index.php" class="flex items-center gap-2 group">
+                <span class="text-2xl md:text-3xl font-bold font-heading uppercase tracking-tighter" :class="scrolled ? 'text-jungle' : 'text-white'">
+                    Jungle<span class="text-yellow-400 group-hover:animate-pulse">Pickleball</span>
+                </span>
+            </a>
+
+            <div class="hidden md:flex items-center space-x-8 font-heading text-lg tracking-wide">
+                <a href="#about" class="hover:text-yellow-400 transition" :class="scrolled ? 'text-gray-800' : 'text-white'">THE CLUB</a>
+                <a href="#features" class="hover:text-yellow-400 transition" :class="scrolled ? 'text-gray-800' : 'text-white'">AMENITIES</a>
+                <a href="#events" class="hover:text-yellow-400 transition" :class="scrolled ? 'text-gray-800' : 'text-white'">EVENTS</a>
+                <a href="#gallery" class="hover:text-yellow-400 transition" :class="scrolled ? 'text-gray-800' : 'text-white'">GALLERY</a>
+                <a href="#faq" class="hover:text-yellow-400 transition" :class="scrolled ? 'text-gray-800' : 'text-white'">FAQ</a>
+                <a href="https://wa.me/50689893111" class="bg-yellow-400 text-black px-6 py-2 rounded font-bold hover:bg-yellow-300 transition transform hover:scale-105 shadow-lg">
+                    BOOK COURT
+                </a>
+            </div>
+
+            <button @click="mobileMenu = !mobileMenu" class="md:hidden">
+                <svg class="w-8 h-8" :class="scrolled ? 'text-jungle' : 'text-white'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+        </div>
+
+        <div x-show="mobileMenu" x-transition.opacity class="absolute top-full left-0 w-full bg-white shadow-xl border-t md:hidden">
+            <div class="flex flex-col p-6 space-y-4 font-heading text-xl text-jungle">
+                <a @click="mobileMenu = false" href="#about">THE CLUB</a>
+                <a @click="mobileMenu = false" href="#features">AMENITIES</a>
+                <a @click="mobileMenu = false" href="#events">EVENTS</a>
+                <a @click="mobileMenu = false" href="#gallery">GALLERY</a>
+                <a @click="mobileMenu = false" href="#faq">FAQ</a>
+            </div>
+        </div>
+    </nav>
+    <header class="relative h-screen flex items-center justify-center overflow-hidden clip-slant">
+        <div class="absolute inset-0 z-0 bg-black">
+            <img src="assets/hero/hero.jpg.jpeg" class="w-full h-full object-cover opacity-60" alt="Jungle Pickleball">
+        </div>
+        
+        <div class="relative z-10 text-center px-4 max-w-5xl">
+            <div class="inline-block border border-yellow-400 text-yellow-400 px-4 py-1 rounded-full text-sm font-bold tracking-widest mb-6 animate-fade-in-up bg-black/30 backdrop-blur-sm">
+                OJOCHAL, COSTA RICA
+            </div>
+            <h1 class="text-6xl md:text-8xl font-bold text-white leading-tight mb-6 drop-shadow-2xl uppercase">
+                PICKLEBALL IN <span class='text-yellow-400'>PARADISE</span>            </h1>
+            <p class="text-xl md:text-2xl text-gray-200 mb-10 max-w-3xl mx-auto font-light leading-relaxed">
+                Play rain or shine on Ojochal's only professional indoor courts. World-class facilities, jungle vibes, and a community that feels like family.            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="https://wa.me/50689893111" class="bg-yellow-500 text-black font-bold text-xl px-10 py-4 rounded hover:bg-yellow-400 transition shadow-lg flex items-center justify-center gap-2">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                    Message Roger
+                </a>
+                <a href="#events" class="border-2 border-white text-white font-bold text-xl px-10 py-4 rounded hover:bg-white hover:text-jungle transition">
+                    View Schedule
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <div class="bg-jungle text-white py-8 border-b border-green-900 shadow-xl relative z-20 -mt-20 mx-4 md:mx-10 rounded-xl">
+        <div class="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+                        <div class="flex flex-col items-center">
+                <div class="bg-white/10 p-3 rounded-full mb-2">
+                                            <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                                    </div>
+                <span class="font-bold uppercase tracking-wide">4 Indoor Courts</span>
+                <span class="text-xs text-white/60">Pro Hard Surface</span>
+            </div>
+                        <div class="flex flex-col items-center">
+                <div class="bg-white/10 p-3 rounded-full mb-2">
+                                            <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path></svg>
+                                    </div>
+                <span class="font-bold uppercase tracking-wide">Free Fiber WiFi</span>
+                <span class="text-xs text-white/60">High-Speed</span>
+            </div>
+                        <div class="flex flex-col items-center">
+                <div class="bg-white/10 p-3 rounded-full mb-2">
+                                            <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    </div>
+                <span class="font-bold uppercase tracking-wide">Equipment Rental</span>
+                <span class="text-xs text-white/60">Pro Shop On-Site</span>
+            </div>
+                        <div class="flex flex-col items-center">
+                <div class="bg-white/10 p-3 rounded-full mb-2">
+                                            <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                                    </div>
+                <span class="font-bold uppercase tracking-wide">Social Lounge</span>
+                <span class="text-xs text-white/60">Food & Drinks</span>
+            </div>
+                    </div>
+    </div>
+
+    <section id="about" class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">
+            <div>
+                <span class="text-yellow-600 font-bold tracking-widest uppercase text-sm">About the Club</span>
+                <h2 class="text-4xl md:text-5xl font-bold text-jungle mb-6 leading-none mt-2">
+                    THE PREMIER CLUB IN THE SOUTHERN ZONE                </h2>
+                
+                <div class="prose prose-lg text-slate-600 mb-8">
+                    Welcome to Jungle Pickleball, where passion for the game meets the Pura Vida lifestyle. We have expanded to offer <strong>4 dedicated indoor courts<strong>, ensuring you can play comfortably regardless of the tropical weather. Located in the heart of Ojochal, we serve the entire Southern Zone community including Uvita and Dominical.                </div>
+
+                <div class="bg-slate-50 p-6 rounded-xl border-l-4 border-yellow-400">
+                    <ul class="space-y-4">
+                                                <li class="flex items-start gap-3">
+                            <span class="text-green-600 text-xl mt-1">✔</span>
+                            <span class="text-slate-700"><strong>Weather-Proof Play:</strong> Our covered, indoor facility protects you from the sun and rain.</span>
+                        </li>
+                                                <li class="flex items-start gap-3">
+                            <span class="text-green-600 text-xl mt-1">✔</span>
+                            <span class="text-slate-700"><strong>Stay Connected:</strong> Enjoy complimentary high-speed WiFi throughout the club—perfect for digital nomads.</span>
+                        </li>
+                                                <li class="flex items-start gap-3">
+                            <span class="text-green-600 text-xl mt-1">✔</span>
+                            <span class="text-slate-700"><strong>Full Amenities:</strong> From our pro shop to our recovery zone, we have everything you need for peak performance.</span>
+                        </li>
+                                            </ul>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+                                    <img src="assets/gallery/01.jpg" class="rounded-xl shadow-lg w-full h-64 object-cover transform translate-y-8">
+                                            <img src="assets/gallery/02.jpg" class="rounded-xl shadow-lg w-full h-64 object-cover">
+                                                </div>
+        </div>
+    </section>
+
+        <section class="py-16 bg-slate-900 text-white overflow-hidden">
+        <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-12 items-center">
+            <div class="order-2 md:order-1">
+                <h2 class="text-3xl md:text-4xl font-bold font-heading mb-4 text-yellow-400 uppercase">
+                    OFFICIAL HONOLULU PADDLE DEALER                </h2>
+                <p class="text-gray-300 text-lg mb-6 leading-relaxed">
+                    We are proud to be a top-rated dealer for Honolulu Pickleball Company. Don't play with worn-out gear—visit our pro shop to demo the latest technology, grab accessories, and upgrade your equipment right here at the club.                </p>
+                <div class="inline-flex items-center gap-2 text-green-400 font-bold">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Available in Pro Shop
+                </div>
+            </div>
+            <div class="order-1 md:order-2 relative">
+                <div class="absolute -inset-4 bg-gradient-to-r from-yellow-400 to-green-500 rounded-xl opacity-20 blur-lg"></div>
+                <img src="assets/features/honolulu.jpg" 
+                     alt="Honolulu Pickleball" 
+                     loading="lazy"
+                     class="relative rounded-xl shadow-2xl w-full h-80 object-cover border border-white/20"
+                     onerror="this.style.display='none'">
+            </div>
+        </div>
+    </section>
+    
+        <section id="features" class="py-24 bg-slate-50">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="text-center mb-16">
+                <span class="text-green-600 font-bold tracking-widest uppercase text-sm">Elevate Your Game</span>
+                <h2 class="text-4xl font-bold text-jungle mt-2">PREMIUM AMENITIES</h2>
+            </div>
+            <div class="grid md:grid-cols-3 gap-10">
+                                <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-2xl transition-all duration-300 group hover:-translate-y-2">
+                    <div class="h-64 overflow-hidden relative bg-gray-200">
+                                                    <img src="assets/features/kitchen.jpg" 
+                                 alt="The Jungle Kitchen" 
+                                 loading="lazy"
+                                 class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+                                                
+                        <div class="absolute bottom-4 left-4 text-white">
+                            <h3 class="text-xl font-bold drop-shadow-md">The Jungle Kitchen</h3>
+                        </div>
+                    </div>
+                    <div class="p-8">
+                        <p class="text-slate-600 leading-relaxed">The heart of our social scene. Famous for our classic Root Beer Floats, fresh fruit smoothies, and energy bites. It&#039;s the perfect spot to cool down and connect after a match.</p>
+                    </div>
+                </div>
+                                <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-2xl transition-all duration-300 group hover:-translate-y-2">
+                    <div class="h-64 overflow-hidden relative bg-gray-200">
+                                                    <img src="assets/features/cold-plunge.jpg" 
+                                 alt="Ice Cold Recovery" 
+                                 loading="lazy"
+                                 class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+                                                
+                        <div class="absolute bottom-4 left-4 text-white">
+                            <h3 class="text-xl font-bold drop-shadow-md">Ice Cold Recovery</h3>
+                        </div>
+                    </div>
+                    <div class="p-8">
+                        <p class="text-slate-600 leading-relaxed">Push your limits and recover faster. Members enjoy access to our 60°F Cold Plunge tank—the ultimate way to reduce inflammation and beat the jungle heat.</p>
+                    </div>
+                </div>
+                                <div class="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-2xl transition-all duration-300 group hover:-translate-y-2">
+                    <div class="h-64 overflow-hidden relative bg-gray-200">
+                                                    <img src="assets/features/dink-wall.jpg" 
+                                 alt="Pro Dink Wall" 
+                                 loading="lazy"
+                                 class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+                                                
+                        <div class="absolute bottom-4 left-4 text-white">
+                            <h3 class="text-xl font-bold drop-shadow-md">Pro Dink Wall</h3>
+                        </div>
+                    </div>
+                    <div class="p-8">
+                        <p class="text-slate-600 leading-relaxed">Waiting for a court? Sharpen your soft game on our dedicated practice wall. Perfect for drilling mechanics, warming up, or solo training sessions.</p>
+                    </div>
+                </div>
+                            </div>
+        </div>
+    </section>
+    
+    <section id="events" class="py-24 bg-white border-y border-slate-200">
+        <div class="max-w-6xl mx-auto px-6">
+            <div class="text-center mb-16">
+                <span class="text-green-600 font-bold tracking-widest uppercase text-sm">Play With Us</span>
+                <h2 class="text-4xl font-bold text-jungle mt-2">WEEKLY SCHEDULE & EVENTS</h2>
+            </div>
+
+                        <div class="grid md:grid-cols-3 gap-8">
+                                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden
+                    bg-slate-50 border-t-4 border-green-600">
+                    
+                    
+                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">
+                        Tuesdays &amp; Thursdays                    </div>
+                    
+                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">
+                        Open Play                    </h3>
+                    
+                    <div class="font-bold mb-4 text-yellow-600">
+                        10:00 AM Start                    </div>
+                    
+                    <p class="mb-4 text-slate-600">
+                        Our most popular session. All skill levels welcome—just rotate in and enjoy the game!                    </p>
+
+                    
+                                    </div>
+                                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden
+                    bg-slate-50 border-t-4 border-green-600">
+                    
+                    
+                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">
+                        Fridays                    </div>
+                    
+                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">
+                        Women&#039;s Open                    </h3>
+                    
+                    <div class="font-bold mb-4 text-yellow-600">
+                        8:30 AM Start                    </div>
+                    
+                    <p class="mb-4 text-slate-600">
+                        A supportive and competitive environment dedicated exclusively to our lady players.                    </p>
+
+                    
+                                    </div>
+                                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden
+                    bg-slate-50 border-t-4 border-green-600">
+                    
+                    
+                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">
+                        Sunday Mornings                    </div>
+                    
+                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">
+                        The Sunday Swish                    </h3>
+                    
+                    <div class="font-bold mb-4 text-yellow-600">
+                        8:30 AM Start                    </div>
+                    
+                    <p class="mb-4 text-slate-600">
+                        The ultimate social mixer. Rotating partners format where you are guaranteed 9 games.                    </p>
+
+                    
+                                    </div>
+                                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden
+                    bg-slate-50 border-t-4 border-green-600">
+                    
+                    
+                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">
+                        Mon, Wed, Sat                    </div>
+                    
+                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">
+                        Alternating Opens                    </h3>
+                    
+                    <div class="font-bold mb-4 text-yellow-600">
+                        Check Availability                    </div>
+                    
+                    <p class="mb-4 text-slate-600">
+                        Flex days! Times vary based on demand. Text Roger via WhatsApp to confirm open slots.                    </p>
+
+                    
+                                    </div>
+                                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden
+                    bg-slate-50 border-t-4 border-green-600">
+                    
+                    
+                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-slate-400">
+                        March 17, 2026                    </div>
+                    
+                    <h3 class="text-2xl font-bold mb-2 text-slate-800 group-hover:text-green-700">
+                        Luck Meets Skill - St. Patrick&#039;s Open                    </h3>
+                    
+                    <div class="font-bold mb-4 text-yellow-600">
+                        10:00 AM Start                    </div>
+                    
+                    <p class="mb-4 text-slate-600">
+                        Must wear green! Mixed open play with food included (hot dogs, root beer floats). Prizes for best green outfits. Members $15 / Non-members $30.                    </p>
+
+                    
+                                    </div>
+                                <div class="p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 group flex flex-col relative overflow-hidden
+                    bg-slate-900 border-2 border-yellow-400 transform md:-translate-y-4 shadow-2xl">
+                    
+                                            <div class="absolute top-0 right-0 bg-yellow-400 text-black text-xs font-bold px-3 py-1 uppercase tracking-wider rounded-bl-lg">Tournament</div>
+                    
+                    <div class="text-sm font-bold uppercase tracking-wider mb-2 text-yellow-400">
+                        March 21, 2026                    </div>
+                    
+                    <h3 class="text-2xl font-bold mb-2 text-white">
+                        Memorial Tournament                    </h3>
+                    
+                    <div class="font-bold mb-4 text-gray-300">
+                        Practice 7:30 AM | Games 8:30 AM                    </div>
+                    
+                    <p class="mb-4 text-gray-400">
+                        In memory of Dan Casey &amp; Tony Gangi. Mixed doubles charity event supporting El Refugio Animal Shelter. Medals, live entertainment, and food. Members $30 / Non-members $40.                    </p>
+
+                    
+                                            <div class="mt-auto pt-6 border-t border-white/10">
+                            <a href="https://wa.me/50689893111?text=I want to sign up for Memorial+Tournament" class="block w-full text-center bg-yellow-400 text-black font-bold py-2 rounded hover:bg-yellow-300 transition">
+                                SIGN UP NOW                            </a>
+                        </div>
+                                    </div>
+                            </div>
+                    </div>
+    </section>
+
+    <section id="gallery" class="py-24 bg-jungle overflow-hidden">
+        <div class="max-w-7xl mx-auto px-6 mb-10 flex flex-col md:flex-row justify-between items-end gap-6">
+            <div>
+                <h2 class="text-4xl font-bold text-white font-heading">COURT VIBES</h2>
+                <p class="text-green-200 mt-2">A glimpse into the action.</p>
+            </div>
+            <a href="gallery.php" class="inline-block bg-yellow-400 text-black font-bold px-6 py-3 rounded hover:bg-yellow-300 transition shadow-lg transform hover:-translate-y-1">
+                VIEW FULL GALLERY →
+            </a>
+        </div>
+
+        <div class="flex overflow-x-auto snap-x snap-mandatory gap-6 px-6 pb-8 scrollbar-hide">
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/01.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/02.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/03.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/04.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/05.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/06.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/1.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                            <div class="snap-center shrink-0 w-80 md:w-96 aspect-[4/3] rounded-xl overflow-hidden shadow-2xl relative group bg-gray-800 border border-white/10">
+                    <img src="assets/gallery/2.jpg" loading="lazy" class="w-full h-full object-cover transition duration-700 group-hover:scale-110">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
+                </div>
+                        <a href="gallery.php" class="snap-center shrink-0 w-48 flex items-center justify-center bg-white/10 rounded-xl hover:bg-white/20 transition cursor-pointer border-2 border-dashed border-white/30 text-white font-bold group">
+                <div class="text-center">
+                    <span class="block text-2xl mb-2 group-hover:scale-110 transition">📸</span>
+                    See All Photos
+                </div>
+            </a>
+        </div>
+    </section>
+
+    <section id="faq" class="py-24 bg-white">
+        <div class="max-w-3xl mx-auto px-6">
+            <h2 class="text-3xl font-bold text-jungle mb-10 text-center">FREQUENTLY ASKED</h2>
+            
+            <div class="space-y-4" x-data="{ active: null }">
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 0 ? active = null : active = 0" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">When did Jungle Pickleball open?</span>
+                        <span class="text-xl" x-text="active === 0 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 0" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        Jungle Pickleball opened in May 2023, offering a world-class pickleball experience in Ojochal, located in Costa Rica&#039;s Southern Zone.                    </div>
+                </div>
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 1 ? active = null : active = 1" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">Is Jungle Pickleball a public or private club?</span>
+                        <span class="text-xl" x-text="active === 1 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 1" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        We are a private pickleball club, but visitors are welcome with an appointment or during our scheduled open play sessions.                    </div>
+                </div>
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 2 ? active = null : active = 2" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">How do I book court time?</span>
+                        <span class="text-xl" x-text="active === 2 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 2" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        You can book court time by reaching out to us directly on WhatsApp at +506 8989 3111.                    </div>
+                </div>
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 3 ? active = null : active = 3" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">What are the membership rates?</span>
+                        <span class="text-xl" x-text="active === 3 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 3" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        Memberships start at $200, providing access to exclusive play times, the cold plunge, and other club benefits.                    </div>
+                </div>
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 4 ? active = null : active = 4" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">Can I play as a visitor?</span>
+                        <span class="text-xl" x-text="active === 4 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 4" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        Yes! Visitors can drop in for a 90-minute session at $15 per person. If you plan to play multiple times, sessions are available at a discounted rate of $12.50 per session.                    </div>
+                </div>
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 5 ? active = null : active = 5" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">What time is open play available?</span>
+                        <span class="text-xl" x-text="active === 5 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 5" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        Open play times vary by day (Tues/Thu at 10:00 AM, Fri/Sun at 8:30 AM). Please check the &#039;Weekly Schedule&#039; section above for the most current times.                    </div>
+                </div>
+                                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 6 ? active = null : active = 6" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left">
+                        <span class="font-bold text-slate-700">Do you provide paddles and balls for visitors?</span>
+                        <span class="text-xl" x-text="active === 6 ? '−' : '+'"></span>
+                    </button>
+                    <div x-show="active === 6" x-collapse class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        Yes! Visitors can use paddles and balls free of charge, so you don’t need to bring your own equipment.                    </div>
+                </div>
+                            </div>
+        </div>
+    </section>
+
+<footer class="bg-[#0c3637] text-gray-300 border-t border-green-900">
+        <div class="w-full h-2 bg-gradient-to-r from-yellow-500 via-green-500 to-yellow-500"></div>
+        
+        <div class="max-w-7xl mx-auto px-6 py-16">
+            <div class="grid md:grid-cols-4 gap-12">
+                <div class="col-span-1 md:col-span-2">
+                    <h3 class="text-3xl font-bold text-white font-heading uppercase tracking-tighter mb-4">
+                        Jungle<span class="text-yellow-400">Pickleball</span>
+                    </h3>
+                    <p class="mb-6 max-w-sm text-gray-400">
+                        The premier destination for high-performance pickleball in Costa Rica's Southern Zone. Built for the community, maintained for the pros.
+                    </p>
+                </div>
+
+                <div>
+                    <h4 class="text-white font-bold uppercase tracking-wider mb-6">Contact</h4>
+                    <ul class="space-y-4 text-sm">
+                        <li>
+                            <strong class="text-white block">WhatsApp (Roger):</strong>
+                            <a href="https://wa.me/50689893111" class="hover:text-yellow-400">+506 8989 3111</a>
+                        </li>
+                        <li>
+                            <strong class="text-white block">Location:</strong>
+                            Ojochal, Calle Túcan<br>Puntarenas, Costa Rica
+                        </li>
+                        <li>
+                            <a href="https://maps.app.goo.gl/mk3czHsAzTmZyLE16" target="_blank" class="inline-flex items-center text-yellow-400 hover:text-white transition font-bold underline decoration-yellow-400/50">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                Get Directions
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="text-white font-bold uppercase tracking-wider mb-6">Explore</h4>
+                    <ul class="space-y-3 text-sm">
+                        <li><a href="index.php#about" class="hover:text-yellow-400 transition">Our Courts</a></li>
+                        <li><a href="index.php#events" class="hover:text-yellow-400 transition">Tournaments</a></li>
+                        <li><a href="gallery.php" class="hover:text-yellow-400 transition">Photo Gallery</a></li>
+                        <li><a href="index.php#faq" class="hover:text-yellow-400 transition">Membership Info</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="border-t border-white/10 mt-16 pt-8 flex flex-col md:flex-row justify-between items-center text-xs text-gray-500 uppercase tracking-widest">
+                <p>© 2026 Jungle Pickleball. All Rights Reserved.</p>
+                
+                <div class="flex items-center gap-4 mt-4 md:mt-0 group">
+                    <span class="text-[10px] opacity-50">Secure Architecture by</span>
+                    <a href="https://wizardweb.ca" target="_blank" class="text-white font-bold border border-white/20 px-3 py-1 rounded hover:bg-white hover:text-black transition-all duration-300 flex items-center gap-2">
+                        WIZARD WEB
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <a href="https://wa.me/50689893111" class="fixed bottom-6 right-6 z-50 bg-[#25D366] text-white p-4 rounded-full shadow-2xl hover:bg-green-600 transition transform hover:scale-110 flex items-center gap-3 group">
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+        <span class="font-bold hidden group-hover:block transition-all duration-300">Chat with Roger</span>
+    </a>
+
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0104a502db74c07',t:'MTc3OTY2NzU0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

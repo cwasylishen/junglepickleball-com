@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Page Not Found | Jungle Pickleball</title>
+<meta name="robots" content="noindex" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet" />
+<style>
+  :root { --teal: #0f393b; --teal-deep: #0c3637; --gold: #EAB308; --light: #f8fafc; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--teal);
+    color: var(--light);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+  }
+  .wrap { max-width: 36rem; }
+  .eyebrow {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-size: 0.9rem;
+  }
+  h1 {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: clamp(2.2rem, 6vw, 3.5rem);
+    line-height: 1.1;
+    margin: 1rem 0;
+  }
+  p { font-weight: 300; font-size: 1.1rem; opacity: 0.85; margin-bottom: 2rem; }
+  .btn {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--teal-deep);
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-decoration: none;
+    padding: 0.9rem 2rem;
+    border-radius: 999px;
+    transition: transform 0.15s ease;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  footer { margin-top: 3rem; font-size: 0.8rem; opacity: 0.6; }
+  footer a { color: var(--gold); text-decoration: none; }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <span class="eyebrow">404</span>
+    <h1>This court is empty.</h1>
+    <p>The page you are looking for is not here. Head back to the home page and find us in Ojochal, Costa Rica.</p>
+    <a class="btn" href="/">Back to Jungle Pickleball</a>
+    <footer>Built and hosted by <a href="https://wizardweb.ca">wizardweb.ca</a></footer>
+  </main>
+</body>
+</html>
