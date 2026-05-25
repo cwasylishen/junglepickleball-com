@@ -25,13 +25,35 @@
         return {
           lightbox: "",
           images: [
-            "Group-shot.jpg", "Large-group-shot.jpg", "Team-photo.jpg", "Tournament-winners.jpg",
-            "Tournament-winners-2.jpg", "People-Gathering.jpg", "Fun-shot.jpg", "Court-shot.jpg",
-            "open-court-no-players.jpg", "Inside-out.jpg", "Lu-Dawson.jpg", "Susan.jpg",
-            "Roger-Worsham-2025-05-03-04.00.39.jpg", "Roger-Worsham-2025-05-03-04.00.42.jpg",
-            "WhatsApp-Image-2026-01-11-at-7.17.51-PM.jpeg", "WhatsApp-Image-2026-01-11-at-7.18.14-PM.jpeg",
-            "coldplunge.jpeg", "dinkwall.jpeg", "kitchen.jpeg", "diningarea.jpeg", "Weight-equipment.jpg",
-            "01.jpg", "02.jpg", "03.jpg", "04.jpg", "05.jpg", "06.jpg", "1.jpg", "2.jpg"
+            { f: "Group-shot.jpg", a: "Group of pickleball players on the court at Jungle Pickleball in Ojochal, Costa Rica" },
+            { f: "Large-group-shot.jpg", a: "Large group of players and families at Jungle Pickleball, Ojochal" },
+            { f: "Team-photo.jpg", a: "Team photo of the Jungle Pickleball community in Costa Rica's Southern Zone" },
+            { f: "Tournament-winners.jpg", a: "Pickleball tournament winners holding trophies at Jungle Pickleball" },
+            { f: "Tournament-winners-2.jpg", a: "Award winners at a Jungle Pickleball tournament in Ojochal" },
+            { f: "People-Gathering.jpg", a: "Players socializing between matches at Jungle Pickleball" },
+            { f: "Fun-shot.jpg", a: "Players having fun during open play at Jungle Pickleball, Ojochal" },
+            { f: "Court-shot.jpg", a: "Covered indoor pickleball court at Jungle Pickleball, Costa Rica" },
+            { f: "open-court-no-players.jpg", a: "Empty indoor pickleball court ready for play at Jungle Pickleball" },
+            { f: "Inside-out.jpg", a: "Indoor pickleball courts looking out to the Costa Rica jungle" },
+            { f: "Lu-Dawson.jpg", a: "Pickleball player Lu Dawson at Jungle Pickleball, Ojochal" },
+            { f: "Susan.jpg", a: "Pickleball player Susan at Jungle Pickleball" },
+            { f: "Roger-Worsham-2025-05-03-04.00.39.jpg", a: "Roger Worsham at Jungle Pickleball in Ojochal, Costa Rica" },
+            { f: "Roger-Worsham-2025-05-03-04.00.42.jpg", a: "Roger Worsham on the court at Jungle Pickleball" },
+            { f: "WhatsApp-Image-2026-01-11-at-7.17.51-PM.jpeg", a: "Players enjoying a pickleball match at Jungle Pickleball" },
+            { f: "WhatsApp-Image-2026-01-11-at-7.18.14-PM.jpeg", a: "Pickleball action at Jungle Pickleball in Ojochal" },
+            { f: "coldplunge.jpeg", a: "Cold plunge recovery tank at Jungle Pickleball" },
+            { f: "dinkwall.jpeg", a: "Practice dink wall for drills at Jungle Pickleball" },
+            { f: "kitchen.jpeg", a: "The Jungle Kitchen lounge and snack bar" },
+            { f: "diningarea.jpeg", a: "Social lounge and dining area at Jungle Pickleball" },
+            { f: "Weight-equipment.jpg", a: "Fitness and weight equipment at Jungle Pickleball" },
+            { f: "01.jpg", a: "Pickleball play at Jungle Pickleball in Ojochal, Costa Rica" },
+            { f: "02.jpg", a: "Indoor pickleball courts at Jungle Pickleball, Ojochal" },
+            { f: "03.jpg", a: "Players on court at Jungle Pickleball, Costa Rica" },
+            { f: "04.jpg", a: "Pickleball match at Jungle Pickleball in the Southern Zone" },
+            { f: "05.jpg", a: "Open play at Jungle Pickleball, Ojochal" },
+            { f: "06.jpg", a: "Pickleball community at Jungle Pickleball, Costa Rica" },
+            { f: "1.jpg", a: "Indoor pickleball court action at Jungle Pickleball" },
+            { f: "2.jpg", a: "Players at Jungle Pickleball in Ojochal, Costa Rica" }
           ],
           src(name) { return "assets/gallery/" + name; },
         };
@@ -60,9 +82,9 @@
 
     <main class="max-w-7xl mx-auto px-4 pb-24">
         <div class="columns-2 md:columns-3 lg:columns-4 gap-4">
-            <template x-for="img in images" :key="img">
-                <button type="button" @click="lightbox = src(img)" class="block w-full mb-4 break-inside-avoid rounded-xl overflow-hidden shadow-lg relative group bg-black/20 cursor-zoom-in" aria-label="View photo">
-                    <img :src="src(img)" alt="Jungle Pickleball photo" loading="lazy" class="w-full h-auto transition duration-500 group-hover:scale-105">
+            <template x-for="img in images" :key="img.f">
+                <button type="button" @click="lightbox = src(img.f)" class="block w-full mb-4 break-inside-avoid rounded-xl overflow-hidden shadow-lg relative group bg-black/20 cursor-zoom-in" :aria-label="'View photo: ' + img.a">
+                    <img :src="src(img.f)" :alt="img.a" loading="lazy" class="w-full h-auto transition duration-500 group-hover:scale-105">
                     <div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition duration-300"></div>
                 </button>
             </template>

@@ -26,7 +26,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link rel="preload" as="image" href="assets/hero/hero.jpg" fetchpriority="high">
+    <link rel="preload" as="image" href="assets/hero/hero.webp" fetchpriority="high">
 
     <link rel="stylesheet" href="assets/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
@@ -84,7 +84,34 @@
         { "@type": "LocationFeatureSpecification", "name": "Cold plunge", "value": true },
         { "@type": "LocationFeatureSpecification", "name": "Pro shop", "value": true }
       ],
+      "geo": { "@type": "GeoCoordinates", "latitude": 9.0841707, "longitude": -83.6431412 },
       "hasMap": "https://maps.app.goo.gl/mk3czHsAzTmZyLE16"
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Event",
+      "name": "Rihana's Rally Cup",
+      "description": "A Mix and Match Madness pickleball fundraiser at Jungle Pickleball in Ojochal, celebrating sprinter Rihana Mora's 17th birthday. Random pairings every round, individual points, and mini games. Adults $25, kids under 16 $15, family $30. Partial proceeds fund Rihana's training and travel.",
+      "startDate": "2026-05-31T09:00:00-06:00",
+      "endDate": "2026-05-31T13:00:00-06:00",
+      "eventStatus": "https://schema.org/EventScheduled",
+      "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+      "image": "https://junglepickleball.com/assets/events/rihana-rally-cup.jpg",
+      "url": "https://junglepickleball.com/#events",
+      "location": {
+        "@type": "Place",
+        "name": "Jungle Pickleball",
+        "address": { "@type": "PostalAddress", "streetAddress": "Calle Tucan", "addressLocality": "Ojochal", "addressRegion": "Puntarenas", "addressCountry": "CR" },
+        "geo": { "@type": "GeoCoordinates", "latitude": 9.0841707, "longitude": -83.6431412 }
+      },
+      "organizer": { "@type": "Organization", "name": "Jungle Pickleball", "url": "https://junglepickleball.com/" },
+      "offers": [
+        { "@type": "Offer", "name": "Adult", "price": "25", "priceCurrency": "USD", "availability": "https://schema.org/LimitedAvailability", "url": "https://junglepickleball.com/#events" },
+        { "@type": "Offer", "name": "Kids under 16", "price": "15", "priceCurrency": "USD", "availability": "https://schema.org/LimitedAvailability", "url": "https://junglepickleball.com/#events" },
+        { "@type": "Offer", "name": "Family", "price": "30", "priceCurrency": "USD", "availability": "https://schema.org/LimitedAvailability", "url": "https://junglepickleball.com/#events" }
+      ]
     }
     </script>
     <script type="application/ld+json">
@@ -98,7 +125,9 @@
         { "@type": "Question", "name": "What are the membership rates?", "acceptedAnswer": { "@type": "Answer", "text": "Memberships start at $200 and include exclusive play times, the cold plunge, and other club benefits." } },
         { "@type": "Question", "name": "Can I play as a visitor?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Visitors can drop in for a 90 minute session at $15 per person, or $12.50 per session if you play multiple times." } },
         { "@type": "Question", "name": "What time is open play available?", "acceptedAnswer": { "@type": "Answer", "text": "Open play runs Tuesday and Thursday at 10:00 AM and Friday and Sunday at 8:30 AM. Check the weekly schedule for current times." } },
-        { "@type": "Question", "name": "Do you provide paddles and balls for visitors?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Visitors can use paddles and balls free of charge, so you do not need to bring your own gear." } }
+        { "@type": "Question", "name": "Do you provide paddles and balls for visitors?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Visitors can use paddles and balls free of charge, so you do not need to bring your own gear." } },
+        { "@type": "Question", "name": "Where is Jungle Pickleball located?", "acceptedAnswer": { "@type": "Answer", "text": "Jungle Pickleball is on Calle Tucan in Ojochal, Puntarenas, in Costa Rica's Southern Zone, a short drive from Uvita and Dominical." } },
+        { "@type": "Question", "name": "Is Jungle Pickleball good for beginners?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Open play welcomes all skill levels, paddles and balls are provided free, and you do not need to bring a partner, so beginners and visitors can rotate right in." } }
       ]
     }
     </script>
@@ -143,7 +172,7 @@
 
     <header class="relative h-screen flex items-center justify-center overflow-hidden clip-slant">
         <div class="absolute inset-0 z-0 bg-black">
-            <img src="assets/hero/hero.jpg" class="w-full h-full object-cover opacity-60" alt="Players rallying on an indoor court at Jungle Pickleball in Ojochal" fetchpriority="high" decoding="async">
+            <img src="assets/hero/hero.webp" class="w-full h-full object-cover opacity-60" alt="Players rallying on an indoor court at Jungle Pickleball in Ojochal" fetchpriority="high" decoding="async">
         </div>
 
         <div class="relative z-10 text-center px-4 max-w-5xl">
@@ -441,6 +470,24 @@
                     </button>
                     <div x-show="active === 6" x-collapse x-cloak class="p-5 text-slate-600 bg-white border-t border-slate-100">
                         Yes. Visitors can use paddles and balls free of charge, so you do not need to bring your own gear.
+                    </div>
+                </div>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 7 ? active = null : active = 7" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left" :aria-expanded="active === 7">
+                        <span class="font-bold text-slate-700">Where is Jungle Pickleball located?</span>
+                        <span class="text-xl" x-text="active === 7 ? '−' : '+'" aria-hidden="true"></span>
+                    </button>
+                    <div x-show="active === 7" x-collapse x-cloak class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        We are on Calle Tucan in Ojochal, Puntarenas, in Costa Rica's Southern Zone, a short drive from Uvita and Dominical. <a href="https://maps.app.goo.gl/mk3czHsAzTmZyLE16" target="_blank" rel="noopener" class="text-green-700 font-bold underline">Get directions</a>.
+                    </div>
+                </div>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <button @click="active === 8 ? active = null : active = 8" class="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 text-left" :aria-expanded="active === 8">
+                        <span class="font-bold text-slate-700">Is Jungle Pickleball good for beginners?</span>
+                        <span class="text-xl" x-text="active === 8 ? '−' : '+'" aria-hidden="true"></span>
+                    </button>
+                    <div x-show="active === 8" x-collapse x-cloak class="p-5 text-slate-600 bg-white border-t border-slate-100">
+                        Yes. Open play welcomes all skill levels, paddles and balls are provided free, and you do not need to bring a partner, so beginners and visitors can rotate right in.
                     </div>
                 </div>
             </div>
