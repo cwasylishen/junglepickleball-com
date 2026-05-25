@@ -8,5 +8,8 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+/assets/styles.css
+  Cache-Control: public, max-age=0, must-revalidate
+
 /*.html
   Cache-Control: public, max-age=0, must-revalidate

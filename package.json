@@ -1,0 +1,13 @@
+{
+  "name": "junglepickleball-com",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static one-page site for Jungle Pickleball, Ojochal, Costa Rica.",
+  "scripts": {
+    "build": "tailwindcss -i ./src/input.css -o ./assets/styles.css --minify",
+    "watch": "tailwindcss -i ./src/input.css -o ./assets/styles.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

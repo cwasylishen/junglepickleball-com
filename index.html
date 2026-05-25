@@ -28,27 +28,10 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preload" as="image" href="assets/hero/hero.jpg" fetchpriority="high">
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="assets/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-
-    <style>
-        :root { --jungle-green: #0f393b; --neon-ball: #EAB308; }
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
-        h1, h2, h3, .font-heading { font-family: 'Oswald', sans-serif; }
-        .text-jungle { color: var(--jungle-green); }
-        .bg-jungle { background-color: var(--jungle-green); }
-        .clip-slant { clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%); }
-        [x-cloak] { display: none !important; }
-
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in-up { animation: fadeInUp 0.8s ease-out both; }
-        @media (prefers-reduced-motion: reduce) { .animate-fade-in-up { animation: none; } html { scroll-behavior: auto; } }
-    </style>
 
     <script type="application/ld+json">
     {
