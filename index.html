@@ -36,13 +36,13 @@
       // Events render from the admin API, with these as a fallback if it is unreachable.
       function eventsSection() {
         return {
+          lightbox: "",
           events: [
+            { id: "rihana-rally-cup", title: "Rihana's Rally Cup", when: "Sunday, May 31, 2026", time: "Practice 8:00 AM | Start 9:00 AM", description: "A Mix and Match Madness fundraiser for Rihana Mora, Ojochal's own and Costa Rica's fastest 17-year-old, on her birthday. Random pairings every round (kids and adults mixed), individual points, and mini games between matches. Adults $25, kids under 16 $15, family $30. Partial proceeds fund Rihana's training and travel. Spaces are limited. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "RESERVE YOUR SPOT", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20the%20Rihana%20Rally%20Cup", images: ["assets/events/rihana-rally-cup.jpg", "assets/events/rihana-rally-cup-details.jpg"] },
             { id: "open-play", title: "Open Play", when: "Tuesdays & Thursdays", time: "10:00 AM Start", description: "Our most popular session. All skill levels welcome, so just rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "womens-open", title: "Women's Open", when: "Fridays", time: "8:30 AM Start", description: "A supportive and competitive session dedicated to our women players.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "sunday-swish", title: "The Sunday Swish", when: "Sunday Mornings", time: "8:30 AM Start", description: "Our top social mixer. A rotating-partners format with nine games guaranteed.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "alternating-opens", title: "Alternating Opens", when: "Mon, Wed, Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
-            { id: "st-patricks-open", title: "Luck Meets Skill, St. Patrick's Open", when: "March 17, 2026", time: "10:00 AM Start", description: "Wear green for mixed open play with food included (hot dogs and root beer floats). Prizes for the best green outfits. Members $15 / Non-members $30.", category: "special", featured: false, ctaLabel: "", ctaUrl: "" },
-            { id: "memorial-tournament", title: "Memorial Tournament", when: "March 21, 2026", time: "Practice 7:30 AM | Games 8:30 AM", description: "In memory of Dan Casey & Tony Gangi. A mixed doubles charity event supporting El Refugio Animal Shelter, with medals, live entertainment, and food. Members $30 / Non-members $40.", category: "special", featured: true, ctaLabel: "SIGN UP NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20sign%20up%20for%20the%20Memorial%20Tournament" },
           ],
           async load() {
             try {
@@ -310,7 +310,7 @@
         </div>
     </section>
 
-    <section id="events" class="py-24 bg-white border-y border-slate-200" x-data="eventsSection()" x-init="load()">
+    <section id="events" class="py-24 bg-white border-y border-slate-200" x-data="eventsSection()" x-init="load()" @keydown.escape.window="lightbox = ''">
         <div class="max-w-6xl mx-auto px-6">
             <div class="text-center mb-16">
                 <span class="text-green-600 font-bold tracking-widest uppercase text-sm">Play With Us</span>
@@ -326,6 +326,15 @@
                         <h3 class="text-2xl font-bold mb-2" :class="ev.featured ? 'text-white' : 'text-slate-800 group-hover:text-green-700'" x-text="ev.title"></h3>
                         <div class="font-bold mb-4" :class="ev.featured ? 'text-gray-300' : 'text-yellow-600'" x-text="ev.time"></div>
                         <p class="mb-4" :class="ev.featured ? 'text-gray-400' : 'text-slate-600'" x-text="ev.description"></p>
+                        <template x-if="ev.images && ev.images.length">
+                            <div class="grid gap-3 mb-4" :class="ev.images.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
+                                <template x-for="(img, i) in ev.images" :key="i">
+                                    <button type="button" @click="lightbox = img" class="block rounded-lg overflow-hidden border border-white/10 aspect-[3/4] bg-black/20 cursor-zoom-in" aria-label="View event flyer">
+                                        <img :src="img" alt="Rihana's Rally Cup flyer" loading="lazy" class="w-full h-full object-cover object-top" onerror="this.closest('button').style.display='none'">
+                                    </button>
+                                </template>
+                            </div>
+                        </template>
                         <template x-if="ev.featured && ev.ctaLabel && ev.ctaUrl">
                             <div class="mt-auto pt-6 border-t border-white/10">
                                 <a :href="ev.ctaUrl" class="block w-full text-center bg-yellow-400 text-black font-bold py-2 rounded hover:bg-yellow-300 transition" x-text="ev.ctaLabel"></a>
@@ -334,6 +343,11 @@
                     </div>
                 </template>
             </div>
+        </div>
+
+        <div x-show="lightbox" x-cloak @click="lightbox = ''" class="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4">
+            <button type="button" @click="lightbox = ''" class="absolute top-5 right-6 text-white text-4xl font-light leading-none z-10" aria-label="Close flyer">&times;</button>
+            <img :src="lightbox" @click="lightbox = ''" alt="Event flyer" class="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-out">
         </div>
     </section>
 

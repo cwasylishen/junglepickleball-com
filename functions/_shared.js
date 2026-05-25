@@ -142,6 +142,9 @@ export function normalizeEvent(input, existing = {}) {
     featured: Boolean(input.featured ?? existing.featured ?? false),
     ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "").trim().slice(0, 60),
     ctaUrl: String(input.ctaUrl ?? existing.ctaUrl ?? "").trim().slice(0, 500),
+    images: Array.isArray(input.images)
+      ? input.images.filter((x) => typeof x === "string" && x.trim()).slice(0, 8)
+      : existing.images || [],
     order: Number.isFinite(+input.order) ? +input.order : existing.order ?? 100,
     updatedAt: new Date().toISOString(),
   };
@@ -153,6 +156,5 @@ export const DEFAULT_EVENTS = [
   { id: "womens-open", title: "Women's Open", when: "Fridays", time: "8:30 AM Start", description: "A supportive and competitive session dedicated to our women players.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 20, status: "active" },
   { id: "sunday-swish", title: "The Sunday Swish", when: "Sunday Mornings", time: "8:30 AM Start", description: "Our top social mixer. A rotating-partners format with nine games guaranteed.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 30, status: "active" },
   { id: "alternating-opens", title: "Alternating Opens", when: "Mon, Wed, Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 40, status: "active" },
-  { id: "st-patricks-open", title: "Luck Meets Skill, St. Patrick's Open", when: "March 17, 2026", time: "10:00 AM Start", description: "Wear green for mixed open play with food included (hot dogs and root beer floats). Prizes for the best green outfits. Members $15 / Non-members $30.", category: "special", featured: false, ctaLabel: "", ctaUrl: "", order: 50, status: "active" },
-  { id: "memorial-tournament", title: "Memorial Tournament", when: "March 21, 2026", time: "Practice 7:30 AM | Games 8:30 AM", description: "In memory of Dan Casey & Tony Gangi. A mixed doubles charity event supporting El Refugio Animal Shelter, with medals, live entertainment, and food. Members $30 / Non-members $40.", category: "special", featured: true, ctaLabel: "SIGN UP NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20sign%20up%20for%20the%20Memorial%20Tournament", order: 60, status: "active" },
+  { id: "rihana-rally-cup", title: "Rihana's Rally Cup", when: "Sunday, May 31, 2026", time: "Practice 8:00 AM | Start 9:00 AM", description: "A Mix and Match Madness fundraiser for Rihana Mora, Ojochal's own and Costa Rica's fastest 17-year-old, on her birthday. Random pairings every round (kids and adults mixed), individual points, and mini games between matches. Adults $25, kids under 16 $15, family $30. Partial proceeds fund Rihana's training and travel. Spaces are limited. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "RESERVE YOUR SPOT", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20the%20Rihana%20Rally%20Cup", order: 5, status: "active", images: ["assets/events/rihana-rally-cup.jpg", "assets/events/rihana-rally-cup-details.jpg"] },
 ];
