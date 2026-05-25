@@ -4,7 +4,7 @@ One-page site for Jungle Pickleball, the indoor pickleball destination in Ojocha
 
 ## Stack
 
-Static HTML with a Tailwind CSS build step. Alpine.js loads from CDN. Hosted on Cloudflare Pages.
+Static HTML with a Tailwind CSS build step. Alpine.js loads from CDN. Deployed as a Cloudflare Worker with static assets (`wrangler deploy`), matching the other wizardweb sites.
 
 - `index.html` - the full single-page site (hero, features, gallery, about, events, FAQ)
 - `404.html` - branded not-found page
@@ -18,6 +18,12 @@ Static HTML with a Tailwind CSS build step. Alpine.js loads from CDN. Hosted on 
 - `sitemap.xml`, `robots.txt`
 
 ## Events admin
+
+> Status: **dormant in the current static-only deploy.** The site ships as a
+> static-assets Worker, so the `functions/` API does not run yet. The home page
+> events come from the built-in fallback in `index.html`. To turn the admin on,
+> add a `main` Worker entry that routes `/api/*` and serves assets, uncomment the
+> KV binding in `wrangler.toml`, and set the env vars below.
 
 Events on the home page are managed at **`/admin`** and stored in Cloudflare KV. The
 public page reads them from `GET /api/events`, with a built-in fallback so it still
@@ -65,7 +71,14 @@ The compiled `assets/styles.css` is committed so the site works without a local 
 
 ## Deploy
 
-Connect this repo to Cloudflare Pages with **Build command: `npm run build`** and **Output directory: `.`**. Cloudflare installs dependencies, compiles the CSS, and publishes on every push to `main` (`node_modules` is excluded automatically).
+Deployed via Cloudflare Workers Builds (Git-connected), same as the other sites:
+
+- **Build command:** `npm run build` (compiles `assets/styles.css`)
+- **Deploy command:** `npx wrangler deploy`
+
+`wrangler.toml` uses `[assets] directory = "."`, so the whole repo is published as
+static assets except the paths listed in `.assetsignore` (source, config, and the
+dormant `functions/`). Every push to `main` rebuilds and redeploys.
 
 ## Local preview
 

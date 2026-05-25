@@ -1,0 +1,11 @@
+.git
+.gitignore
+.assetsignore
+node_modules
+package.json
+wrangler.toml
+tailwind.config.js
+src
+functions
+*.py
+*.md
