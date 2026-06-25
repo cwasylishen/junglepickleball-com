@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register | Jungle Pickleball, Ojochal, Costa Rica</title>
+    <meta name="description" content="Register with Jungle Pickleball in Ojochal, Costa Rica.">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <link rel="canonical" href="https://junglepickleball.com/register" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-jungle text-white">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <a href="/" class="text-2xl md:text-3xl font-bold uppercase tracking-tighter" style="font-family:'Oswald',sans-serif" aria-label="Jungle Pickleball home">
+                Jungle<span class="text-yellow-400">Pickleball</span>
+            </a>
+            <a href="/" class="text-white/80 hover:text-yellow-400 text-sm font-bold">&larr; Back to site</a>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-4xl w-full mx-auto px-4 py-10">
+        <div class="text-center mb-8">
+            <span class="text-green-700 font-bold tracking-widest uppercase text-sm">Court Reserve</span>
+            <h1 class="text-3xl md:text-4xl font-bold text-jungle mt-2" style="font-family:'Oswald',sans-serif">Register</h1>
+            <p class="text-slate-500 mt-2 max-w-xl mx-auto">Create your Jungle Pickleball account to book courts and join events.</p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm p-4 md:p-6">
+            <iframe id="form-iframe" class="form-iframe-103824" src="https://widgets.courtreserve.com/Online/Public/EmbedCode/17422/103824" style="margin:0; width:100%; border:none; overflow:hidden;" scrolling="no"></iframe>
+        </div>
+
+        <p class="text-center text-slate-400 text-xs mt-6">
+            Trouble registering? Message Roger on
+            <a href="https://wa.me/50689893111" class="text-jungle font-bold hover:underline">WhatsApp +506 8989 3111</a>.
+        </p>
+    </main>
+
+    <footer class="bg-[#0c3637] text-gray-400 text-xs uppercase tracking-widest py-6">
+        <div class="max-w-5xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <p>&copy; 2026 Jungle Pickleball.</p>
+            <div class="flex items-center gap-2">
+                <span class="text-[10px] opacity-50">Built and hosted by</span>
+                <a href="https://wizardweb.ca" target="_blank" rel="noopener" class="text-white font-bold border border-white/20 px-3 py-1 rounded hover:bg-white hover:text-black transition">wizardweb.ca</a>
+            </div>
+        </div>
+    </footer>
+
+    <script type="text/javascript">
+        var myEventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
+        var myEventListener = window[myEventMethod];
+        var myEventMessage = myEventMethod == "attachEvent" ? "onmessage" : "message";
+        myEventListener(myEventMessage, function (e) {
+            switch (e.data.action) {
+                case "setHeight": {
+                    var embedCodeId = e.data.embedCodeId;
+                    if (embedCodeId != null && embedCodeId != '') {
+                        var elements = document.getElementsByClassName('form-iframe-' + embedCodeId);
+                        for (var i = 0; i < elements.length; i++) {
+                            elements[i].style.height = (e.data.height) + "px";
+                        }
+                    } else {
+                        document.getElementById('form-iframe').height = (e.data.height) + "px";
+                    }
+                    break;
+                }
+                case "redirectAfterLogin": {
+                    var url = e.data.urlToRedirect;
+                    setTimeout(function () { window.location.href = url; }, 100);
+                    break;
+                }
+                case "scrollBottom": {
+                    if (e.data.scrollHeight) window.scrollTo(0, e.data.scrollHeight);
+                    break;
+                }
+                case "scrollTop": {
+                    window.scrollTo(0, 0);
+                    break;
+                }
+            }
+        }, false);
+    </script>
+</body>
+</html>
