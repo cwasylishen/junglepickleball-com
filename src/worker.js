@@ -548,8 +548,16 @@ export default {
       if (REDIRECTS[p] || p.startsWith("/wp-admin/")) {
         return Response.redirect(url.origin + (REDIRECTS[p] || "/"), 301);
       }
-      const notFound = await env.ASSETS.fetch(new Request(url.origin + "/404.html", request));
-      return new Response(notFound.body, { status: 404, headers: notFound.headers });
+      // Note: the assets layer serves /404.html at the clean URL /404
+      // (html_handling auto-trailing-slash), so fetch that path directly.
+      const notFound = await env.ASSETS.fetch(url.origin + "/404");
+      if (notFound.ok) {
+        return new Response(notFound.body, {
+          status: 404,
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+        });
+      }
+      return new Response("Not found", { status: 404 });
     } catch (err) {
       return json({ error: "Server error.", detail: String(err && err.message || err).slice(0, 200) }, 500);
     }
