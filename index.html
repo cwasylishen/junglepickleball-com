@@ -37,20 +37,30 @@
       function eventsSection() {
         return {
           lightbox: "",
-          events: [
-            { id: "gauntlet-throw-down", title: "The Gauntlet Throw Down", when: "Sunday, July 12, 2026", time: "Practice 8:00 AM | Games 9:00 AM", description: "A memorial tournament in honor of Cecile Argy. Intermediate and Advanced Mixed Doubles, with a Gauntlet Throw Down medal for every player. All proceeds support the Ventanas Beach Red Cross Lifeguards in acquiring new equipment in Cecile's name. Non-members $35, Members $25. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "REGISTER NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20The%20Gauntlet%20Throw%20Down", images: ["assets/events/gauntlet-throw-down.jpg"] },
+          all: [
+            { id: "gauntlet-throw-down", title: "The Gauntlet Throw Down", when: "Sunday, July 12, 2026", date: "2026-07-12", time: "Practice 8:00 AM | Games 9:00 AM", description: "A memorial tournament in honor of Cecile Argy. Intermediate and Advanced Mixed Doubles, with a Gauntlet Throw Down medal for every player. All proceeds support the Ventanas Beach Red Cross Lifeguards in acquiring new equipment in Cecile's name. Non-members $35, Members $25. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "REGISTER NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20The%20Gauntlet%20Throw%20Down", images: ["assets/events/gauntlet-throw-down.jpg"] },
+            { id: "marlapalooza-2026", title: "Marlapalooza 2026", when: "Tuesday, July 28, 2026", date: "2026-07-28", time: "11:00 AM to 3:00 PM", description: "Pickleball, cornhole, great friends, and lots of fun. Bring your favorite appetizer to share and your own drinks. Hotdogs and beverages available for purchase. Please no gifts. Instead consider donating to Shauna's animal rescue efforts. Puppies will be on site to snuggle with, looking for their forever family. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20Marlapalooza%202026", images: ["assets/events/marlapalooza-2026.jpg"] },
             { id: "open-play", title: "Open Play", when: "Tuesdays & Thursdays", time: "10:00 AM Start", description: "Our most popular session. All skill levels welcome, so just rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "wed-open-play", title: "Open Play", when: "Wednesdays", time: "8:30 AM Start", description: "Mid-week open play for all levels. Rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "womens-open", title: "Women's Open", when: "Fridays", time: "8:30 AM Start", description: "A supportive and competitive session dedicated to our women players.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "sunday-swish", title: "The Sunday Swish", when: "Sunday Mornings", time: "8:30 AM Start", description: "Our top social mixer. A rotating-partners format with nine games guaranteed.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "alternating-opens", title: "Alternating Opens", when: "Mon & Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
           ],
+          get events() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return this.all.filter(ev => {
+              if (!ev.date) return true;
+              const p = ev.date.split("-").map(Number);
+              return new Date(p[0], p[1] - 1, p[2]) >= today;
+            });
+          },
           async load() {
             try {
               const r = await fetch("/api/events");
               if (r.ok) {
                 const d = await r.json();
-                if (d && Array.isArray(d.events) && d.events.length) this.events = d.events;
+                if (d && Array.isArray(d.events) && d.events.length) this.all = d.events;
               }
             } catch (e) { /* keep fallback */ }
           },
@@ -103,13 +113,13 @@
     {
       "@context": "https://schema.org",
       "@type": "Event",
-      "name": "The Gauntlet Throw Down (in memory of Cecile Argy)",
-      "description": "A memorial pickleball tournament at Jungle Pickleball in Ojochal, Costa Rica honoring Cecile Argy. Intermediate and Advanced Mixed Doubles, with a Gauntlet Throw Down medal for every player. All proceeds support the Ventanas Beach Red Cross Lifeguards in acquiring new equipment in Cecile Argy's name.",
-      "startDate": "2026-07-12T09:00:00-06:00",
-      "endDate": "2026-07-12T16:00:00-06:00",
+      "name": "Marlapalooza 2026",
+      "description": "A day of pickleball, cornhole, food, and puppies at Jungle Pickleball in Ojochal, Costa Rica. Bring an appetizer to share and your own drinks; hotdogs and beverages available for purchase. In lieu of gifts, guests are asked to consider donating to Shauna's animal rescue efforts. Puppies on site will be looking for their forever homes.",
+      "startDate": "2026-07-28T11:00:00-06:00",
+      "endDate": "2026-07-28T15:00:00-06:00",
       "eventStatus": "https://schema.org/EventScheduled",
       "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
-      "image": "https://junglepickleball.com/assets/events/gauntlet-throw-down.jpg",
+      "image": "https://junglepickleball.com/assets/events/marlapalooza-2026.jpg",
       "url": "https://junglepickleball.com/#events",
       "location": {
         "@type": "Place",
@@ -117,11 +127,7 @@
         "address": { "@type": "PostalAddress", "streetAddress": "Calle Tucan", "addressLocality": "Ojochal", "addressRegion": "Puntarenas", "addressCountry": "CR" },
         "geo": { "@type": "GeoCoordinates", "latitude": 9.0841707, "longitude": -83.6431412 }
       },
-      "organizer": { "@type": "Organization", "name": "Jungle Pickleball", "url": "https://junglepickleball.com/" },
-      "offers": [
-        { "@type": "Offer", "name": "Member", "price": "25", "priceCurrency": "USD", "availability": "https://schema.org/LimitedAvailability", "url": "https://junglepickleball.com/#events" },
-        { "@type": "Offer", "name": "Non-member", "price": "35", "priceCurrency": "USD", "availability": "https://schema.org/LimitedAvailability", "url": "https://junglepickleball.com/#events" }
-      ]
+      "organizer": { "@type": "Organization", "name": "Jungle Pickleball", "url": "https://junglepickleball.com/" }
     }
     </script>
     <script type="application/ld+json">
@@ -298,6 +304,34 @@
                      loading="lazy"
                      class="relative rounded-xl shadow-2xl w-full h-80 object-cover border border-white/20"
                      onerror="this.style.display='none'">
+            </div>
+        </div>
+    </section>
+
+    <section id="massage" class="py-16 bg-slate-50 border-y border-slate-200">
+        <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-12 items-center">
+            <div class="relative order-2 md:order-1">
+                <img src="assets/services/massage-samy.jpg"
+                     alt="Massage therapy with Samy at Jungle Pickleball"
+                     loading="lazy"
+                     class="rounded-2xl shadow-xl w-full h-80 md:h-96 object-cover"
+                     onerror="this.parentElement.style.display='none'">
+            </div>
+            <div class="order-1 md:order-2">
+                <span class="text-yellow-600 font-bold tracking-widest uppercase text-sm">Now On Site</span>
+                <h2 class="text-3xl md:text-4xl font-bold text-jungle mt-2 uppercase font-heading">Massage Therapy by Samy</h2>
+                <p class="text-slate-600 text-lg leading-relaxed mt-4 mb-6">
+                    Feeling tired or stressed? Samy's on-site massage therapy helps you relax and release muscle and soft tissue tension so you recover between sessions and play refreshed.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <a href="https://wa.me/50689893111?text=I%20want%20to%20book%20a%20massage%20with%20Samy" class="inline-flex items-center justify-center gap-2 bg-jungle text-white font-bold px-6 py-3 rounded hover:bg-[#0c3637] transition">
+                        Book with Samy
+                        <span aria-hidden="true">&rarr;</span>
+                    </a>
+                    <a href="tel:+50689893111" class="inline-flex items-center justify-center gap-2 border-2 border-jungle text-jungle font-bold px-6 py-3 rounded hover:bg-jungle hover:text-white transition">
+                        +506 8989 3111
+                    </a>
+                </div>
             </div>
         </div>
     </section>
@@ -623,5 +657,8 @@
         <span class="font-bold hidden group-hover:block transition-all duration-300">Chat with Roger</span>
     </a>
 
+<script>(function(){var S="junglepickleball";function vid(){try{var k="wzv",x=localStorage.getItem(k);if(!x){x=Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(k,x)}return x}catch(e){return""}}
+function send(t){try{var r=document.referrer;try{if(r&&new URL(r).hostname===location.hostname)r=""}catch(e){}navigator.sendBeacon("https://app.wizardweb.ca/api/ingest",JSON.stringify({site_id:S,type:t,path:location.pathname,referrer:r,visitor:vid()}))}catch(e){}}
+send("pageview");document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"],a[href*="api.whatsapp.com"],a[href*="whatsapp.com/send"]');if(a)send("whatsapp");},true);})();</script>
 </body>
 </html>

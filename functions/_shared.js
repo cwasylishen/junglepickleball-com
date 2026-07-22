@@ -145,6 +145,9 @@ export function normalizeEvent(input, existing = {}) {
     images: Array.isArray(input.images)
       ? input.images.filter((x) => typeof x === "string" && x.trim()).slice(0, 8)
       : existing.images || [],
+    date: typeof input.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.date)
+      ? input.date
+      : existing.date || "",
     order: Number.isFinite(+input.order) ? +input.order : existing.order ?? 100,
     updatedAt: new Date().toISOString(),
   };
@@ -157,5 +160,6 @@ export const DEFAULT_EVENTS = [
   { id: "sunday-swish", title: "The Sunday Swish", when: "Sunday Mornings", time: "8:30 AM Start", description: "Our top social mixer. A rotating-partners format with nine games guaranteed.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 30, status: "active" },
   { id: "wed-open-play", title: "Open Play", when: "Wednesdays", time: "8:30 AM Start", description: "Mid-week open play for all levels. Rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 15, status: "active" },
   { id: "alternating-opens", title: "Alternating Opens", when: "Mon & Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 40, status: "active" },
-  { id: "gauntlet-throw-down", title: "The Gauntlet Throw Down", when: "Sunday, July 12, 2026", time: "Practice 8:00 AM | Games 9:00 AM", description: "A memorial tournament in honor of Cecile Argy. Intermediate and Advanced Mixed Doubles, with a Gauntlet Throw Down medal for every player. All proceeds support the Ventanas Beach Red Cross Lifeguards in acquiring new equipment in Cecile's name. Non-members $35, Members $25. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "REGISTER NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20The%20Gauntlet%20Throw%20Down", order: 5, status: "active", images: ["assets/events/gauntlet-throw-down.jpg"] },
+  { id: "gauntlet-throw-down", title: "The Gauntlet Throw Down", when: "Sunday, July 12, 2026", date: "2026-07-12", time: "Practice 8:00 AM | Games 9:00 AM", description: "A memorial tournament in honor of Cecile Argy. Intermediate and Advanced Mixed Doubles, with a Gauntlet Throw Down medal for every player. All proceeds support the Ventanas Beach Red Cross Lifeguards in acquiring new equipment in Cecile's name. Non-members $35, Members $25. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "REGISTER NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20The%20Gauntlet%20Throw%20Down", order: 5, status: "active", images: ["assets/events/gauntlet-throw-down.jpg"] },
+  { id: "marlapalooza-2026", title: "Marlapalooza 2026", when: "Tuesday, July 28, 2026", date: "2026-07-28", time: "11:00 AM to 3:00 PM", description: "Pickleball, cornhole, great friends, and lots of fun. Bring your favorite appetizer to share and your own drinks. Hotdogs and beverages available for purchase. Please no gifts. Instead consider donating to Shauna's animal rescue efforts. Puppies will be on site to snuggle with, looking for their forever family. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20Marlapalooza%202026", order: 6, status: "active", images: ["assets/events/marlapalooza-2026.jpg"] },
 ];
