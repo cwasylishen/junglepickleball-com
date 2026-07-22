@@ -1,40 +1,85 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Events Admin | Jungle Pickleball</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Club Admin | Jungle Pickleball</title>
   <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#0f393b" />
+  <link rel="manifest" href="/admin/manifest.webmanifest" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="/admin/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/assets/styles.css" />
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet" />
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+  </style>
   <script>
-    function admin() {
+    const OPEN_MIN = 7 * 60;          // 7:00 AM
+    const CLOSE_MIN = 19 * 60 + 30;   // 7:30 PM
+    const SLOT_MIN = 30;
+    const SLOT_PX = 36;               // pixels per 30 minutes on the agenda
+
+    function toMin(t) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+    function toHHMM(min) { return String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0"); }
+    function fmt12(t) {
+      let [h, m] = t.split(":").map(Number);
+      const ap = h >= 12 ? "p" : "a";
+      h = h % 12 || 12;
+      return h + (m ? ":" + String(m).padStart(2, "0") : "") + ap;
+    }
+    function todayStr() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    function niceDate(ds) {
+      const [y, m, d] = ds.split("-").map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    }
+
+    function app() {
       return {
-        view: "loading",
-        username: "", password: "", turnstileToken: "", siteKey: "",
-        loginError: "", loggingIn: false, widgetId: null,
-        events: [], loadError: "",
-        editing: null, saving: false, formError: "",
+        view: "loading", tab: "today",
+        username: "", password: "", turnstileToken: "", siteKey: "", widgetId: null,
+        loginError: "", loggingIn: false,
+        dbMissing: false, toast: "",
+
+        // today / agenda
+        date: todayStr(),
+        bookings: [], pastDue: [], memberCount: 0, stats7: null,
+        slots: [], courts: [1, 2, 3, 4],
+        bkModal: false, bkSaving: false, bkError: "", bk: null,
+        detail: null,
+
+        // members
+        members: [], memberSearch: "", mModal: false, mSaving: false, mError: "", m: null,
+        payAmount: "75", payNote: "", payments: [], paySaving: false,
+
+        // events
+        events: [], evModal: false, evSaving: false, evError: "", ev: null,
+
+        // stats
+        statDays: 7, stat: null, statLoading: false,
 
         async init() {
+          const s = [];
+          for (let t = OPEN_MIN; t < CLOSE_MIN; t += SLOT_MIN) s.push(toHHMM(t));
+          this.slots = s;
+          try { const cfg = await (await fetch("/api/config")).json(); this.siteKey = cfg.turnstileSiteKey || ""; } catch {}
           try {
-            const cfg = await (await fetch("/api/config")).json();
-            this.siteKey = cfg.turnstileSiteKey || "";
-          } catch (e) { this.siteKey = ""; }
-          try {
-            const s = await (await fetch("/api/session")).json();
-            if (s.authed) { this.view = "manage"; this.loadEvents(); return; }
-          } catch (e) {}
+            const r = await (await fetch("/api/session")).json();
+            if (r.authed) { this.view = "app"; this.loadToday(); return; }
+          } catch {}
           this.showLogin();
         },
         showLogin() { this.view = "login"; this.$nextTick(() => this.renderTurnstile()); },
         renderTurnstile() {
-          if (!this.siteKey) return; // no key configured yet
+          if (!this.siteKey) return;
           const tryRender = () => {
             const el = document.getElementById("ts-widget");
             if (window.turnstile && el) {
@@ -49,12 +94,6 @@
           };
           tryRender();
         },
-        resetTurnstile() {
-          this.turnstileToken = "";
-          if (window.turnstile && this.widgetId !== null) window.turnstile.reset(this.widgetId);
-        },
-        unauth() { this.events = []; this.showLogin(); },
-
         async login() {
           this.loginError = ""; this.loggingIn = true;
           try {
@@ -63,74 +102,187 @@
               body: JSON.stringify({ username: this.username, password: this.password, turnstileToken: this.turnstileToken }),
             });
             const d = await r.json().catch(() => ({}));
-            if (!r.ok) { this.loginError = d.error || "Login failed."; this.resetTurnstile(); return; }
-            this.password = ""; this.view = "manage"; this.loadEvents();
-          } catch (e) { this.loginError = "Network error. Please try again."; this.resetTurnstile(); }
+            if (!r.ok) { this.loginError = d.error || "Login failed."; return; }
+            this.password = ""; this.view = "app"; this.loadToday();
+          } catch { this.loginError = "Network error. Please try again."; }
           finally { this.loggingIn = false; }
         },
         async logout() {
-          try { await fetch("/api/logout", { method: "POST" }); } catch (e) {}
-          this.username = ""; this.password = ""; this.unauth();
+          try { await fetch("/api/logout", { method: "POST" }); } catch {}
+          this.view = "login"; this.username = ""; this.password = "";
+          this.$nextTick(() => this.renderTurnstile());
         },
+        async api(path, opts) {
+          const r = await fetch(path, opts);
+          if (r.status === 401) { this.showLogin(); throw new Error("unauthenticated"); }
+          const d = await r.json().catch(() => ({}));
+          if (r.status === 503) { this.dbMissing = true; throw new Error(d.error || "Service unavailable"); }
+          if (!r.ok) throw new Error(d.error || "Request failed");
+          this.dbMissing = false;
+          return d;
+        },
+        flash(msg) { this.toast = msg; setTimeout(() => { if (this.toast === msg) this.toast = ""; }, 2500); },
+        go(tab) {
+          this.tab = tab;
+          if (tab === "today") this.loadToday();
+          if (tab === "members") this.loadMembers();
+          if (tab === "events") this.loadEvents();
+          if (tab === "stats") this.loadStats();
+        },
+
+        // ----- today / agenda -----
+        niceDate, fmt12,
+        shiftDate(n) {
+          const [y, m, d] = this.date.split("-").map(Number);
+          const nd = new Date(y, m - 1, d + n);
+          this.date = nd.getFullYear() + "-" + String(nd.getMonth() + 1).padStart(2, "0") + "-" + String(nd.getDate()).padStart(2, "0");
+          this.loadToday();
+        },
+        async loadToday() {
+          try {
+            const d = await this.api("/api/admin/summary?date=" + this.date);
+            this.bookings = d.bookings; this.pastDue = d.pastDue;
+            this.memberCount = d.memberCount; this.stats7 = d.stats7;
+          } catch (e) { if (!this.dbMissing) this.flash(e.message); }
+        },
+        courtBookings(c) { return this.bookings.filter(b => b.court === c); },
+        blockStyle(b) {
+          const top = (toMin(b.start) - OPEN_MIN) / SLOT_MIN * SLOT_PX;
+          const h = (toMin(b.end) - toMin(b.start)) / SLOT_MIN * SLOT_PX;
+          return "top:" + top + "px;height:" + (h - 2) + "px";
+        },
+        slotFree(c, t) {
+          const s = toMin(t), e = s + SLOT_MIN;
+          return !this.bookings.some(b => b.court === c && toMin(b.start) < e && toMin(b.end) > s);
+        },
+        gridH() { return (CLOSE_MIN - OPEN_MIN) / SLOT_MIN * SLOT_PX; },
+        newBooking(court, start) {
+          this.bkError = "";
+          this.bk = { date: this.date, court: court || 1, start: start || "08:00", duration: 90, name: "", member_id: "", source: "whatsapp", notes: "" };
+          this.bkModal = true;
+        },
+        pickMember() {
+          const m = this.members.find(x => x.id === +this.bk.member_id);
+          if (m) { this.bk.name = m.name; this.bk.source = "member"; }
+        },
+        async saveBooking() {
+          this.bkError = ""; this.bkSaving = true;
+          try {
+            const end = toHHMM(Math.min(toMin(this.bk.start) + +this.bk.duration, CLOSE_MIN));
+            await this.api("/api/admin/bookings", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...this.bk, end, member_id: this.bk.member_id || null }),
+            });
+            this.bkModal = false;
+            this.flash("Booked");
+            this.loadToday();
+          } catch (e) { this.bkError = e.message; }
+          finally { this.bkSaving = false; }
+        },
+        async cancelBooking(b) {
+          if (!confirm("Cancel " + b.name + "'s booking on court " + b.court + "?")) return;
+          try {
+            await this.api("/api/admin/bookings/" + b.id, { method: "DELETE" });
+            this.detail = null; this.flash("Canceled"); this.loadToday();
+          } catch (e) { this.flash(e.message); }
+        },
+
+        // ----- members -----
+        get filteredMembers() {
+          const q = this.memberSearch.trim().toLowerCase();
+          if (!q) return this.members;
+          return this.members.filter(m => (m.name + " " + (m.email || "") + " " + (m.phone || "")).toLowerCase().includes(q));
+        },
+        async loadMembers() {
+          try { this.members = (await this.api("/api/admin/members")).members; }
+          catch (e) { if (!this.dbMissing) this.flash(e.message); }
+        },
+        newMember() { this.mError = ""; this.payments = []; this.m = { id: null, name: "", email: "", phone: "", plan: "monthly", status: "active", pay_method: "cash", notes: "" }; this.mModal = true; },
+        async editMember(m) {
+          this.mError = ""; this.m = { ...m }; this.mModal = true; this.payments = [];
+          try { this.payments = (await this.api("/api/admin/members/" + m.id + "/payments")).payments; } catch {}
+        },
+        async saveMember() {
+          this.mError = ""; this.mSaving = true;
+          try {
+            if (this.m.id) {
+              await this.api("/api/admin/members/" + this.m.id, {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this.m),
+              });
+            } else {
+              await this.api("/api/admin/members", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this.m),
+              });
+            }
+            this.mModal = false; this.flash("Saved"); this.loadMembers();
+          } catch (e) { this.mError = e.message; }
+          finally { this.mSaving = false; }
+        },
+        async recordPayment() {
+          this.paySaving = true;
+          try {
+            await this.api("/api/admin/members/" + this.m.id + "/payments", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ amount: this.payAmount, note: this.payNote }),
+            });
+            this.flash("Payment recorded");
+            this.m.status = "active"; this.payNote = "";
+            this.payments = (await this.api("/api/admin/members/" + this.m.id + "/payments")).payments;
+            this.loadMembers();
+          } catch (e) { this.mError = e.message; }
+          finally { this.paySaving = false; }
+        },
+
+        // ----- events -----
         async loadEvents() {
-          this.loadError = "";
-          try {
-            const r = await fetch("/api/admin/events");
-            if (r.status === 401) return this.unauth();
-            const d = await r.json();
-            this.events = d.events || [];
-          } catch (e) { this.loadError = "Could not load events."; }
+          try { this.events = (await this.api("/api/admin/events")).events; }
+          catch (e) { this.flash(e.message); }
         },
-        blank() { return { id: null, title: "", when: "", time: "", description: "", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: null, status: "active" }; },
-        addNew() { this.formError = ""; this.editing = this.blank(); },
-        edit(ev) { this.formError = ""; this.editing = JSON.parse(JSON.stringify(ev)); },
-        cancelEdit() { this.editing = null; this.formError = ""; },
-        async save() {
-          if (!this.editing.title || !this.editing.title.trim()) { this.formError = "Title is required."; return; }
-          this.saving = true; this.formError = "";
+        newEvent() { this.evError = ""; this.ev = { id: null, title: "", when: "", date: "", time: "", description: "", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", status: "active", order: null }; this.evModal = true; },
+        editEvent(e) { this.evError = ""; this.ev = JSON.parse(JSON.stringify(e)); this.evModal = true; },
+        async saveEvent() {
+          if (!this.ev.title.trim()) { this.evError = "Title is required."; return; }
+          this.evSaving = true;
           try {
-            const isNew = !this.editing.id;
-            const url = isNew ? "/api/admin/events" : "/api/admin/events/" + this.editing.id;
-            const r = await fetch(url, {
-              method: isNew ? "POST" : "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(this.editing),
+            const isNew = !this.ev.id;
+            await this.api(isNew ? "/api/admin/events" : "/api/admin/events/" + this.ev.id, {
+              method: isNew ? "POST" : "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this.ev),
             });
-            if (r.status === 401) return this.unauth();
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok) { this.formError = d.error || "Save failed."; return; }
-            this.editing = null; await this.loadEvents();
-          } catch (e) { this.formError = "Network error."; }
-          finally { this.saving = false; }
+            this.evModal = false; this.flash("Saved"); this.loadEvents();
+          } catch (e) { this.evError = e.message; }
+          finally { this.evSaving = false; }
         },
-        async toggleArchive(ev) {
+        async toggleArchive(e) {
           try {
-            const r = await fetch("/api/admin/events/" + ev.id, {
+            await this.api("/api/admin/events/" + e.id, {
               method: "PUT", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ ...ev, status: ev.status === "archived" ? "active" : "archived" }),
+              body: JSON.stringify({ ...e, status: e.status === "archived" ? "active" : "archived" }),
             });
-            if (r.status === 401) return this.unauth();
-            await this.loadEvents();
-          } catch (e) { this.loadError = "Update failed."; }
+            this.loadEvents();
+          } catch (err) { this.flash(err.message); }
         },
-        async remove(ev) {
-          if (!confirm('Permanently delete "' + ev.title + '"? This cannot be undone.')) return;
-          try {
-            const r = await fetch("/api/admin/events/" + ev.id, { method: "DELETE" });
-            if (r.status === 401) return this.unauth();
-            await this.loadEvents();
-          } catch (e) { this.loadError = "Delete failed."; }
+        async removeEvent(e) {
+          if (!confirm('Permanently delete "' + e.title + '"?')) return;
+          try { await this.api("/api/admin/events/" + e.id, { method: "DELETE" }); this.loadEvents(); }
+          catch (err) { this.flash(err.message); }
         },
+
+        // ----- stats -----
+        async loadStats() {
+          this.statLoading = true;
+          try { this.stat = await this.api("/api/admin/stats?days=" + this.statDays); }
+          catch (e) { this.stat = null; if (!this.dbMissing) this.flash(e.message); }
+          finally { this.statLoading = false; }
+        },
+        setStatDays(n) { this.statDays = n; this.loadStats(); },
       };
     }
   </script>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen" x-data="admin()" x-init="init()" x-cloak>
+<body class="bg-slate-100 text-slate-800 min-h-screen" x-data="app()" x-init="init()" x-cloak>
 
   <!-- Loading -->
-  <div x-show="view === 'loading'" class="min-h-screen flex items-center justify-center text-slate-400">
-    Loading...
-  </div>
+  <div x-show="view === 'loading'" class="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>
 
   <!-- Login -->
   <div x-show="view === 'login'" class="min-h-screen flex items-center justify-center px-4">
@@ -139,7 +291,7 @@
         <div class="text-2xl font-bold uppercase tracking-tighter" style="font-family:'Oswald',sans-serif">
           Jungle<span class="text-yellow-500">Pickleball</span>
         </div>
-        <p class="text-sm text-slate-400 mt-1">Events Admin</p>
+        <p class="text-sm text-slate-400 mt-1">Club Admin</p>
       </div>
       <form @submit.prevent="login()" class="space-y-4">
         <div>
@@ -153,136 +305,446 @@
             class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
         </div>
         <div id="ts-widget" class="flex justify-center"></div>
-        <p x-show="!siteKey" class="text-xs text-amber-600 text-center">Turnstile is not configured yet. Set TURNSTILE_SITE_KEY to enable the bot check.</p>
         <p x-show="loginError" x-text="loginError" class="text-sm text-red-600 text-center"></p>
         <button type="submit" :disabled="loggingIn"
           class="w-full bg-jungle text-white font-bold uppercase tracking-wide py-2.5 rounded-lg hover:bg-[#0c3637] transition disabled:opacity-50">
-          <span x-show="!loggingIn">Sign in</span>
-          <span x-show="loggingIn">Signing in...</span>
+          <span x-show="!loggingIn">Sign in</span><span x-show="loggingIn">Signing in...</span>
         </button>
       </form>
     </div>
   </div>
 
-  <!-- Manage -->
-  <div x-show="view === 'manage'">
-    <header class="bg-jungle text-white">
-      <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div class="font-bold uppercase tracking-tighter text-lg" style="font-family:'Oswald',sans-serif">
-          Jungle<span class="text-yellow-400">Pickleball</span> <span class="text-white/50 font-normal text-sm">Events</span>
+  <!-- App -->
+  <div x-show="view === 'app'" class="pb-20">
+    <header class="bg-jungle text-white sticky top-0 z-40">
+      <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="font-bold uppercase tracking-tighter" style="font-family:'Oswald',sans-serif">
+          Jungle<span class="text-yellow-400">Pickleball</span> <span class="text-white/50 font-normal text-xs">Admin</span>
         </div>
-        <div class="flex items-center gap-4 text-sm">
-          <a href="/" target="_blank" class="text-white/80 hover:text-yellow-400">View site</a>
-          <button @click="logout()" class="text-white/80 hover:text-yellow-400">Log out</button>
-        </div>
+        <button @click="logout()" class="text-white/70 hover:text-yellow-400 text-sm font-bold">Log out</button>
       </div>
     </header>
 
-    <main class="max-w-5xl mx-auto px-4 py-8">
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-xl font-bold" style="font-family:'Oswald',sans-serif">Manage Events</h1>
-        <button @click="addNew()" class="bg-yellow-400 text-black font-bold px-4 py-2 rounded-lg hover:bg-yellow-300 transition">+ Add event</button>
+    <div x-show="dbMissing" class="max-w-3xl mx-auto px-4 mt-4">
+      <div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl p-4 text-sm">
+        The club database is not provisioned yet. Events still work; bookings, members, and payments switch on once the database is connected.
       </div>
+    </div>
 
-      <p x-show="loadError" x-text="loadError" class="text-sm text-red-600 mb-4"></p>
+    <main class="max-w-3xl mx-auto px-4 py-4">
 
-      <div x-show="events.length === 0 && !loadError" class="text-slate-400 text-center py-12">No events yet. Add your first one.</div>
+      <!-- TODAY -->
+      <section x-show="tab === 'today'">
+        <div class="flex items-center justify-between mb-3">
+          <button @click="shiftDate(-1)" class="w-10 h-10 rounded-lg bg-white shadow-sm font-bold text-jungle">&lsaquo;</button>
+          <div class="text-center">
+            <div class="font-bold text-lg" style="font-family:'Oswald',sans-serif" x-text="niceDate(date)"></div>
+            <button x-show="date !== todayStr()" @click="date = todayStr(); loadToday()"
+              class="text-xs text-slate-400 underline" x-cloak>jump to today</button>
+          </div>
+          <button @click="shiftDate(1)" class="w-10 h-10 rounded-lg bg-white shadow-sm font-bold text-jungle">&rsaquo;</button>
+        </div>
 
-      <div class="space-y-3">
-        <template x-for="ev in events" :key="ev.id">
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3"
-            :class="ev.status === 'archived' ? 'opacity-60' : ''">
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-bold" x-text="ev.title"></span>
-                <span x-show="ev.featured" class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-bold">Featured</span>
-                <span class="text-xs px-2 py-0.5 rounded-full"
-                  :class="ev.category === 'special' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'"
-                  x-text="ev.category"></span>
-                <span x-show="ev.status === 'archived'" class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold">Archived</span>
-              </div>
-              <div class="text-sm text-slate-500 mt-1">
-                <span x-text="ev.when"></span><span x-show="ev.time"> &middot; </span><span x-text="ev.time"></span>
-              </div>
-              <p class="text-sm text-slate-400 mt-1 truncate" x-text="ev.description"></p>
+        <!-- alert + stat chips -->
+        <div class="flex gap-2 mb-4 overflow-x-auto">
+          <div class="shrink-0 bg-white rounded-xl shadow-sm px-4 py-2 text-center">
+            <div class="text-lg font-bold text-jungle" x-text="bookings.length"></div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Bookings</div>
+          </div>
+          <div class="shrink-0 bg-white rounded-xl shadow-sm px-4 py-2 text-center">
+            <div class="text-lg font-bold text-jungle" x-text="memberCount"></div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Members</div>
+          </div>
+          <div class="shrink-0 rounded-xl shadow-sm px-4 py-2 text-center" :class="pastDue.length ? 'bg-red-600 text-white' : 'bg-white'">
+            <div class="text-lg font-bold" :class="pastDue.length ? '' : 'text-jungle'" x-text="pastDue.length"></div>
+            <div class="text-[10px] uppercase tracking-wide font-bold" :class="pastDue.length ? 'text-red-100' : 'text-slate-400'">Past due</div>
+          </div>
+          <div class="shrink-0 bg-white rounded-xl shadow-sm px-4 py-2 text-center" x-show="stats7">
+            <div class="text-lg font-bold text-jungle" x-text="stats7 && (stats7.visitors ?? 0)"></div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Visitors 7d</div>
+          </div>
+          <div class="shrink-0 bg-white rounded-xl shadow-sm px-4 py-2 text-center" x-show="stats7">
+            <div class="text-lg font-bold text-jungle" x-text="stats7 && (stats7.whatsapp ?? 0)"></div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">WA clicks 7d</div>
+          </div>
+        </div>
+
+        <div x-show="pastDue.length" class="bg-white rounded-xl shadow-sm p-4 mb-4">
+          <div class="text-xs font-bold uppercase tracking-wide text-red-600 mb-2">Missed payments</div>
+          <template x-for="p in pastDue" :key="p.id">
+            <div class="flex items-center justify-between py-1 text-sm">
+              <span class="font-bold" x-text="p.name"></span>
+              <a :href="'https://wa.me/' + String(p.phone||'').replace(/\D/g,'')" x-show="p.phone" class="text-green-700 font-bold">WhatsApp</a>
             </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <button @click="edit(ev)" class="text-sm font-bold text-jungle hover:underline">Edit</button>
-              <button @click="toggleArchive(ev)" class="text-sm font-bold text-slate-500 hover:underline"
-                x-text="ev.status === 'archived' ? 'Restore' : 'Archive'"></button>
-              <button @click="remove(ev)" class="text-sm font-bold text-red-500 hover:underline">Delete</button>
+          </template>
+        </div>
+
+        <!-- agenda -->
+        <div class="bg-white rounded-xl shadow-sm p-3 overflow-x-auto">
+          <div class="flex" :style="'height:' + (gridH() + 28) + 'px'">
+            <!-- time labels -->
+            <div class="w-12 shrink-0 relative mt-7">
+              <template x-for="(t, i) in slots" :key="t">
+                <div class="absolute left-0 text-[10px] text-slate-400 -translate-y-1/2" :style="'top:' + (i * 36) + 'px'"
+                  x-show="t.endsWith('00')" x-text="fmt12(t)"></div>
+              </template>
+            </div>
+            <!-- courts -->
+            <template x-for="c in courts" :key="c">
+              <div class="flex-1 min-w-[72px] px-0.5">
+                <div class="text-center text-xs font-bold text-jungle uppercase h-7 leading-7" x-text="'Court ' + c"></div>
+                <div class="relative bg-slate-50 rounded-lg" :style="'height:' + gridH() + 'px'">
+                  <template x-for="(t, i) in slots" :key="t">
+                    <button type="button" @click="slotFree(c, t) && newBooking(c, t)"
+                      class="absolute left-0 right-0 border-t border-slate-100" :style="'top:' + (i * 36) + 'px;height:36px'"
+                      :class="slotFree(c, t) ? 'hover:bg-yellow-50' : 'pointer-events-none'"
+                      :aria-label="'Book court ' + c + ' at ' + t"></button>
+                  </template>
+                  <template x-for="b in courtBookings(c)" :key="b.id">
+                    <button type="button" @click="detail = b" :style="blockStyle(b)"
+                      class="absolute left-0.5 right-0.5 rounded-md text-left px-1.5 py-1 overflow-hidden z-10 shadow-sm"
+                      :class="b.source === 'block' ? 'bg-slate-300 text-slate-700' : (b.source === 'member' ? 'bg-jungle text-white' : 'bg-yellow-400 text-black')">
+                      <div class="text-[11px] font-bold leading-tight truncate" x-text="b.name"></div>
+                      <div class="text-[9px] opacity-80" x-text="fmt12(b.start) + ' - ' + fmt12(b.end)"></div>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <button @click="newBooking()" class="fixed bottom-24 right-5 z-40 bg-yellow-400 text-black font-bold rounded-full w-14 h-14 shadow-2xl text-3xl leading-none" aria-label="Add booking">+</button>
+      </section>
+
+      <!-- MEMBERS -->
+      <section x-show="tab === 'members'">
+        <div class="flex gap-2 mb-4">
+          <input x-model="memberSearch" type="search" placeholder="Search members"
+            class="flex-1 border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+          <button @click="newMember()" class="bg-yellow-400 text-black font-bold px-4 rounded-lg">+ Add</button>
+        </div>
+        <div class="space-y-2">
+          <template x-for="m in filteredMembers" :key="m.id">
+            <button type="button" @click="editMember(m)" class="w-full bg-white rounded-xl shadow-sm p-4 flex items-center justify-between text-left">
+              <div>
+                <div class="font-bold" x-text="m.name"></div>
+                <div class="text-xs text-slate-400" x-text="(m.plan || 'monthly') + (m.phone ? ' | ' + m.phone : '')"></div>
+              </div>
+              <span class="text-xs font-bold px-2 py-1 rounded-full"
+                :class="m.status === 'active' ? 'bg-green-100 text-green-700' : (m.status === 'past_due' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-500')"
+                x-text="m.status === 'past_due' ? 'past due' : m.status"></span>
+            </button>
+          </template>
+          <p x-show="!members.length" class="text-slate-400 text-center py-10 text-sm">No members yet. Add the first one.</p>
+        </div>
+      </section>
+
+      <!-- EVENTS -->
+      <section x-show="tab === 'events'">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-bold text-lg" style="font-family:'Oswald',sans-serif">Site Events</h2>
+          <button @click="newEvent()" class="bg-yellow-400 text-black font-bold px-4 py-2 rounded-lg">+ Add</button>
+        </div>
+        <div class="space-y-2">
+          <template x-for="e in events" :key="e.id">
+            <div class="bg-white rounded-xl shadow-sm p-4" :class="e.status === 'archived' ? 'opacity-60' : ''">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold" x-text="e.title"></span>
+                <span x-show="e.featured" class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-bold">Featured</span>
+                <span x-show="e.status === 'archived'" class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold">Archived</span>
+              </div>
+              <div class="text-sm text-slate-500 mt-1" x-text="e.when + (e.time ? ' | ' + e.time : '')"></div>
+              <div class="flex gap-4 mt-2 text-sm font-bold">
+                <button @click="editEvent(e)" class="text-jungle">Edit</button>
+                <button @click="toggleArchive(e)" class="text-slate-500" x-text="e.status === 'archived' ? 'Restore' : 'Archive'"></button>
+                <button @click="removeEvent(e)" class="text-red-500">Delete</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- STATS -->
+      <section x-show="tab === 'stats'">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-bold text-lg" style="font-family:'Oswald',sans-serif">Website Stats</h2>
+          <div class="flex rounded-lg overflow-hidden border border-slate-300 text-sm font-bold">
+            <button @click="setStatDays(7)" class="px-3 py-1.5" :class="statDays === 7 ? 'bg-jungle text-white' : 'bg-white text-slate-600'">7d</button>
+            <button @click="setStatDays(30)" class="px-3 py-1.5" :class="statDays === 30 ? 'bg-jungle text-white' : 'bg-white text-slate-600'">30d</button>
+          </div>
+        </div>
+        <div x-show="statLoading" class="text-slate-400 text-sm py-6 text-center">Loading...</div>
+        <template x-if="stat">
+          <div>
+            <div class="grid grid-cols-3 gap-2 mb-4">
+              <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                <div class="text-2xl font-bold text-jungle" x-text="stat.totals.visitors ?? 0"></div>
+                <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Visitors</div>
+              </div>
+              <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                <div class="text-2xl font-bold text-jungle" x-text="stat.totals.pageviews ?? 0"></div>
+                <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Pageviews</div>
+              </div>
+              <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                <div class="text-2xl font-bold text-jungle" x-text="stat.totals.whatsapp ?? 0"></div>
+                <div class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">WA clicks</div>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm divide-y divide-slate-100">
+              <template x-for="d in stat.byDay" :key="d.day">
+                <div class="flex items-center justify-between px-4 py-2 text-sm">
+                  <span class="text-slate-500" x-text="niceDate(d.day)"></span>
+                  <span><b x-text="d.visitors"></b> <span class="text-slate-400">visitors</span>
+                    <b class="ml-2" x-text="d.whatsapp"></b> <span class="text-slate-400">WA</span></span>
+                </div>
+              </template>
+              <p x-show="!stat.byDay.length" class="text-slate-400 text-center py-6 text-sm">No traffic recorded yet.</p>
+            </div>
+          </div>
+        </template>
+      </section>
+    </main>
+
+    <!-- bottom nav -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200" style="padding-bottom: env(safe-area-inset-bottom)">
+      <div class="max-w-3xl mx-auto grid grid-cols-4 text-center text-[11px] font-bold uppercase tracking-wide">
+        <button @click="go('today')" class="py-3" :class="tab === 'today' ? 'text-jungle' : 'text-slate-400'">
+          <span class="block text-lg leading-none mb-0.5">&#128197;</span>Today</button>
+        <button @click="go('members')" class="py-3" :class="tab === 'members' ? 'text-jungle' : 'text-slate-400'">
+          <span class="block text-lg leading-none mb-0.5">&#128101;</span>Members</button>
+        <button @click="go('events')" class="py-3" :class="tab === 'events' ? 'text-jungle' : 'text-slate-400'">
+          <span class="block text-lg leading-none mb-0.5">&#127934;</span>Events</button>
+        <button @click="go('stats')" class="py-3" :class="tab === 'stats' ? 'text-jungle' : 'text-slate-400'">
+          <span class="block text-lg leading-none mb-0.5">&#128202;</span>Stats</button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- toast -->
+  <div x-show="toast" x-transition.opacity x-cloak class="fixed top-4 left-1/2 -translate-x-1/2 z-[70] bg-jungle text-white text-sm font-bold px-5 py-2 rounded-full shadow-xl" x-text="toast"></div>
+
+  <!-- booking modal -->
+  <div x-show="bkModal" x-cloak class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center" @click.self="bkModal = false">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto" @keydown.escape.window="bkModal = false">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <h3 class="font-bold" style="font-family:'Oswald',sans-serif">New booking</h3>
+        <button @click="bkModal = false" class="text-slate-400 text-2xl leading-none" aria-label="Close">&times;</button>
+      </div>
+      <div class="p-5 space-y-4" x-show="bk">
+        <template x-if="bk">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Name</label>
+              <input x-model="bk.name" type="text" placeholder="Player or group name" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Member (optional)</label>
+              <select x-model="bk.member_id" @change="pickMember()" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                <option value="">Walk-in / not a member</option>
+                <template x-for="m in members" :key="m.id"><option :value="m.id" x-text="m.name"></option></template>
+              </select>
+              <p class="text-[11px] text-slate-400 mt-1" x-show="!members.length">Open the Members tab once to load the list.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Date</label>
+                <input x-model="bk.date" type="date" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Court</label>
+                <select x-model.number="bk.court" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                  <template x-for="c in courts" :key="c"><option :value="c" x-text="'Court ' + c"></option></template>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Start</label>
+                <select x-model="bk.start" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                  <template x-for="t in slots" :key="t"><option :value="t" x-text="fmt12(t)"></option></template>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Length</label>
+                <select x-model.number="bk.duration" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                  <option :value="30">30 min</option><option :value="60">1 hour</option>
+                  <option :value="90">90 min</option><option :value="120">2 hours</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Source</label>
+              <div class="grid grid-cols-4 rounded-lg overflow-hidden border border-slate-300 text-xs font-bold text-center">
+                <button type="button" @click="bk.source='whatsapp'" class="py-2" :class="bk.source==='whatsapp' ? 'bg-jungle text-white' : 'bg-white text-slate-500'">WhatsApp</button>
+                <button type="button" @click="bk.source='cash'" class="py-2" :class="bk.source==='cash' ? 'bg-jungle text-white' : 'bg-white text-slate-500'">Cash</button>
+                <button type="button" @click="bk.source='member'" class="py-2" :class="bk.source==='member' ? 'bg-jungle text-white' : 'bg-white text-slate-500'">Member</button>
+                <button type="button" @click="bk.source='block'" class="py-2" :class="bk.source==='block' ? 'bg-jungle text-white' : 'bg-white text-slate-500'">Block</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Notes</label>
+              <input x-model="bk.notes" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+            </div>
+            <p x-show="bkError" x-text="bkError" class="text-sm text-red-600"></p>
+            <button @click="saveBooking()" :disabled="bkSaving" class="w-full bg-jungle text-white font-bold py-3 rounded-lg disabled:opacity-50">
+              <span x-show="!bkSaving">Save booking</span><span x-show="bkSaving">Saving...</span>
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- booking detail -->
+  <div x-show="detail" x-cloak class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center" @click.self="detail = null">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-sm p-5" x-show="detail" @keydown.escape.window="detail = null">
+      <template x-if="detail">
+        <div>
+          <div class="font-bold text-lg" x-text="detail.name"></div>
+          <div class="text-sm text-slate-500 mt-1">
+            <span x-text="'Court ' + detail.court"></span> |
+            <span x-text="fmt12(detail.start) + ' - ' + fmt12(detail.end)"></span> |
+            <span class="capitalize" x-text="detail.source"></span>
+          </div>
+          <p class="text-sm text-slate-500 mt-2" x-show="detail.notes" x-text="detail.notes"></p>
+          <div class="flex gap-3 mt-5">
+            <button @click="cancelBooking(detail)" class="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-lg">Cancel booking</button>
+            <button @click="detail = null" class="flex-1 border border-slate-300 font-bold py-2.5 rounded-lg text-slate-600">Close</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- member modal -->
+  <div x-show="mModal" x-cloak class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center" @click.self="mModal = false">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto" @keydown.escape.window="mModal = false">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <h3 class="font-bold" style="font-family:'Oswald',sans-serif" x-text="m && m.id ? 'Member' : 'Add member'"></h3>
+        <button @click="mModal = false" class="text-slate-400 text-2xl leading-none" aria-label="Close">&times;</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <template x-if="m">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Name</label>
+              <input x-model="m.name" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Phone</label>
+                <input x-model="m.phone" type="tel" placeholder="+506..." class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Email</label>
+                <input x-model="m.email" type="email" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Plan</label>
+                <select x-model="m.plan" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                  <option value="monthly">Monthly ($75)</option>
+                  <option value="drop-in">Drop-in</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Status</label>
+                <select x-model="m.status" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                  <option value="active">Active</option>
+                  <option value="past_due">Past due</option>
+                  <option value="canceled">Canceled</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Notes</label>
+              <input x-model="m.notes" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+            </div>
+            <p x-show="mError" x-text="mError" class="text-sm text-red-600"></p>
+            <button @click="saveMember()" :disabled="mSaving" class="w-full bg-jungle text-white font-bold py-3 rounded-lg disabled:opacity-50">
+              <span x-show="!mSaving">Save</span><span x-show="mSaving">Saving...</span>
+            </button>
+
+            <!-- cash payment -->
+            <div x-show="m.id" class="border-t border-slate-200 pt-4">
+              <div class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Record cash payment</div>
+              <div class="flex gap-2">
+                <div class="relative w-28">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                  <input x-model="payAmount" type="number" min="1" step="0.01" class="w-full border border-slate-300 rounded-lg pl-7 pr-2 py-2" />
+                </div>
+                <input x-model="payNote" type="text" placeholder="Note (optional)" class="flex-1 border border-slate-300 rounded-lg px-3 py-2" />
+              </div>
+              <button @click="recordPayment()" :disabled="paySaving" class="mt-2 w-full bg-yellow-400 text-black font-bold py-2.5 rounded-lg disabled:opacity-50">
+                <span x-show="!paySaving">Record payment</span><span x-show="paySaving">Recording...</span>
+              </button>
+              <div x-show="payments.length" class="mt-3 divide-y divide-slate-100 text-sm">
+                <template x-for="p in payments" :key="p.id">
+                  <div class="flex justify-between py-1.5">
+                    <span class="text-slate-500" x-text="(p.paid_at || '').slice(0, 10) + (p.note ? ' | ' + p.note : '')"></span>
+                    <b x-text="'$' + (p.amount_cents / 100).toFixed(2)"></b>
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </template>
       </div>
-    </main>
+    </div>
   </div>
 
-  <!-- Edit / Add modal -->
-  <div x-show="editing" x-cloak class="fixed inset-0 z-50 bg-black/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto" @click.self="cancelEdit()">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-8" x-show="editing" @keydown.escape.window="cancelEdit()">
-      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-        <h2 class="font-bold text-lg" style="font-family:'Oswald',sans-serif" x-text="editing && editing.id ? 'Edit event' : 'Add event'"></h2>
-        <button @click="cancelEdit()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none" aria-label="Close">&times;</button>
+  <!-- event modal -->
+  <div x-show="evModal" x-cloak class="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center" @click.self="evModal = false">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto" @keydown.escape.window="evModal = false">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <h3 class="font-bold" style="font-family:'Oswald',sans-serif" x-text="ev && ev.id ? 'Edit event' : 'Add event'"></h3>
+        <button @click="evModal = false" class="text-slate-400 text-2xl leading-none" aria-label="Close">&times;</button>
       </div>
-      <div class="p-6 space-y-4" x-show="editing">
-        <template x-if="editing">
+      <div class="p-5 space-y-4">
+        <template x-if="ev">
           <div class="space-y-4">
             <div>
               <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Title</label>
-              <input x-model="editing.title" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              <input x-model="ev.title" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
             </div>
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">When / Date</label>
-                <input x-model="editing.when" type="text" placeholder="e.g. Fridays or March 17, 2026" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">When (text)</label>
+                <input x-model="ev.when" type="text" placeholder="e.g. Fridays or July 28, 2026" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
               </div>
               <div>
                 <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Time</label>
-                <input x-model="editing.time" type="text" placeholder="e.g. 10:00 AM Start" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+                <input x-model="ev.time" type="text" placeholder="e.g. 8:30 AM Start" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Event date</label>
+                <input x-model="ev.date" type="date" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white" />
+                <p class="text-[11px] text-slate-400 mt-1">Auto-hides the day after. Leave empty for weekly events.</p>
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Category</label>
+                <select x-model="ev.category" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                  <option value="weekly">Weekly</option><option value="special">Special / Event</option>
+                </select>
               </div>
             </div>
             <div>
               <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Description</label>
-              <textarea x-model="editing.description" rows="3" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400"></textarea>
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Category</label>
-                <select x-model="editing.category" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400">
-                  <option value="weekly">Weekly</option>
-                  <option value="special">Special / Event</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Sort order</label>
-                <input x-model.number="editing.order" type="number" placeholder="auto" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
-              </div>
+              <textarea x-model="ev.description" rows="3" class="w-full border border-slate-300 rounded-lg px-3 py-2"></textarea>
             </div>
             <label class="flex items-center gap-2 text-sm">
-              <input x-model="editing.featured" type="checkbox" class="rounded" />
-              <span>Highlight as featured (dark card with a button)</span>
+              <input x-model="ev.featured" type="checkbox" class="rounded" />
+              <span>Featured (dark card with button)</span>
             </label>
-            <div class="grid grid-cols-2 gap-4" x-show="editing.featured">
-              <div>
-                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Button label</label>
-                <input x-model="editing.ctaLabel" type="text" placeholder="e.g. SIGN UP NOW" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
-              </div>
-              <div>
-                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Button link</label>
-                <input x-model="editing.ctaUrl" type="text" placeholder="https://wa.me/..." class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
-              </div>
+            <div class="grid grid-cols-2 gap-3" x-show="ev.featured">
+              <input x-model="ev.ctaLabel" type="text" placeholder="Button label" class="border border-slate-300 rounded-lg px-3 py-2" />
+              <input x-model="ev.ctaUrl" type="text" placeholder="Button link" class="border border-slate-300 rounded-lg px-3 py-2" />
             </div>
-            <p x-show="formError" x-text="formError" class="text-sm text-red-600"></p>
+            <p x-show="evError" x-text="evError" class="text-sm text-red-600"></p>
+            <button @click="saveEvent()" :disabled="evSaving" class="w-full bg-jungle text-white font-bold py-3 rounded-lg disabled:opacity-50">
+              <span x-show="!evSaving">Save</span><span x-show="evSaving">Saving...</span>
+            </button>
           </div>
         </template>
-      </div>
-      <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-        <button @click="cancelEdit()" class="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold">Cancel</button>
-        <button @click="save()" :disabled="saving" class="px-5 py-2 rounded-lg bg-jungle text-white font-bold hover:bg-[#0c3637] transition disabled:opacity-50">
-          <span x-show="!saving">Save</span>
-          <span x-show="saving">Saving...</span>
-        </button>
       </div>
     </div>
   </div>

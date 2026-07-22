@@ -1,14 +1,35 @@
 name = "junglepickleball-com"
 compatibility_date = "2026-01-01"
+main = "src/worker.js"
 
-# Static-assets Worker deploy, matching the other wizardweb sites (`wrangler deploy`).
+# Static site served as assets; the Worker only receives /api/* and 404s.
 [assets]
 directory = "./"
+binding = "ASSETS"
 not_found_handling = "404-page"
 
-# The events admin (functions/) is dormant in static-only mode. To turn it on later,
-# add a `main` Worker entry that routes /api/* and serves assets, then uncomment this
-# KV binding (namespace "junglepickleball-events" in the wizardweb account):
-# [[kv_namespaces]]
-# binding = "EVENTS"
-# id = "0c6dbe2eca394cc8a4ddf98147dc0332"
+# Events store (KV) + login rate limiting.
+[[kv_namespaces]]
+binding = "EVENTS"
+id = "0c6dbe2eca394cc8a4ddf98147dc0332"
+
+# wizardweb analytics network (same account) - read-only stats for the admin.
+[[d1_databases]]
+binding = "ANALYTICS"
+database_name = "wizardweb"
+database_id = "69028e1f-c781-4501-b0a8-5404801366f4"
+
+# Club database: members, bookings, payments, settings.
+# Uncomment once the D1 database exists (create "junglepickleball-db" and set its id).
+# The Worker returns a clear 503 on admin data routes until this is bound.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "junglepickleball-db"
+# database_id = "PENDING"
+
+# Required Worker secrets (Settings -> Variables and Secrets in the dashboard):
+#   ADMIN_USERNAME        - Roger's admin username (plaintext var is fine)
+#   ADMIN_PASSWORD        - secret
+#   SESSION_SECRET        - long random string, secret
+#   TURNSTILE_SITE_KEY    - optional until the Turnstile widget exists
+#   TURNSTILE_SECRET_KEY  - optional; login enforces Turnstile only when set

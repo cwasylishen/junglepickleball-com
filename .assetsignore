@@ -3,8 +3,12 @@
 .assetsignore
 node_modules
 package.json
+package-lock.json
+bun.lock
+bun.lockb
 wrangler.toml
 tailwind.config.js
+schema.sql
 src
 functions
 *.py
