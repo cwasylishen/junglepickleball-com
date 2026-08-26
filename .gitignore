@@ -4,3 +4,4 @@ Thumbs.db
 *.py
 __pycache__/
 reviews/
+.wrangler/
