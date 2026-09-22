@@ -238,7 +238,7 @@
           try { this.events = (await this.api("/api/admin/events")).events; }
           catch (e) { this.flash(e.message); }
         },
-        newEvent() { this.evError = ""; this.ev = { id: null, title: "", when: "", date: "", time: "", description: "", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", status: "active", order: null }; this.evModal = true; },
+        newEvent() { this.evError = ""; this.ev = { id: null, title: "", when: "", date: "", time: "", description: "", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", badge: "", status: "active", order: null }; this.evModal = true; },
         editEvent(e) { this.evError = ""; this.ev = JSON.parse(JSON.stringify(e)); this.evModal = true; },
         async saveEvent() {
           if (!this.ev.title.trim()) { this.evError = "Title is required."; return; }
@@ -725,6 +725,11 @@
                 <select x-model="ev.category" class="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white">
                   <option value="weekly">Weekly</option><option value="special">Special / Event</option>
                 </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Badge</label>
+                <input x-model="ev.badge" type="text" placeholder="Tournament" class="w-full border border-slate-300 rounded-lg px-3 py-2" />
+                <p class="text-[11px] text-slate-400 mt-1">Corner tag on featured cards. Leave empty for Tournament.</p>
               </div>
             </div>
             <div>
