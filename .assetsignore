@@ -1,35 +1,61 @@
-.git
-.gitignore
-.assetsignore
-node_modules
-package.json
-package-lock.json
-bun.lock
-bun.lockb
-wrangler.toml
-tailwind.config.js
-schema.sql
-src
-functions
-tests
-scripts
-*.py
-*.md
-.wrangler
+# M8/CTL-ASSET-01: an ALLOW-LIST, not a deny-list -- `*` refuses every
+# path by default, and only the exact public surface below is handed
+# back with `!`. A new root file or directory is therefore PRIVATE the
+# moment it is added, with no further edit here, until someone
+# deliberately negates it -- the opposite failure mode from a deny-list,
+# where a new private file leaks until someone remembers to add it.
+# Negation order matters (gitignore semantics): a directory must be
+# negated before its children can be, and an un-negated path (e.g.
+# portal/src, this repo's TypeScript-ish source for the portal's own
+# build step) stays refused even though its parent is public.
+# Proof: tests/foundation/assets-private.test.mjs (PIN-18).
+*
+
+!/index.html
+!/404.html
+!/gallery.html
+!/register.html
+!/glow.html
+!/membership.html
+!/membership-cancel.html
+!/membership-success.html
+!/robots.txt
+!/sitemap.xml
+!/llms.txt
+!/_headers
+!/_redirects
+
+!/assets
+!/assets/*
+!/assets/events
+!/assets/events/*
+!/assets/features
+!/assets/features/*
+!/assets/gallery
+!/assets/gallery/*
+!/assets/hero
+!/assets/hero/*
+!/assets/services
+!/assets/services/*
+
+!/admin
+!/admin/*
+
+# Glow tournament signup (main 55c94ee..7b42600): glow.html and glow/list.html
+# are static assets that main serves today. They must stay public, so the
+# allow-list names them (tests/foundation/assets-private.test.mjs checks both).
+!/glow
+!/glow/*
 
 # Portal additions (B1.13, A4/S-8, CTL-ASSET-01). The portal's own
-# public UI lives under portal/ and IS served -- only its non-public
-# siblings are listed here. The file-count probe
-# (tests/foundation/assets-private.test.mjs) checks this list stays
-# correct as new private paths are added.
-migrations
-tests
-docs
-tailwind.portal.config.js
-portal/src
-.dev.vars
-.dev.vars.*
-.env
-.env.*
-*.pem
-*.key
+# public UI lives under portal/ and IS served -- portal/src (the
+# portal's Tailwind build input) is its one private sibling, and stays
+# refused by simply never being negated below.
+!/portal
+!/portal/*
+!/portal/js
+!/portal/js/*
+!/portal/views
+!/portal/views/*
+!/portal/vendor
+!/portal/vendor/*
