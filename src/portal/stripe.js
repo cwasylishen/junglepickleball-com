@@ -364,8 +364,66 @@ function unlinkedPurchaseAuditStatement(db, session) {
   });
 }
 
+// M13/A7/PIN-11: the frozen legacy `/membership` checkout (src/worker.js)
+// sets no `metadata` at all, unlike every portal-originated checkout.
+// `payments_mirror.kind` is CHECK-constrained to ('membership','pack',
+// 'booking') -- guessing wrong here is worse than not guessing (a wrong
+// "pack" would grant 8 credits for what might be a single $15 session).
+// `session.mode` makes the subscription case deterministic. A
+// payment-mode legacy session is genuinely ambiguous (jp_session_single
+// vs jp_session_pack8 both charge in Checkout mode "payment", and
+// Stripe sends no line items on this event unless the endpoint is
+// configured to expand them) -- `line_items` is read defensively in
+// case that expansion is ever turned on, but when it is absent this
+// returns null rather than guess; the caller records the session for
+// the owner to reconcile by hand instead.
+function classifyLegacySession(session) {
+  const firstLineItem = session.line_items && session.line_items.data && session.line_items.data[0];
+  const expandedLookupKey = firstLineItem && firstLineItem.price && firstLineItem.price.lookup_key;
+  if (expandedLookupKey === "jp_session_pack8") return "pack";
+  if (expandedLookupKey && MEMBERSHIP_AND_PACK_LOOKUP_KEYS.has(expandedLookupKey)) return "membership";
+  if (session.mode === "subscription") return "membership";
+  return null; // ambiguous payment-mode session with no line items -- never guessed
+}
+
+function legacyUnclassifiedAuditStatement(db, session) {
+  return auditStatement(db, {
+    actor: null,
+    action: "stripe_legacy_payment_unclassified",
+    targetType: "stripe_checkout_session",
+    targetId: session.id,
+    after: { amount_cents: session.amount_total || 0, mode: session.mode || null },
+  });
+}
+
+function checkoutUnpaidAuditStatement(db, session) {
+  return auditStatement(db, {
+    actor: null,
+    action: "stripe_checkout_completed_unpaid",
+    targetType: "stripe_checkout_session",
+    targetId: session.id,
+    after: { payment_status: session.payment_status || null, mode: session.mode || null },
+  });
+}
+
 async function handleCheckoutCompleted(session, env, db) {
-  const kind = (session.metadata && session.metadata.kind) || "unknown";
+  // M18/PIN-12/CTL-MSG-01: an async payment method completes this same
+  // event with payment_status "unpaid" before the money has actually
+  // cleared (Stripe settles it later via a separate
+  // checkout.session.async_payment_succeeded/_failed event, routed back
+  // through this same function/handleCheckoutExpired below). Confirming
+  // a booking or granting anything on an explicitly unpaid session would
+  // mean "confirmed" for money that might still fail to arrive. Only
+  // the explicit 'unpaid' value is rejected -- real Stripe always sets
+  // payment_status to 'paid' | 'unpaid' | 'no_payment_required', so an
+  // absent value (older/partial fixtures) is treated as paid rather
+  // than silently dropping an otherwise-normal confirmation.
+  if (session.payment_status === "unpaid") {
+    return [checkoutUnpaidAuditStatement(db, session)];
+  }
+
+  const metadataKind = session.metadata && session.metadata.kind;
+  const kind = metadataKind || classifyLegacySession(session); // M13
   const bookingId = (session.metadata && session.metadata.booking_id) || null;
   const statements = [];
 
@@ -380,27 +438,50 @@ async function handleCheckoutCompleted(session, env, db) {
   const resolved = await resolveAccountForSession(session, env, db);
 
   if (resolved.isNewAccount) {
-    // CTL-STR-05/AUTH-23: a webhook-created account is always role 'guest'.
-    statements.push(
-      db
-        .prepare(`INSERT INTO accounts (id, email, role, display_name, is_demo, created_at, updated_at) VALUES (?,?,?,'',0,?,?)`)
-        .bind(resolved.accountId, resolved.email, "guest", nowIso(), nowIso())
-    );
+    // M15: this INSERT must be committed (not merely queued into the
+    // outer batch below) before `addCredits` -- a separate, already
+    // atomic function -- runs next and writes a credits row that
+    // references this account id. Queuing it into `statements` instead
+    // would leave addCredits writing against a row that does not exist
+    // yet (an FK orphan, or an outright FK violation).
+    await db
+      .prepare(`INSERT INTO accounts (id, email, role, display_name, is_demo, created_at, updated_at) VALUES (?,?,?,'',0,?,?)`)
+      .bind(resolved.accountId, resolved.email, "guest", nowIso(), nowIso())
+      .run();
   }
 
   if (resolved.accountId) {
+    // M14/A7/S-10: whenever Stripe tells us the customer id for this
+    // account (a fresh webhook-created account, or an existing account
+    // only ever matched by email so far), it is written now. Without
+    // this, a later customer.subscription.* event can never find the
+    // account by stripe_customer_id, and its entitlement grant is
+    // silently never created.
+    if (session.customer) {
+      statements.push(
+        db
+          .prepare(`UPDATE accounts SET stripe_customer_id = ?, updated_at = ? WHERE id = ? AND (stripe_customer_id IS NULL OR stripe_customer_id != ?)`)
+          .bind(session.customer, nowIso(), resolved.accountId, session.customer)
+      );
+    }
     if (kind === "pack") {
       // B2a1's single credit function (CTL-CRD-01), idempotent on `ref`.
       await addCredits(env, resolved.accountId, 8, { source: "pack", ref: session.id });
     }
-    statements.push(
-      db
-        .prepare(
-          `INSERT INTO payments_mirror (id, account_id, booking_id, stripe_payment_intent_id, stripe_checkout_session_id, amount_cents, currency, status, kind, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,'paid',?,?,?)`
-        )
-        .bind(newId(), resolved.accountId, bookingId, session.payment_intent || null, session.id, session.amount_total || 0, session.currency || "usd", kind, nowIso(), nowIso())
-    );
+    if (kind) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO payments_mirror (id, account_id, booking_id, stripe_payment_intent_id, stripe_checkout_session_id, amount_cents, currency, status, kind, created_at, updated_at)
+             VALUES (?,?,?,?,?,?,?,'paid',?,?,?)`
+          )
+          .bind(newId(), resolved.accountId, bookingId, session.payment_intent || null, session.id, session.amount_total || 0, session.currency || "usd", kind, nowIso(), nowIso())
+      );
+    } else {
+      // M13: an ambiguous legacy payment-mode session -- recorded for
+      // the owner, never guessed into the CHECK-constrained kind column.
+      statements.push(legacyUnclassifiedAuditStatement(db, session));
+    }
     if (resolved.linkedByEmail) {
       statements.push(
         auditStatement(db, { actor: null, action: "stripe_linked_by_email", targetType: "account", targetId: resolved.accountId, after: { checkout_session_id: session.id } })
@@ -415,6 +496,10 @@ async function handleCheckoutCompleted(session, env, db) {
   return statements;
 }
 
+// Shared by checkout.session.expired AND M18's
+// checkout.session.async_payment_failed -- an async payment that never
+// clears releases the hold exactly the way an expired Checkout Session
+// does, so this is reused rather than duplicated.
 async function handleCheckoutExpired(session, env /* , db unused */) {
   const bookingId = session.metadata && session.metadata.booking_id;
   if (bookingId) await releaseHold(env, bookingId, "checkout_session_expired");
@@ -461,13 +546,19 @@ async function handleSubscriptionUpsert(subscription, env, db) {
       );
     }
   } else {
+    // M14/S-10: a grant created for an account that was ever linked by
+    // email (A7) is flagged `linked_by_email` for the owner to confirm
+    // -- read from the audit trail `handleCheckoutCompleted` already
+    // writes at link time, rather than re-deriving or duplicating that
+    // write here.
+    const linked = await db.prepare(`SELECT 1 FROM audit_log WHERE action = 'stripe_linked_by_email' AND target_id = ? LIMIT 1`).bind(account.id).first();
     statements.push(
       db
         .prepare(
-          `INSERT INTO entitlement_grants (id, account_id, source, tier, stripe_subscription_id, stripe_status, starts_at, status, created_at, updated_at)
-           VALUES (?,?,'stripe',?,?,?,?,'active',?,?)`
+          `INSERT INTO entitlement_grants (id, account_id, source, tier, stripe_subscription_id, stripe_status, starts_at, status, linked_by_email, created_at, updated_at)
+           VALUES (?,?,'stripe',?,?,?,?,'active',?,?,?)`
         )
-        .bind(newId(), account.id, tier, subscriptionId, status, nowIso(), nowIso(), nowIso())
+        .bind(newId(), account.id, tier, subscriptionId, status, nowIso(), linked ? 1 : 0, nowIso(), nowIso())
     );
   }
   return statements;
@@ -505,8 +596,16 @@ async function computeEffectStatements(event, env, db) {
   const obj = event.data && event.data.object;
   switch (event.type) {
     case "checkout.session.completed":
+    // M18: an async payment method settles via this separate event,
+    // same session shape, now with payment_status "paid" -- cheap to
+    // handle by reusing the exact same effect function.
+    case "checkout.session.async_payment_succeeded":
       return handleCheckoutCompleted(obj, env, db);
     case "checkout.session.expired":
+    // M18: an async payment that failed to clear releases the hold the
+    // same way an expired session does -- reuses handleCheckoutExpired
+    // rather than a second copy of the same release.
+    case "checkout.session.async_payment_failed":
       return handleCheckoutExpired(obj, env);
     case "customer.subscription.created":
     case "customer.subscription.updated":
@@ -547,10 +646,33 @@ export async function handleStripeWebhook(request, env, db) {
     return json({ error: "bad_signature" }, 400);
   }
 
-  // Idempotent on event.id (PIN-11): a replay of an already-processed
-  // event writes nothing new.
-  const existing = await db.prepare(`SELECT status FROM webhook_events WHERE id = ?`).bind(event.id).first();
-  if (existing && existing.status === "processed") {
+  // M16/PIN-11: claim the event id atomically BEFORE computing or
+  // applying any effect. The old check (SELECT status, THEN compute
+  // effects, THEN mark processed) was check-then-act: two concurrent
+  // deliveries of the same event both pass the SELECT before either
+  // writes, so both go on to apply their effects, producing two
+  // payments_mirror rows and two entitlement grants for one event.
+  // This single INSERT ... ON CONFLICT DO NOTHING RETURNING is one
+  // atomic statement -- of two concurrent deliveries, exactly one gets
+  // the returned row and proceeds; the other sees no row and returns
+  // immediately below, computing and applying nothing.
+  //
+  // Residual, accepted for this fix round: if the claimant crashes
+  // after this INSERT but before the batch below marks it 'processed',
+  // the row is left claimed-but-unprocessed and a later redelivery of
+  // the same event id will also see no row returned here and no-op
+  // (never finishing that event). This is the documented tradeoff of
+  // "claim-then-effect" named in this round's dispatch; a stuck
+  // claimed-but-unprocessed row needs a human replay from the Stripe
+  // dashboard, which assigns a fresh event id and claims cleanly.
+  const claim = await db
+    .prepare(`INSERT INTO webhook_events (id, type, received_at, status) VALUES (?,?,?, 'received') ON CONFLICT(id) DO NOTHING RETURNING id`)
+    .bind(event.id, event.type, nowIso())
+    .first();
+  if (!claim) {
+    // Either an already-processed replay (PIN-11, a genuine no-op) or a
+    // concurrent delivery racing us right now (M16) -- neither one
+    // re-applies effects.
     return json({ received: true });
   }
 
@@ -562,15 +684,10 @@ export async function handleStripeWebhook(request, env, db) {
   // atomic functions (confirmPaidBooking/releaseHold/addCredits, called
   // inside computeEffectStatements above) are already one transaction on
   // their own and are each idempotent, so a crash between that call and
-  // this batch committing is safe: the retried delivery simply calls them
-  // again rather than losing the event.
+  // this batch committing is safe for THOSE effects: the one residual
+  // gap is the direct effects below, named above.
   await runBatch(db, [
-    db
-      .prepare(
-        `INSERT INTO webhook_events (id, type, received_at, processed_at, status) VALUES (?,?,?,?, 'processed')
-         ON CONFLICT(id) DO UPDATE SET processed_at = excluded.processed_at, status = 'processed'`
-      )
-      .bind(event.id, event.type, nowIso(), nowIso()),
+    db.prepare(`UPDATE webhook_events SET status = 'processed', processed_at = ? WHERE id = ?`).bind(nowIso(), event.id),
     ...effectStatements,
   ]);
 
