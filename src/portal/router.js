@@ -111,12 +111,17 @@ async function handleMe(request, env, db, url, session, account) {
   };
   if (!session || !account) return json({ authenticated: false, features });
   const entitlement = await resolveEntitlement(db, account.id);
+  // portal(FR1), docs/portal/api.md §2 appendix: `credits` was a named
+  // UI finding (screens.md §0.2's boot sequence, M1's credits line) --
+  // the balance row the same way booking.js/owner.js already read it.
+  const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
   return json({
     authenticated: true,
     features,
     csrf_token: session.csrf_token,
     account: publicAccount(account),
     entitlement: { entitled: entitlement.entitled, tier: entitlement.tier, overlap: entitlement.overlap },
+    credits: creditsRow ? creditsRow.balance : 0,
   });
 }
 
