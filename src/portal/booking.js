@@ -1,25 +1,663 @@
-// Interface stubs for B2a1 (amendment 6). B1 commits this module with
-// the exact export signatures below as working, non-throwing stubs so
-// every other part's import resolves and `npm test` stays green while
-// B2a1 writes the real bodies. From here on this file belongs to B2a1 --
-// it replaces each stub outright with the real booking engine
-// (docs/portal/api.md §3): availability, holds (D-A06/amendment 5 F-4),
-// create/cancel, and the single credit function (CTL-CRD-01).
+// The booking engine (CTL-BOOK-01): the ONLY module that inserts,
+// updates or writes `bookings`, `credits`, `credits_ledger` or
+// `calendar_outbox` rows for a booking's create/cancel/confirm. Every
+// other path (owner override, imports, the Stripe webhook via
+// amendment 6's exports) calls through the functions here rather than
+// writing its own SQL (database doctrine).
+//
+// docs/portal/api.md §3 is the contract. D-A06/amendment 5 F-4 (holds),
+// D-A13 (window), S-12 (grid), A2 (no double booking under any rule
+// change), Amendment 4 (audience pricing), CTL-CRD-01 (credits),
+// CTL-MSG-01 (massage pays only), PIN-13 (outbox same batch as the
+// booking write).
+//
+// A2's overlap guard is one SQL idiom used everywhere a booking state
+// changes: `INSERT ... SELECT ... WHERE NOT EXISTS (<conflicting row>)`
+// or `UPDATE ... WHERE <still in the state we read>`. Each of these is a
+// single statement, so there is no read-then-write gap for a second
+// request to land in -- the SQLite engine (D1) serialises the
+// statement's own execution. No UNIQUE index or occupancy-cells table
+// is added here: migrations are not this part's file, and this
+// predicate-guarded INSERT is sufficient and provably serial per
+// statement (R-6).
 
-// No-op stub: does not look up or touch any row. B2a1's real body
-// writes the calendar outbox row in the same batch and returns
-// "paid_conflict" / "already_confirmed" per docs/portal/api.md §3.
+import { json, notConfigured } from "./http.js";
+import { newId, nowIso, runBatch } from "./db.js";
+import { resolveAudience, resolveEntitlement } from "./entitlement.js";
+import { isStripeConfigured, createBookingCheckout } from "./stripe.js";
+
+// Costa Rica is UTC-6 year-round, no DST (A8). All CR-local math below
+// goes through these two conversions so the -6h offset is applied in
+// exactly one place.
+const CR_OFFSET_HOURS = 6;
+const HOLD_EXTRA_MINUTES = 2; // amendment 5 F-4: hold_expires_at = checkout expires_at + 2 min
+const CHECKOUT_MINUTES = 31; // amendment 5 F-4: checkout expires_at = now + 31 min
+const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
+
+function crDateStringFromUtc(utcDate) {
+  const shifted = new Date(utcDate.getTime() - CR_OFFSET_HOURS * 3600000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function crTimeStringFromUtcIso(utcIso) {
+  const shifted = new Date(new Date(utcIso).getTime() - CR_OFFSET_HOURS * 3600000);
+  const h = String(shifted.getUTCHours()).padStart(2, "0");
+  const m = String(shifted.getUTCMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+function crDateTimeToUtcIso(crDateStr, hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  const utcMs = Date.parse(`${crDateStr}T00:00:00.000Z`) + (h * 60 + m) * 60000 + CR_OFFSET_HOURS * 3600000;
+  return new Date(utcMs).toISOString();
+}
+
+function addDaysToDateString(dateStr, days) {
+  const ms = Date.parse(`${dateStr}T00:00:00.000Z`) + days * 86400000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function isValidDateString(s) {
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+}
+
+function hhmmToMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function minutesToHHMM(mins) {
+  const h = String(Math.floor(mins / 60)).padStart(2, "0");
+  const m = String(mins % 60).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+function weekdayOfCrDate(dateStr) {
+  return new Date(`${dateStr}T00:00:00Z`).getUTCDay(); // 0=Sunday, matches blocks.weekday
+}
+
+function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+// D-A14/S-12: slot starts at `open`, repeats by `slot + buffer`, must
+// end <= `close`. Returns UTC start/end for each slot on the given CR
+// calendar date.
+export function generateGridForDate(resource, crDateStr) {
+  const openMin = hhmmToMinutes(resource.open_time);
+  const closeMin = hhmmToMinutes(resource.close_time);
+  const step = resource.slot_minutes + resource.buffer_minutes;
+  const slots = [];
+  for (let t = openMin; t + resource.slot_minutes <= closeMin && slots.length < MAX_SLOTS_PER_DAY; t += step) {
+    slots.push({
+      start: crDateTimeToUtcIso(crDateStr, minutesToHHMM(t)),
+      end: crDateTimeToUtcIso(crDateStr, minutesToHHMM(t + resource.slot_minutes)),
+    });
+  }
+  return slots;
+}
+
+// D-A13: a slot is bookable when its CR calendar date <= today(CR) +
+// window days. Owner/staff have no window (checked by the caller).
+export function withinWindow(resource, crDateStr, entitled) {
+  const windowDays = entitled ? resource.member_window_days : resource.non_member_window_days;
+  const today = crDateStringFromUtc(new Date());
+  return crDateStr <= addDaysToDateString(today, windowDays);
+}
+
+function clampPartySize(value) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 4);
+}
+
+function resolveDuration(resource, offerings, offeringId) {
+  if (offeringId) {
+    const found = offerings.find((o) => o.id === offeringId);
+    if (found) return found.duration_minutes;
+  }
+  return resource.slot_minutes;
+}
+
+// Mirrors the column shape of outbox.js's own `outboxInsertStatement`
+// (B1, the designated owner of the outbox row's shape) but adds a
+// WHERE EXISTS guard so it is safe to put in the SAME batch as a
+// booking write whose own WHERE NOT EXISTS clause may have matched zero
+// rows (A2's conflict case): that guard keeps a routine 409 a quiet
+// zero-row INSERT instead of a thrown FK violation. outbox.js's helper
+// is unconditional by design (flagged as a finding, not edited here --
+// outbox.js is not this part's file).
+function guardedOutboxInsertStatement(db, { bookingId, action, resourceId, payload, requireStatus }) {
+  const now = nowIso();
+  return db
+    .prepare(
+      `INSERT INTO calendar_outbox (id, booking_id, action, resource_id, payload, status, attempts, created_at, updated_at)
+       SELECT ?, ?, ?, ?, ?, 'pending', 0, ?, ?
+       WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = ?)`
+    )
+    .bind(newId(), bookingId, action, resourceId, JSON.stringify(payload || {}), now, now, bookingId, requireStatus);
+}
+
+function creditReturnStatements(db, { bookingId, accountId, amount, cancelledAt }) {
+  return [
+    db
+      .prepare(
+        `INSERT INTO credits_ledger (id, account_id, delta, reason, booking_id, created_at)
+         SELECT ?, ?, ?, 'cancel_return', ?, ?
+         WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'cancelled' AND cancelled_at = ?)`
+      )
+      .bind(newId(), accountId, amount, bookingId, cancelledAt, bookingId, cancelledAt),
+    db
+      .prepare(
+        `UPDATE credits SET balance = balance + ?, updated_at = ?
+         WHERE account_id = ? AND EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'cancelled' AND cancelled_at = ?)`
+      )
+      .bind(amount, cancelledAt, accountId, bookingId, cancelledAt),
+  ];
+}
+
+async function isBlockedSlot(db, resourceId, crDateStr, startHHMM, endHHMM) {
+  const weekday = weekdayOfCrDate(crDateStr);
+  const rows =
+    (
+      await db
+        .prepare(
+          `SELECT * FROM blocks WHERE resource_id = ? AND ((kind = 'one_off' AND date = ?) OR (kind = 'weekly' AND weekday = ?))`
+        )
+        .bind(resourceId, crDateStr, weekday)
+        .all()
+    ).results || [];
+  return rows.find((b) => hhmmToMinutes(startHHMM) < hhmmToMinutes(b.end_time) && hhmmToMinutes(b.start_time) < hhmmToMinutes(endHHMM)) || null;
+}
+
+// ---------------------------------------------------------------------
+// §3 GET /api/portal/resources
+// ---------------------------------------------------------------------
+export async function listResources(request, env, db) {
+  const resources = (await db.prepare(`SELECT * FROM resources ORDER BY kind, name`).all()).results || [];
+  const offeringRows = (await db.prepare(`SELECT * FROM offerings WHERE active = 1 ORDER BY resource_id, duration_minutes`).all()).results || [];
+  return json(
+    resources.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      name: r.name,
+      open_time: r.open_time,
+      close_time: r.close_time,
+      slot_minutes: r.slot_minutes,
+      buffer_minutes: r.buffer_minutes,
+      member_included: Boolean(r.member_included),
+      offerings: offeringRows
+        .filter((o) => o.resource_id === r.id)
+        .map((o) => ({ id: o.id, name: o.name, duration_minutes: o.duration_minutes, audience: o.audience, display_price_cents: o.display_price_cents })),
+    }))
+  );
+}
+
+// ---------------------------------------------------------------------
+// §3 GET /api/portal/resources/:id/availability?date=
+// ---------------------------------------------------------------------
+export async function availability(request, env, db, url, session, account, params) {
+  const resourceId = params.id;
+  const dateStr = url.searchParams.get("date");
+  if (!isValidDateString(dateStr)) return json({ error: "bad_date" }, 400);
+
+  const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(resourceId).first();
+  if (!resource) return json({ error: "not_found" }, 404);
+
+  const grid = generateGridForDate(resource, dateStr);
+  if (grid.length === 0) return json({ slots: [] });
+
+  const nowIsoVal = nowIso();
+  const dayStartUtc = grid[0].start;
+  const dayEndUtc = grid[grid.length - 1].end;
+  const liveBookings =
+    (
+      await db
+        .prepare(
+          `SELECT * FROM bookings WHERE resource_id = ? AND start_at < ? AND end_at > ?
+             AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
+        )
+        .bind(resourceId, dayEndUtc, dayStartUtc, nowIsoVal)
+        .all()
+    ).results || [];
+
+  const weekday = weekdayOfCrDate(dateStr);
+  const blockRows =
+    (
+      await db
+        .prepare(`SELECT * FROM blocks WHERE resource_id = ? AND ((kind = 'one_off' AND date = ?) OR (kind = 'weekly' AND weekday = ?))`)
+        .bind(resourceId, dateStr, weekday)
+        .all()
+    ).results || [];
+
+  const slots = grid.map((slot) => {
+    if (slot.start <= nowIsoVal) return { start: slot.start, end: slot.end, state: "past" };
+
+    const block = blockRows.find((b) => rangesOverlap(slot.start, slot.end, crDateTimeToUtcIso(dateStr, b.start_time), crDateTimeToUtcIso(dateStr, b.end_time)));
+    if (block) {
+      const out = { start: slot.start, end: slot.end, state: "blocked" };
+      if (block.label) out.label = block.label;
+      return out;
+    }
+
+    const overlapping = liveBookings.filter((b) => rangesOverlap(slot.start, slot.end, b.start_at, b.end_at));
+    if (overlapping.find((b) => b.account_id === account.id && b.status === "confirmed")) return { start: slot.start, end: slot.end, state: "mine" };
+    if (overlapping.find((b) => b.account_id === account.id && b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held_mine" };
+    if (overlapping.find((b) => b.status === "confirmed")) return { start: slot.start, end: slot.end, state: "taken" };
+    if (overlapping.find((b) => b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held" };
+    return { start: slot.start, end: slot.end, state: "available" };
+  });
+
+  return json({ slots });
+}
+
+// ---------------------------------------------------------------------
+// §3 GET /api/portal/resources/:id/quote
+// ---------------------------------------------------------------------
+export async function quote(request, env, db, url, session, account, params) {
+  const resourceId = params.id;
+  const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(resourceId).first();
+  if (!resource) return json({ error: "not_found" }, 404);
+
+  const offeringId = url.searchParams.get("offering_id") || null;
+  const partySize = resource.price_mode === "per_player" ? clampPartySize(url.searchParams.get("party_size")) : 1;
+
+  const offerings = (await db.prepare(`SELECT * FROM offerings WHERE resource_id = ?`).bind(resourceId).all()).results || [];
+  const audience = await resolveAudience(db, account.id, resource, offerings, offeringId);
+  if (audience.mode === "not_bookable") return json({ error: "price_not_set" }, 409);
+
+  const unitCents = audience.unit_cents || 0;
+  const perPlayer = resource.price_mode === "per_player" && audience.mode !== "included";
+  const totalCents = audience.mode === "included" ? 0 : perPlayer ? unitCents * partySize : unitCents;
+  const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
+  const creditsHave = creditsRow ? creditsRow.balance : 0;
+  const creditsNeeded = resource.kind === "court" && audience.mode === "pay" ? partySize : 0;
+
+  return json({
+    mode: audience.mode,
+    unit_cents: unitCents,
+    party_size: partySize,
+    total_cents: totalCents,
+    credits_needed: creditsNeeded,
+    credits_have: creditsHave,
+    cancel_cutoff_minutes: resource.cancel_cutoff_minutes,
+  });
+}
+
+// ---------------------------------------------------------------------
+// §3 POST /api/portal/bookings
+//
+// S-11: a paid path checks `isStripeConfigured` and returns 503 BEFORE
+// any row is written -- never after a hold is inserted.
+// CTL-CRD-01: credit sufficiency is part of the SAME atomic INSERT
+// guard as the overlap check, so "not enough credits" and "slot taken"
+// can never race each other into a bad state; the booking simply does
+// not get created and nothing is written (REQ-ENT-14 amended, F-11).
+// ---------------------------------------------------------------------
+export async function createBooking(request, env, db, url, session, account) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid_request" }, 400);
+  }
+  const resourceId = body && body.resource_id;
+  const offeringId = (body && body.offering_id) || null;
+  const startRaw = body && body.start;
+  const freeKids = Math.max(0, Number.parseInt((body && body.free_kids) || 0, 10) || 0);
+  // Appended clarification (not a shape change -- an additional optional
+  // field): the UI (M2d) lets a guest with enough credits choose card
+  // instead of the default credit spend. Omitted -> defaults to credits
+  // when the balance covers it, else card. Logged in api.md's changelog.
+  const paymentChoice = body && body.payment_choice === "card" ? "card" : body && body.payment_choice === "credits" ? "credits" : null;
+
+  if (!resourceId || typeof startRaw !== "string") return json({ error: "invalid_request" }, 400);
+  const startDate = new Date(startRaw);
+  if (Number.isNaN(startDate.getTime())) return json({ error: "invalid_request" }, 400);
+
+  const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(resourceId).first();
+  if (!resource) return json({ error: "not_found" }, 404);
+
+  const partySize = resource.price_mode === "per_player" ? clampPartySize(body && body.party_size) : 1;
+
+  const nowDate = new Date();
+  const nowIsoVal = nowDate.toISOString();
+  if (startDate.getTime() <= nowDate.getTime()) return json({ error: "in_past" }, 409);
+
+  const offerings = (await db.prepare(`SELECT * FROM offerings WHERE resource_id = ?`).bind(resourceId).all()).results || [];
+  const audience = await resolveAudience(db, account.id, resource, offerings, offeringId, nowIsoVal);
+  if (audience.mode === "not_bookable") return json({ error: "price_not_set" }, 409);
+
+  const durationMinutes = resolveDuration(resource, offerings, audience.offering_id || offeringId);
+  const startIso = startDate.toISOString();
+  const endIso = new Date(startDate.getTime() + durationMinutes * 60000).toISOString();
+  const crDateStr = crDateStringFromUtc(startDate);
+
+  // D-A13: owner/staff have no window; member/guest do.
+  if (account.role !== "owner" && account.role !== "staff") {
+    const entitlement = await resolveEntitlement(db, account.id, nowIsoVal);
+    if (!withinWindow(resource, crDateStr, entitlement.entitled)) return json({ error: "outside_window" }, 409);
+  }
+
+  const startHHMM = crTimeStringFromUtcIso(startIso);
+  const endHHMM = crTimeStringFromUtcIso(endIso);
+  const block = await isBlockedSlot(db, resourceId, crDateStr, startHHMM, endHHMM);
+  if (block) return json({ error: "blocked" }, 409);
+
+  if (resource.max_active_per_account != null) {
+    const countRow = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM bookings WHERE account_id = ? AND resource_id = ?
+           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
+      )
+      .bind(account.id, resourceId, nowIsoVal)
+      .first();
+    if (countRow && countRow.n >= resource.max_active_per_account) return json({ error: "cap_reached" }, 409);
+  }
+
+  let paymentMode;
+  let creditsSpent = 0;
+  if (audience.mode === "included") {
+    paymentMode = "included";
+  } else {
+    // audience.mode === "pay"
+    const creditsEligible = resource.kind === "court";
+    let useCredits = false;
+    if (creditsEligible) {
+      const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
+      const have = creditsRow ? creditsRow.balance : 0;
+      if (paymentChoice === "credits") {
+        if (have < partySize) return json({ error: "insufficient_credits" }, 409);
+        useCredits = true;
+      } else if (paymentChoice === null && have >= partySize) {
+        useCredits = true; // M2d's default radio choice
+      }
+    }
+    if (useCredits) {
+      paymentMode = "credits";
+      creditsSpent = partySize;
+    } else {
+      paymentMode = "pay";
+      if (!isStripeConfigured(env)) return notConfigured("stripe"); // S-11: before any write
+    }
+  }
+
+  const id = newId();
+  const createdAt = nowIsoVal;
+  const holdExpiresAt = paymentMode === "pay" ? new Date(nowDate.getTime() + (CHECKOUT_MINUTES + HOLD_EXTRA_MINUTES) * 60000).toISOString() : null;
+  const status = paymentMode === "pay" ? "pending_payment" : "confirmed";
+  const requiredCredits = paymentMode === "credits" ? partySize : 0;
+
+  // A2's one-statement guard: the row is only inserted when nothing
+  // live occupies an overlapping time range AND (for a credit spend)
+  // the balance covers it -- both checked inside the same WHERE as the
+  // INSERT, so a concurrent twin of this exact request can produce at
+  // most one surviving row between them.
+  const insertStmt = db
+    .prepare(
+      `INSERT INTO bookings (
+         id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids,
+         status, payment_mode, hold_expires_at, credits_spent, checkout_session_id, payment_intent_id,
+         walk_in_name, block_weekly_id, created_by, created_at, updated_at
+       )
+       SELECT ?,?,?,?,?,?,?,?, ?,?,?,?,NULL,NULL, NULL,NULL, ?,?,?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM bookings
+         WHERE resource_id = ? AND start_at < ? AND end_at > ?
+           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))
+       )
+       AND COALESCE((SELECT balance FROM credits WHERE account_id = ?), 0) >= ?
+       RETURNING *`
+    )
+    .bind(
+      id, account.id, resourceId, audience.offering_id || offeringId || null, startIso, endIso, partySize, freeKids,
+      status, paymentMode, holdExpiresAt, creditsSpent,
+      account.id, createdAt, createdAt,
+      resourceId, endIso, startIso, nowIsoVal,
+      account.id, requiredCredits
+    );
+
+  let row;
+  if (paymentMode === "pay") {
+    row = (await insertStmt.first()) || null;
+  } else {
+    const extra = [];
+    if (paymentMode === "credits") extra.push(...creditReturnStatementsForSpend(db, { bookingId: id, accountId: account.id, amount: creditsSpent, createdAt }));
+    extra.push(guardedOutboxInsertStatement(db, { bookingId: id, action: "create", resourceId, payload: { booking_id: id }, requireStatus: "confirmed" }));
+    const results = await runBatch(db, [insertStmt, ...extra]);
+    row = (results[0].results || [])[0] || null;
+  }
+
+  if (!row) {
+    if (paymentMode === "credits") {
+      const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
+      const have = creditsRow ? creditsRow.balance : 0;
+      if (have < partySize) return json({ error: "insufficient_credits" }, 409);
+    }
+    return json({ error: "slot_taken" }, 409);
+  }
+
+  if (paymentMode === "pay") {
+    const quantity = resource.price_mode === "per_player" ? partySize : 1;
+    let checkout;
+    try {
+      checkout = await createBookingCheckout(env, {
+        account,
+        bookingId: id,
+        lineItems: [{ lookup_key: audience.lookup_key, quantity }],
+        expiresAt: Math.floor(nowDate.getTime() / 1000) + CHECKOUT_MINUTES * 60,
+        successUrl: `${url.origin}/portal/#/bookings/${id}?paid=1`,
+        cancelUrl: `${url.origin}/portal/#/bookings/${id}?cancelled=1`,
+      });
+    } catch (err) {
+      // Can't offer a checkout: release the hold we just created rather
+      // than leave a phantom hold on a slot nobody can pay for.
+      await db
+        .prepare(`UPDATE bookings SET status = 'cancelled', cancelled_at = ?, note = 'checkout_create_failed' WHERE id = ? AND status = 'pending_payment'`)
+        .bind(nowIsoVal, id)
+        .run();
+      if (err && err.code === "not_configured") return notConfigured("stripe");
+      throw err;
+    }
+    await db.prepare(`UPDATE bookings SET checkout_session_id = ? WHERE id = ?`).bind(checkout.sessionId, id).run();
+    return json({ booking: { id, status: row.status, payment_mode: paymentMode, hold_expires_at: holdExpiresAt, checkout_url: checkout.url } }, 201);
+  }
+
+  return json({ booking: { id, status: row.status, payment_mode: paymentMode } }, 201);
+}
+
+// create()'s own name for creditReturnStatements, spending instead of
+// returning -- same shape, opposite sign, so it is written once and
+// bound at each call site with its own sign and reason.
+function creditReturnStatementsForSpend(db, { bookingId, accountId, amount, createdAt }) {
+  return [
+    db
+      .prepare(
+        `INSERT INTO credits_ledger (id, account_id, delta, reason, booking_id, created_at)
+         SELECT ?, ?, ?, 'booking_spend', ?, ?
+         WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'confirmed')`
+      )
+      .bind(newId(), accountId, -amount, bookingId, createdAt, bookingId),
+    db
+      .prepare(
+        `UPDATE credits SET balance = balance - ?, updated_at = ?
+         WHERE account_id = ? AND EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'confirmed')`
+      )
+      .bind(amount, createdAt, accountId, bookingId),
+  ];
+}
+
+// ---------------------------------------------------------------------
+// §3 POST /api/portal/bookings/:id/cancel
+// D-A08: self-cancel before `cancel_cutoff_minutes`; owner any time.
+// Credits spent are returned on an in-time cancel, in the SAME batch as
+// the cancel itself (CTL-CRD-01), never as a second separate write.
+// ---------------------------------------------------------------------
+export async function cancelBooking(request, env, db, url, session, account, params) {
+  const bookingId = params.id;
+  const booking = await db.prepare(`SELECT * FROM bookings WHERE id = ?`).bind(bookingId).first();
+  if (!booking) return json({ error: "not_found" }, 404);
+  if (booking.account_id !== account.id && account.role !== "owner") return json({ error: "not_found" }, 404);
+  if (booking.status !== "confirmed" && booking.status !== "pending_payment") return json({ error: "not_found" }, 404);
+
+  const nowDate = new Date();
+  const nowIsoVal = nowDate.toISOString();
+
+  if (booking.status === "confirmed" && account.role !== "owner") {
+    const resource = await db.prepare(`SELECT cancel_cutoff_minutes FROM resources WHERE id = ?`).bind(booking.resource_id).first();
+    const cutoffMinutes = resource ? resource.cancel_cutoff_minutes : 0;
+    const cutoffMs = new Date(booking.start_at).getTime() - cutoffMinutes * 60000;
+    if (nowDate.getTime() > cutoffMs) return json({ error: "past_cutoff" }, 409);
+  }
+
+  const cancelledAt = nowIsoVal;
+  const statements = [
+    db
+      .prepare(
+        `UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, updated_at = ?
+           WHERE id = ? AND status IN ('confirmed', 'pending_payment')
+           RETURNING *`
+      )
+      .bind(cancelledAt, account.id, cancelledAt, bookingId),
+  ];
+
+  const creditsReturned = booking.payment_mode === "credits" && booking.credits_spent > 0 ? booking.credits_spent : 0;
+  if (creditsReturned > 0) {
+    statements.push(...creditReturnStatements(db, { bookingId, accountId: booking.account_id, amount: creditsReturned, cancelledAt }));
+  }
+  if (booking.status === "confirmed") {
+    statements.push(
+      guardedOutboxInsertStatement(db, { bookingId, action: "cancel", resourceId: booking.resource_id, payload: { booking_id: bookingId }, requireStatus: "cancelled" })
+    );
+  }
+
+  const results = await runBatch(db, statements);
+  const updatedRows = results[0].results || [];
+  if (updatedRows.length === 0) return json({ error: "not_found" }, 404);
+
+  return json({ ok: true, credits_returned: creditsReturned });
+}
+
+// ---------------------------------------------------------------------
+// §3 GET /api/portal/bookings
+// ---------------------------------------------------------------------
+export async function listMyBookings(request, env, db, url, session, account) {
+  const rows =
+    (
+      await db
+        .prepare(
+          `SELECT b.id, r.name AS resource_name, b.start_at, b.end_at, b.status, b.payment_mode
+             FROM bookings b JOIN resources r ON r.id = b.resource_id
+             WHERE b.account_id = ? ORDER BY b.start_at DESC`
+        )
+        .bind(account.id)
+        .all()
+    ).results || [];
+  return json(rows.map((r) => ({ id: r.id, resource: r.resource_name, start: r.start_at, end: r.end_at, status: r.status, payment_mode: r.payment_mode })));
+}
+
+// ---------------------------------------------------------------------
+// Amendment 6 exports -- called by B2b's Stripe webhook (src/portal/stripe.js).
+// ---------------------------------------------------------------------
+
+// D-A06: a `checkout.session.completed` for a hold whose expiry has
+// passed is confirmed only if nothing else now occupies the slot;
+// otherwise it becomes `paid_conflict` for the owner to resolve by hand
+// (never auto-refunded). Idempotent: a second call after confirmation
+// returns `already_confirmed` and writes nothing.
 export async function confirmPaidBooking(env, bookingId, { paymentIntentId, sessionId } = {}) {
+  const db = env.PORTAL_DB;
+  const booking = await db.prepare(`SELECT * FROM bookings WHERE id = ?`).bind(bookingId).first();
+  if (!booking) return { status: "paid_conflict" };
+  if (booking.status === "confirmed") return { status: "already_confirmed" };
+  if (booking.status !== "pending_payment") return { status: "paid_conflict" };
+
+  const nowIsoVal = nowIso();
+  const holdExpired = Boolean(booking.hold_expires_at) && booking.hold_expires_at <= nowIsoVal;
+
+  if (holdExpired) {
+    const conflict = await db
+      .prepare(
+        `SELECT 1 FROM bookings WHERE resource_id = ? AND id != ? AND start_at < ? AND end_at > ?
+           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
+      )
+      .bind(booking.resource_id, bookingId, booking.end_at, booking.start_at, nowIsoVal)
+      .first();
+    if (conflict) {
+      await db
+        .prepare(`UPDATE bookings SET status = 'paid_conflict', payment_intent_id = ?, updated_at = ? WHERE id = ? AND status = 'pending_payment'`)
+        .bind(paymentIntentId || null, nowIsoVal, bookingId)
+        .run();
+      return { status: "paid_conflict" };
+    }
+  }
+
+  const statements = [
+    db
+      .prepare(
+        `UPDATE bookings SET status = 'confirmed', payment_intent_id = ?, checkout_session_id = COALESCE(?, checkout_session_id),
+           hold_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending_payment' RETURNING *`
+      )
+      .bind(paymentIntentId || null, sessionId || null, nowIsoVal, bookingId),
+    guardedOutboxInsertStatement(db, { bookingId, action: "create", resourceId: booking.resource_id, payload: { booking_id: bookingId }, requireStatus: "confirmed" }),
+  ];
+  const results = await runBatch(db, statements);
+  const updated = (results[0].results || []).length > 0;
+  if (!updated) return { status: "already_confirmed" }; // raced with a concurrent confirm/cancel
   return { status: "confirmed" };
 }
 
-// No-op stub: releases nothing. Used for checkout.session.expired.
+// Used for `checkout.session.expired`. A no-op once the booking is no
+// longer `pending_payment` (idempotent).
 export async function releaseHold(env, bookingId, reason) {
-  return { released: false };
+  const db = env.PORTAL_DB;
+  const nowIsoVal = nowIso();
+  const row = await db
+    .prepare(`UPDATE bookings SET status = 'cancelled', cancelled_at = ?, note = ? WHERE id = ? AND status = 'pending_payment' RETURNING *`)
+    .bind(nowIsoVal, `released: ${reason || "expired"}`, bookingId)
+    .first();
+  return { released: Boolean(row) };
 }
 
-// No-op stub: adds no credits, reports no balance change. B2a1's real
-// body is the single credit function (CTL-CRD-01), idempotent on `ref`.
+// CTL-CRD-01: the single credit-writing function for callers OUTSIDE a
+// booking's own write (the Stripe pack-purchase webhook, an owner hand
+// grant, a refund). A booking's own spend/return goes through the
+// same two statements inline in its own batch (createBooking/
+// cancelBooking above) so it stays in the SAME transaction as the
+// booking write (PIN-13's same-batch rule) -- this export manages its
+// OWN batch, which would not be atomic with a booking write it did not
+// originate.
+//
+// Idempotent on `ref`: schema has no dedicated ref column (migrations
+// are not this part's file -- flagged as a finding), so `source:ref` is
+// encoded into `credits_ledger.reason`, which already holds free-text
+// categories (e.g. 'pack_purchase'). A second call with the same
+// source+ref changes nothing.
 export async function addCredits(env, accountId, n, { source, ref } = {}) {
-  return { balance: 0 };
+  const db = env.PORTAL_DB;
+  if (!source || !ref) throw new Error(`addCredits requires source and ref, got source=${source} ref=${ref}`);
+  const reasonKey = `${source}:${ref}`;
+  const nowIsoVal = nowIso();
+  const ledgerId = newId();
+  const bookingIdForLedger = source === "cancel" ? ref : null;
+
+  const statements = [
+    db.prepare(`INSERT INTO credits (account_id, balance, updated_at) VALUES (?, 0, ?) ON CONFLICT(account_id) DO NOTHING`).bind(accountId, nowIsoVal),
+    db
+      .prepare(
+        `INSERT INTO credits_ledger (id, account_id, delta, reason, booking_id, created_at)
+         SELECT ?, ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM credits_ledger WHERE account_id = ? AND reason = ?)`
+      )
+      .bind(ledgerId, accountId, n, reasonKey, bookingIdForLedger, nowIsoVal, accountId, reasonKey),
+    db
+      .prepare(
+        `UPDATE credits SET balance = balance + ?, updated_at = ?
+         WHERE account_id = ? AND EXISTS (SELECT 1 FROM credits_ledger WHERE id = ? AND account_id = ?)`
+      )
+      .bind(n, nowIsoVal, accountId, ledgerId, accountId),
+  ];
+  await runBatch(db, statements);
+  const row = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(accountId).first();
+  return { balance: row ? row.balance : 0 };
 }
