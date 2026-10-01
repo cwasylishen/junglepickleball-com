@@ -26,16 +26,23 @@ echo "ok: no live-looking secret found."
 # request below, which wrote the WAL again -- an infinite "Reloading
 # local server..." loop that never reached "Ready on". Persisting
 # outside the watched tree breaks that loop.
-PERSIST_DIR="/tmp/jp-portal-test-d1-state"
+#
+# portal(FR1): JP_TEST_PORT/JP_TEST_STATE/JP_TEST_INSPECTOR_PORT are all
+# overridable (default unchanged) so two invocations of this script --
+# e.g. this fix round's own full-suite run alongside another part's --
+# never collide on the same port, D1 persist dir or inspector socket.
+PORT="${JP_TEST_PORT:-8799}"
+PERSIST_DIR="${JP_TEST_STATE:-/tmp/jp-portal-test-d1-state}"
+INSPECTOR_PORT="${JP_TEST_INSPECTOR_PORT:-9229}"
 
-echo "== Local D1: reset + apply migrations + seed =="
+echo "== Local D1: reset + apply migrations + seed (port=$PORT state=$PERSIST_DIR) =="
 rm -rf "$PERSIST_DIR"
 npx wrangler d1 migrations apply PORTAL_DB --local --persist-to "$PERSIST_DIR"
 npx wrangler d1 execute PORTAL_DB --local --persist-to "$PERSIST_DIR" --file=scripts/seed-preview.sql
 
-echo "== Starting wrangler dev --local on :8799 =="
+echo "== Starting wrangler dev --local on :$PORT (inspector :$INSPECTOR_PORT) =="
 PORTAL_DEV_LOGIN=1 STRIPE_WEBHOOK_SECRET=whsec_local_test_only \
-  npx wrangler dev --local --port 8799 --persist-to "$PERSIST_DIR" \
+  npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
   --var PORTAL_DEV_LOGIN:1 --var STRIPE_WEBHOOK_SECRET:whsec_local_test_only \
   > /tmp/jp-portal-test-server.log 2>&1 &
 SERVER_PID=$!
@@ -43,13 +50,13 @@ trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
 echo "Waiting for the server to answer..."
 for i in $(seq 1 30); do
-  if curl -s -o /dev/null "http://127.0.0.1:8799/api/portal/me"; then
+  if curl -s -o /dev/null "http://127.0.0.1:$PORT/api/portal/me"; then
     break
   fi
   sleep 1
 done
 
-echo "== Running node --test (black-box HTTP against :8799) =="
+echo "== Running node --test (black-box HTTP against :$PORT) =="
 set +e
 # This Node build does not glob a directory passed directly to --test
 # (confirmed: `node --test tests` fails with MODULE_NOT_FOUND even
@@ -59,9 +66,12 @@ set +e
 # against the one running server, so test FILES must run serially (a
 # test file that mutates portal_meta or accounts restores it afterwards,
 # but two files doing that at once would race).
+# --test-timeout=60000 (portal(FR1)): a hung request/assertion fails
+# that one test after 60s instead of hanging the whole suite (and this
+# script's caller) indefinitely.
 TEST_FILES=$(find tests -name '*.test.mjs' | sort)
-PORTAL_TEST_BASE_URL="http://127.0.0.1:8799" PORTAL_TEST_PERSIST_DIR="$PERSIST_DIR" \
-  node --test --test-concurrency=1 --test-reporter=spec $TEST_FILES
+PORTAL_TEST_BASE_URL="http://127.0.0.1:$PORT" PORTAL_TEST_PERSIST_DIR="$PERSIST_DIR" \
+  node --test --test-concurrency=1 --test-timeout=60000 --test-reporter=spec $TEST_FILES
 STATUS=$?
 set -e
 
