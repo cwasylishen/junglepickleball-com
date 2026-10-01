@@ -13,12 +13,19 @@
 import { sendDueReminders } from "./push.js";
 import { drainCalendarOutbox } from "./gcal.js";
 
-// D-A19 retention: magic-link rows purged 24h after expiry, session
-// rows purged after expiry (amendment 2). No-op stub until B2e writes
-// the real DELETE statements -- it changes no row, same discipline as
-// the other interface stubs this file calls.
+// D-A19 retention (amendment 2): magic-link rows purged 24h after
+// expiry, session rows purged after expiry. The audit log is kept --
+// neither statement below touches it. Each DELETE is a single
+// statement (atomic, R-6) and idempotent on its own: a row already
+// gone from a prior run simply matches zero rows the next time, so
+// running this twice in a row leaves the same state as running it once.
 async function purgeExpiredRows(env) {
-  return { purged: 0 };
+  const db = env.PORTAL_DB;
+  const nowIso = new Date().toISOString();
+  const loginTokenCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const tokens = await db.prepare(`DELETE FROM login_tokens WHERE expires_at <= ?`).bind(loginTokenCutoff).run();
+  const sessions = await db.prepare(`DELETE FROM sessions WHERE expires_at <= ?`).bind(nowIso).run();
+  return { login_tokens_purged: tokens.meta ? tokens.meta.changes : 0, sessions_purged: sessions.meta ? sessions.meta.changes : 0 };
 }
 
 // LOG-02: never logs the error's own message, only its class and a
