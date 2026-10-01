@@ -433,17 +433,24 @@ function isSingleCouplesSwitch(oldTier, newTier) {
 }
 
 async function handleSubscriptionUpsert(subscription, env, db) {
+  // A1/WH-009: a malformed or test fixture's subscription object may carry
+  // no `customer` at all -- D1 rejects a bound `undefined` outright (a
+  // real thrown error, not a graceful "no match"), so this guards to
+  // `null` the same way every other optional Stripe field in this file
+  // does, rather than letting an absent field turn into a 500.
+  if (!subscription.customer) return [];
   const account = await db.prepare(`SELECT id FROM accounts WHERE stripe_customer_id = ?`).bind(subscription.customer).first();
   if (!account) return []; // nothing to grant against yet; the raw event is still recorded in webhook_events
   const item = subscription.items && subscription.items.data && subscription.items.data[0];
   const tier = item && item.price && item.price.lookup_key;
   if (!tier) return [];
-  const status = subscription.status;
+  const status = subscription.status || null;
+  const subscriptionId = subscription.id || null;
   const statements = [];
 
   const existing = await db
     .prepare(`SELECT * FROM entitlement_grants WHERE account_id = ? AND source = 'stripe' AND stripe_subscription_id = ?`)
-    .bind(account.id, subscription.id)
+    .bind(account.id, subscriptionId)
     .first();
 
   if (existing) {
@@ -460,13 +467,14 @@ async function handleSubscriptionUpsert(subscription, env, db) {
           `INSERT INTO entitlement_grants (id, account_id, source, tier, stripe_subscription_id, stripe_status, starts_at, status, created_at, updated_at)
            VALUES (?,?,'stripe',?,?,?,?,'active',?,?)`
         )
-        .bind(newId(), account.id, tier, subscription.id, status, nowIso(), nowIso(), nowIso())
+        .bind(newId(), account.id, tier, subscriptionId, status, nowIso(), nowIso(), nowIso())
     );
   }
   return statements;
 }
 
 async function handleSubscriptionDeleted(subscription, env, db) {
+  if (!subscription.id) return []; // same reasoning as handleSubscriptionUpsert's customer guard
   const existing = await db
     .prepare(`SELECT id FROM entitlement_grants WHERE source = 'stripe' AND stripe_subscription_id = ? AND status = 'active'`)
     .bind(subscription.id)
