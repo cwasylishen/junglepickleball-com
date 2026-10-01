@@ -136,6 +136,42 @@ export async function authStart(request, env, db, url) {
   return json(resp);
 }
 
+// ---------- owner role re-derivation (S-3, M4/M5) ----------
+
+// The one place owner authority is derived from OWNER_EMAILS. Called at
+// every login (link: authVerify below; passkey: passkeys.js) AND at the
+// top of every authenticated request (router.js's loadAccount step),
+// so removing an address from OWNER_EMAILS takes effect on that
+// account's very next request, not just its next login -- a session
+// thief who never logs in again loses owner the same way a legitimate
+// demoted owner does. Demo owners keep the S-3 preview exception
+// (seeded is_demo owner + preview marker stays owner regardless of
+// OWNER_EMAILS). Mutates `account.role` in place and returns
+// `{ account, wasOwner, nowOwner }` so a caller that only runs at login
+// can still decide whether to write an `owner_promoted` audit row.
+export async function reconcileOwnerRole(db, env, account) {
+  const wasOwner = account.role === "owner";
+  const seededDemoOwner = Boolean(account.is_demo) && wasOwner && env.envClass === "preview";
+  const nowOwner = isOwnerEmail(account.email, env.OWNER_EMAILS) || seededDemoOwner;
+  let role = account.role;
+  if (nowOwner) role = "owner";
+  else if (wasOwner) {
+    const ent = await resolveEntitlement(db, account.id);
+    role = ent.entitled ? "member" : "guest";
+  }
+  if (role !== account.role) {
+    await db.prepare(`UPDATE accounts SET role = ?, updated_at = ? WHERE id = ?`).bind(role, nowIso(), account.id).run();
+    if (wasOwner && !nowOwner) {
+      // S-3: a demotion revokes every session for this account,
+      // including the one making the current request -- the request
+      // that detects the demotion is also the one it applies to.
+      await db.prepare(`DELETE FROM sessions WHERE account_id = ?`).bind(account.id).run();
+    }
+    account.role = role;
+  }
+  return { account, wasOwner, nowOwner: account.role === "owner" };
+}
+
 // ---------- login verify ----------
 
 export async function authVerify(request, env, db, url, currentSession) {
@@ -179,29 +215,20 @@ export async function authVerify(request, env, db, url, currentSession) {
     return json({ error: "confirm_account_switch", account_hint: hint }, 409);
   }
 
-  // S-3: owner role re-derived every login. An account is owner iff its
-  // email is in OWNER_EMAILS, OR it is a seeded is_demo owner and the
-  // preview marker exists (PIN-9's owner.demo has no OWNER_EMAILS entry
-  // at all in preview -- this second clause is what keeps it owner). A
-  // demoted owner loses its other sessions too.
-  const wasOwner = account.role === "owner";
-  const seededDemoOwner = Boolean(account.is_demo) && wasOwner && env.envClass === "preview";
-  const nowOwner = isOwnerEmail(account.email, env.OWNER_EMAILS) || seededDemoOwner;
-  let role = account.role;
-  if (nowOwner) role = "owner";
-  else if (wasOwner) {
-    const ent = await resolveEntitlement(db, account.id);
-    role = ent.entitled ? "member" : "guest";
-  }
-  if (role !== account.role) {
-    await db.prepare(`UPDATE accounts SET role = ?, updated_at = ? WHERE id = ?`).bind(role, nowIso(), account.id).run();
-    if (wasOwner && !nowOwner) {
-      await db.prepare(`DELETE FROM sessions WHERE account_id = ?`).bind(account.id).run();
-    }
-    account.role = role;
-  }
+  // S-3: owner role re-derived every login (and, per M4, every request
+  // -- see reconcileOwnerRole below, also called from router.js).
+  const { wasOwner } = await reconcileOwnerRole(db, env, account);
 
-  await db.prepare(`UPDATE login_tokens SET consumed_at = ? WHERE id = ?`).bind(nowIso(), row.id).run();
+  // M3 (PIN-8 single-use): consume atomically, gated on consumed_at
+  // still being NULL, right before minting the session. Two concurrent
+  // verifies of the same token both pass the SELECT checks above, but
+  // only one of them gets a row back from this UPDATE -- the other is
+  // told the token is already used and mints no session.
+  const claimed = await db
+    .prepare(`UPDATE login_tokens SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL RETURNING id`)
+    .bind(nowIso(), tokenHash)
+    .first();
+  if (!claimed) return json({ error: "verify.bad_used" }, 400);
   if (currentSession && currentSession.account_id !== account.id) {
     await db.prepare(`DELETE FROM sessions WHERE id = ?`).bind(currentSession.id).run();
   }
