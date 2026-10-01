@@ -47,6 +47,28 @@ const PROD_HOSTS = new Set(["junglepickleball.com", "www.junglepickleball.com"])
 // value that actually changes with the data (e.g. the marker row's own
 // last-write time), not a blind time window -- flagged for the
 // conductor/release-captain rather than built speculatively here.
+// Shared by both class resolvers below: given the marker's own claimed
+// env, checks the ONE remaining signal that marker alone cannot see --
+// does the accounts table actually agree with it. Pulled out so the
+// HTTP path (which also checks the hostname) and the scheduled path
+// (which has no hostname at all, M9) apply the exact same demo/real
+// data check rather than two hand-written copies of it.
+async function demoDataAgreesWithMarker(db, markerEnv) {
+  if (markerEnv === "preview") {
+    const nonDemo = await db
+      .prepare(`SELECT COUNT(*) AS n FROM accounts WHERE is_demo = 0 OR email NOT LIKE '%@jp-demo.test'`)
+      .first();
+    return !(nonDemo && nonDemo.n > 0); // CTL-ENV-02
+  }
+  if (markerEnv === "production") {
+    const demoRow = await db
+      .prepare(`SELECT COUNT(*) AS n FROM accounts WHERE is_demo = 1 OR email LIKE '%@jp-demo.test'`)
+      .first();
+    return !(demoRow && demoRow.n > 0); // CTL-ENV-01 (e)
+  }
+  return false;
+}
+
 async function computeEnvironmentClass(db, hostname) {
   const marker = await db.prepare(`SELECT env FROM portal_meta WHERE id = 1`).first();
   const markerEnv = marker ? marker.env : null;
@@ -54,24 +76,29 @@ async function computeEnvironmentClass(db, hostname) {
   const hostIsProd = PROD_HOSTS.has(hostname);
 
   if (hostIsPreview && markerEnv === "preview") {
-    const nonDemo = await db
-      .prepare(`SELECT COUNT(*) AS n FROM accounts WHERE is_demo = 0 OR email NOT LIKE '%@jp-demo.test'`)
-      .first();
-    if (nonDemo && nonDemo.n > 0) return "mismatch"; // CTL-ENV-02
-    return "preview";
+    return (await demoDataAgreesWithMarker(db, "preview")) ? "preview" : "mismatch";
   }
   if (hostIsProd && markerEnv === "production") {
-    const demoRow = await db
-      .prepare(`SELECT COUNT(*) AS n FROM accounts WHERE is_demo = 1 OR email LIKE '%@jp-demo.test'`)
-      .first();
-    if (demoRow && demoRow.n > 0) return "mismatch"; // CTL-ENV-01 (e)
-    return "production";
+    return (await demoDataAgreesWithMarker(db, "production")) ? "production" : "mismatch";
   }
   return "mismatch";
 }
 
 export async function resolveEnvironmentClass(db, hostname) {
   return computeEnvironmentClass(db, hostname);
+}
+
+// M9 / CTL-ENV-01(a)/(f), CTL-ENV-03: the scheduled handler has no
+// hostname to check (cron triggers carry no request), so it applies
+// the marker + accounts-table leg only -- the one signal a cron run
+// CAN see -- and still fails closed on any disagreement or on an
+// absent/unrecognised marker. src/worker.js's scheduled() calls this
+// (never the raw env) before it will run a single job.
+export async function resolveScheduledEnvironmentClass(db) {
+  const marker = await db.prepare(`SELECT env FROM portal_meta WHERE id = 1`).first();
+  const markerEnv = marker ? marker.env : null;
+  if (markerEnv !== "preview" && markerEnv !== "production") return "mismatch";
+  return (await demoDataAgreesWithMarker(db, markerEnv)) ? markerEnv : "mismatch";
 }
 
 // CTL-ENV-01 (f) / CTL-ENV-03: handlers receive only this filtered view,

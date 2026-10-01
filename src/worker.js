@@ -2,7 +2,7 @@
 // Assets are served by the assets layer first; this script only receives
 // requests that match no static file (i.e. /api/* and true 404s).
 
-import { handlePortalRequest, handlePortalShellFallback } from "./portal/router.js";
+import { handlePortalRequest, handlePortalShellFallback, resolveScheduledEnvironmentClass, buildPortalEnv } from "./portal/router.js";
 import { runScheduled } from "./portal/cron.js";
 
 const SESSION_COOKIE = "jp_admin";
@@ -1051,8 +1051,20 @@ export default {
   },
 
   // Cron Trigger entry (PIN-14). The body lives in src/portal/cron.js,
-  // owned by B2e; this export is the one-line shell B1 adds.
+  // owned by B2e; this export is the shell B1 adds, which (M9,
+  // CTL-ENV-01(a)/(f)/CTL-ENV-03) never hands cron.js the raw env: a
+  // cron trigger carries no hostname, so the marker+accounts leg is
+  // the one signal available, and a mismatch (or a missing PORTAL_DB)
+  // means the scheduled handler does nothing -- no job runs, nothing
+  // is logged as having run. A merge that binds the preview DB to this
+  // branch's cron (A5: "treat a merge as a deploy") can therefore never
+  // push production secrets or real calendar/push actions against demo
+  // rows.
   async scheduled(controller, env) {
-    await runScheduled(env);
+    const db = env.PORTAL_DB;
+    if (!db) return;
+    const envClass = await resolveScheduledEnvironmentClass(db);
+    if (envClass === "mismatch") return;
+    await runScheduled(buildPortalEnv(env, envClass));
   },
 };
