@@ -21,7 +21,7 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { json } from "./http.js";
 import { newId, nowIso } from "./db.js";
 import { writeAudit } from "./audit.js";
-import { originMatchesRequestUrl, mintSession, publicAccount } from "./auth.js";
+import { originMatchesRequestUrl, mintSession, publicAccount, reconcileOwnerRole } from "./auth.js";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // CTL-PK-01
 
@@ -204,6 +204,12 @@ export async function passkeyLoginFinish(request, env, db, url, currentSession) 
     await db.prepare(`DELETE FROM sessions WHERE id = ?`).bind(currentSession.id).run();
   }
 
+  // M5/S-3: passkey login re-derives owner authority exactly like
+  // magic-link verify, through the same shared function -- previously
+  // this never ran, so an owner removed from OWNER_EMAILS kept owner
+  // indefinitely by passkey.
+  const { wasOwner } = await reconcileOwnerRole(db, env, account);
+
   const { csrfToken, cookieHeader } = await mintSession(db, request, url, account, "passkey");
   await writeAudit(db, {
     actor: account.id,
@@ -211,6 +217,9 @@ export async function passkeyLoginFinish(request, env, db, url, currentSession) 
     targetType: "account",
     targetId: account.id,
   });
+  if (account.role === "owner" && !wasOwner) {
+    await writeAudit(db, { actor: account.id, action: "owner_promoted", targetType: "account", targetId: account.id });
+  }
 
   return json(
     { ok: true, first_login: false, csrf_token: csrfToken, account: publicAccount(account) },
