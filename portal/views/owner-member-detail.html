@@ -38,8 +38,8 @@
               <span x-text="g.tier"></span>
               <span class="text-xs px-2 py-0.5 rounded-full border" :class="g.status === 'active' ? 'border-green-400 bg-green-50 text-green-700' : 'border-slate-300 text-slate-500'" x-text="g.status"></span>
             </div>
-            <div class="text-slate-500" x-text="g.source === 'stripe' ? t('member.source_stripe') : t('member.source_granted', {owner: g.created_by || 'owner', note: g.note || ''})"></div>
-            <div class="text-slate-500" x-text="h.fmtDate(g.starts_at) + ' – ' + h.fmtDate(g.ends_at)"></div>
+            <div class="text-slate-500" x-text="g.source === 'stripe' ? t('member.source_stripe') : t('member.source_granted', {owner: g.created_by ? granterName(g.created_by) : 'owner', note: g.note || ''})"></div>
+            <div class="text-slate-500" x-text="h.fmtDateYear(g.starts_at) + ' – ' + h.fmtDateYear(g.ends_at)"></div>
             <div x-show="g.linked_by_email" class="text-amber-800 text-xs mt-1" x-text="t('member.linked_by_email')"></div>
             <button x-show="g.status === 'active' && g.source !== 'stripe'" class="mt-1 text-xs underline text-jpteal" @click="endGrant(g)" x-text="t('member.end_grant')"></button>
           </div>

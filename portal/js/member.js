@@ -519,6 +519,11 @@ function memberBookings() {
     toast: "",
     t: window.t,
     chipClass: window.chipClass,
+    // D6: the cancel sheet calls crDateLabel(cancelTarget.start), but this
+    // component never defined it (memberHistory(), just below, has the
+    // same line) -- PAGEERROR "crDateLabel is not defined" threw before
+    // the sentence naming the booking could render.
+    crDateLabel: function (iso) { return crDate(iso); },
     async load() {
       this.loading = true;
       this.error = false;
@@ -563,8 +568,11 @@ function memberBookings() {
       if (res.ok) {
         this.cancelTarget = null;
         this.toast = t("cancel.done");
-        setTimeout(function () { }, 0);
-        this.load();
+        // D6: the heading ("N coming up") still read the pre-cancel count
+        // because load() ran without being waited on -- await it so
+        // this.all (and topLine()'s count) is settled before this
+        // handler returns.
+        await this.load();
         var self = this;
         setTimeout(function () { self.toast = ""; }, 3000);
       } else if (res.error === "past_cutoff") {

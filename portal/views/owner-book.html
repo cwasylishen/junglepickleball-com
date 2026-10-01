@@ -1,4 +1,9 @@
-<div x-data="ownerBook()" x-init="init()">
+<!-- D3: no x-init="init()" here. Alpine already calls a data method
+     named init() once on its own when x-data is processed; adding
+     x-init="init()" on top of that runs loadResources() a second time
+     for the same mount, and the two concurrent loads raced the owner's
+     own court pick back to the default. -->
+<div x-data="ownerBook()">
   <h1 class="text-2xl font-heading uppercase text-jpteal" x-text="t('tab.book')"></h1>
   <p class="text-sm text-slate-600 mt-1" x-text="t('obook.top')"></p>
 

@@ -72,11 +72,24 @@ INSERT INTO credits (account_id, balance, updated_at) VALUES
 -- CTL-MSG-01's real pending_payment-then-webhook path) because this is
 -- seed data, not a live booking flow, and needs no Stripe webhook to
 -- land already-confirmed on a cold database.
+--
+-- portal(FR4-B)/D4: start_at/end_at must be the same ISO-8601 UTC shape
+-- booking.js writes (`...T16:00:00.000Z`), not sqlite's naive
+-- `datetime()` output (`...16:00:00`, no "T", no "Z") -- the app's own
+-- day-bucketing parses the stored value as an instant and mis-buckets a
+-- naive string. The chain below: shift 'now' to Costa Rica wall time
+-- (-6h, PIN-6), step to the intended CR calendar day and hour, then
+-- shift back to true UTC (+6h) before formatting with strftime's own
+-- ISO template -- so the stored instant is exactly the UTC instant for
+-- "16:00 Costa Rica time tomorrow" / "20:00 Costa Rica time the day
+-- after", the same CR times this file always intended.
 -- ---------------------------------------------------------------------
 INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at) VALUES
   ('demo-bkg-msg1-0-000-000000000001', 'demo-memb1-0000-0000-000000000003', 'demo-msg-00000-0000-000000000005', 'demo-off-00000-0000-000000000005',
-    datetime('now', '+1 day', 'start of day', '+16 hours'), datetime('now', '+1 day', 'start of day', '+17 hours'),
+    strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now', '-6 hours', '+1 day', 'start of day', '+16 hours', '+6 hours'),
+    strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now', '-6 hours', '+1 day', 'start of day', '+17 hours', '+6 hours'),
     1, 0, 'confirmed', 'override', 'demo-owner-0000-0000-000000000001', datetime('now'), datetime('now')),
   ('demo-bkg-msg2-0-000-000000000002', 'demo-memb1-0000-0000-000000000003', 'demo-msg-00000-0000-000000000005', 'demo-off-00000-0000-000000000006',
-    datetime('now', '+2 day', 'start of day', '+20 hours'), datetime('now', '+2 day', 'start of day', '+21 hours'),
+    strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now', '-6 hours', '+2 day', 'start of day', '+20 hours', '+6 hours'),
+    strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now', '-6 hours', '+2 day', 'start of day', '+21 hours', '+6 hours'),
     1, 0, 'confirmed', 'override', 'demo-owner-0000-0000-000000000001', datetime('now'), datetime('now'));

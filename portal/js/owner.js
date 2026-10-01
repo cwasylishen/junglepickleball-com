@@ -254,12 +254,22 @@
   // ---------------------------------------------------------------
   const CR_TZ = "America/Costa_Rica";
   const dateFmt = new Intl.DateTimeFormat("en-US", { timeZone: CR_TZ, weekday: "short", day: "numeric", month: "short" });
+  // D7: the grant range on member detail needs the year (an annual grant
+  // otherwise reads as a single day, e.g. "Thu, Oct 1 - Fri, Oct 1" for a
+  // grant that actually runs a full year) -- a separate formatter so the
+  // other, shorter uses of fmtDate (today's own date strip, "Joined
+  // {date}") keep their existing look.
+  const dateFmtYear = new Intl.DateTimeFormat("en-US", { timeZone: CR_TZ, weekday: "short", day: "numeric", month: "short", year: "numeric" });
   const timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: CR_TZ, hour: "2-digit", minute: "2-digit", hour12: false });
   const isoDateFmt = new Intl.DateTimeFormat("en-CA", { timeZone: CR_TZ, year: "numeric", month: "2-digit", day: "2-digit" }); // en-CA = YYYY-MM-DD
 
   function fmtDate(iso) {
     if (!iso) return "";
     return dateFmt.format(new Date(iso));
+  }
+  function fmtDateYear(iso) {
+    if (!iso) return "";
+    return dateFmtYear.format(new Date(iso));
   }
   function fmtTime(iso) {
     if (!iso) return "";
@@ -321,7 +331,7 @@
     { key: "jp_annual_couples", label: "Annual Couples" },
   ];
 
-  window.ownerHelpers = { fmtDate, fmtTime, fmtMoney, todayCR, shiftDateCR, classify, notConfiguredFeature, TIERS, t: window.t };
+  window.ownerHelpers = { fmtDate, fmtDateYear, fmtTime, fmtMoney, todayCR, shiftDateCR, classify, notConfiguredFeature, TIERS, t: window.t };
 
   // ---------------------------------------------------------------
   // O1 Today
@@ -472,6 +482,7 @@
       dependants: [],
       bookings: [],
       payments: [],
+      accountNames: {},
       overlap: false,
       grantSheet: false,
       roleSheet: false,
@@ -494,9 +505,10 @@
       },
       async load() {
         this.state = "loading";
-        const [res, resourcesRes] = await Promise.all([
+        const [res, resourcesRes, accountsRes] = await Promise.all([
           PortalApi.get("/api/portal/owner/accounts/" + this.id()),
           PortalApi.get("/api/portal/owner/resources"),
+          PortalApi.get("/api/portal/owner/accounts"),
         ]);
         if (!res.ok) {
           this.state = classify(res);
@@ -505,6 +517,12 @@
         const d = res.data || {};
         this.account = d.account || d;
         this.grants = d.grants || [];
+        // D7: entitlement_grants.created_by is the granter's account id, not
+        // a name -- the accounts list is the only place that id resolves to
+        // a display name, so build that map here rather than show the raw
+        // id in the view.
+        this.accountNames = {};
+        for (const a of accountsRes.ok ? accountsRes.data || [] : []) this.accountNames[a.id] = a.display_name || a.email || a.id;
         // src/portal/owner.js's getAccountDetail() returns `households`
         // (plural -- this account may be the payer's own row, the
         // partner's, or absent), each a bare households-table row with no
@@ -520,6 +538,9 @@
         const activeSources = new Set(this.grants.filter((g) => g.status === "active").map((g) => g.source));
         this.overlap = activeSources.size > 1;
         this.state = "ok";
+      },
+      granterName(id) {
+        return this.accountNames[id] || id;
       },
       get activeGrant() {
         return this.grants.find((g) => g.status === "active") || null;
@@ -666,7 +687,17 @@
         this.resources = res.data || [];
         this.state = this.resources.length === 0 ? "empty" : "ok";
         if (this.resources.length) {
-          this.resourceId = this.resources[0].id;
+          // D3: loadResources() can run more than once for the same mount
+          // (Alpine's own auto-call of a data method named init() plus
+          // this view's explicit x-init="init()" -- fixed in
+          // owner-book.html, but this guard is the one that actually
+          // keeps the owner's chosen court from snapping back: it only
+          // picks a default the first time, or if the previously picked
+          // resource no longer exists, never overwriting a resource the
+          // owner already picked).
+          if (!this.resourceId || !this.resources.some((r) => r.id === this.resourceId)) {
+            this.resourceId = this.resources[0].id;
+          }
           await this.loadSlots();
         }
       },
@@ -838,8 +869,17 @@
       editing: null,
       amountInput: "",
       saveState: "idle", // idle|saving|error
+      stripeOn: true,
       h: window.ownerHelpers,
       async init() {
+        // D5: /api/portal/owner/resources succeeds (200) whether or not
+        // Stripe is connected -- it just lists resources and the mirrored
+        // display prices -- so classify()'s 503/not_configured path never
+        // fires here. The real signal is /api/portal/me's features.stripe,
+        // the same flag ownerToday already reads for its own stripe-off
+        // note.
+        const me = await window.PortalApp.bootstrapSession();
+        this.stripeOn = Boolean(me.features && me.features.stripe);
         await this.load();
       },
       async load() {
