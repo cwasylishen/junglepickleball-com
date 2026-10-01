@@ -34,6 +34,8 @@ import {
   ownerOverrideBooking,
   outboxFailures,
   listOverlaps,
+  listRefundsDue,
+  markRefunded,
 } from "../owner.js";
 import { staffCalendar } from "../staff.js";
 
@@ -230,6 +232,18 @@ async function postOwnerBooking(ctx) {
   return json({ booking: result.booking }, 201);
 }
 
+// ---------- refunds due (M19/CTL-REF-01) ----------
+
+async function getRefundsDue(ctx) {
+  return json(await listRefundsDue(ctx.db));
+}
+
+async function postMarkRefunded(ctx) {
+  const result = await markRefunded(ctx.db, ctx.account.id, ctx.params.id);
+  if (result.error) return errorResponse(result);
+  return json({ ok: true });
+}
+
 // ---------- outbox / overlaps ----------
 
 async function getOutbox(ctx) {
@@ -281,6 +295,9 @@ export const ROUTES = [
   { method: "DELETE", path: "/api/portal/owner/blocks/:id", class: "owner", handler: deleteBlockRoute },
 
   { method: "POST", path: "/api/portal/owner/bookings", class: "owner", handler: postOwnerBooking },
+
+  { method: "GET", path: "/api/portal/owner/refunds-due", class: "owner", handler: getRefundsDue },
+  { method: "POST", path: "/api/portal/owner/bookings/:id/mark-refunded", class: "owner", handler: postMarkRefunded },
 
   { method: "GET", path: "/api/portal/owner/outbox", class: "owner", handler: getOutbox },
   { method: "GET", path: "/api/portal/owner/overlaps", class: "owner", handler: getOverlaps },
