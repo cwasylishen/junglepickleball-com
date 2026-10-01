@@ -47,7 +47,8 @@ function fakeDb(initialRows) {
             const id = args[args.length - 1];
             const row = findById(id);
             writes.push({ sql, args });
-            if (sql.includes("SET last_error = ?, updated_at = ?")) {
+            if (sql.includes("SET status = 'failed', last_error = ?, updated_at = ?")) {
+              row.status = "failed";
               row.last_error = args[0];
               row.updated_at = args[1];
             } else if (sql.includes("status = 'sent'")) {
@@ -144,7 +145,7 @@ test("configured drain inserts a create row and marks it sent", async () => {
   assert.ok(insertCall.url.includes(encodeURIComponent("court1@group.calendar.google.com")));
 });
 
-test("a resource with no google_calendar_id is skipped, flagged, and left pending for later", async () => {
+test("M22: a resource with no google_calendar_id is flagged failed, not left pending forever", async () => {
   const db = fakeDb([candidateRow({ google_calendar_id: null })]);
   const fetchImpl = fetchSpy(() => {
     throw new Error("fetch must never be called for a row with no calendar id");
@@ -156,9 +157,43 @@ test("a resource with no google_calendar_id is skipped, flagged, and left pendin
   );
 
   assert.deepEqual(result, { configured: true, sent: 0, failed: 0, skipped: 1 });
-  assert.equal(db.rows[0].status, "pending");
+  // RED (the pre-fix defect, M22): the row stayed `pending` forever, so
+  // it was re-selected by every later drain and never left the owner's
+  // view as anything but a growing "pending" count.
+  assert.equal(db.rows[0].status, "failed");
   assert.equal(db.rows[0].last_error, "no_calendar_id");
   assert.equal(fetchImpl.calls.length, 0);
+});
+
+test("M22: a backlog of no-calendar rows ahead of a pushable row does not stall the drain", async () => {
+  // More than `limit` no-calendar rows, oldest first, then one pushable
+  // row behind them -- the exact shape M22 describes ("once `limit`
+  // such rows accumulate, the sync stalls permanently").
+  const limit = 5;
+  const noCalendarRows = Array.from({ length: limit + 3 }, (_, i) =>
+    candidateRow({ id: `no-cal-${i}`, booking_id: `b1a2c3d4-0000-0000-0000-00000000000${i}`, google_calendar_id: null, updated_at: "2026-09-01T00:00:00.000Z" })
+  );
+  const pushableRow = candidateRow({ id: "pushable-1", booking_id: "b1a2c3d4-0000-0000-0000-000000000099", updated_at: "2026-09-01T00:00:00.000Z" });
+  const db = fakeDb([...noCalendarRows, pushableRow]);
+  const fetchImpl = fetchSpy((url) => {
+    if (url === "https://oauth2.googleapis.com/token") return tokenOk();
+    return { ok: true, status: 200, json: async () => ({ id: "jp..." }) };
+  });
+
+  const result = await drainCalendarOutbox(
+    { PORTAL_DB: db, GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "x@y.iam.gserviceaccount.com", private_key: FIXTURE_PRIVATE_KEY }) },
+    { fetchImpl, limit }
+  );
+
+  // RED on the pre-fix code: `rows` was sliced to `limit` *before* the
+  // no-calendar rows were skipped, so with `limit + 3` no-calendar rows
+  // ahead of it, the pushable row was never even looked at -- sent
+  // stayed 0 and its status stayed "pending" no matter how many times
+  // the drain ran.
+  assert.equal(result.sent, 1);
+  assert.equal(db.rows.find((r) => r.id === "pushable-1").status, "sent");
+  assert.equal(result.skipped, limit + 3);
+  assert.ok(noCalendarRows.every((r) => db.rows.find((row) => row.id === r.id).status === "failed"));
 });
 
 test("D-A17: a push that keeps failing is retried with backoff, then marked failed at the 5th attempt", async () => {

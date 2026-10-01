@@ -167,8 +167,19 @@ async function loadCandidateRows(db, limit) {
   return results || [];
 }
 
+// M22 fix: a resource with no calendar id is not retry-able by waiting
+// (nothing about the row will change on its own), so it must leave the
+// `pending` pool now, the same terminal state a push that exhausted its
+// retry cap lands in. `last_error` keeps the two apart for the owner:
+// `no_calendar_id` here, `gcal_api_status=...` or an exception name for
+// an exhausted retry. There is no allowed status for this between
+// `pending` and `failed` (migrations/0005's CHECK) -- see the return's
+// finding note.
 async function markNoCalendar(db, row) {
-  await db.prepare(`UPDATE calendar_outbox SET last_error = ?, updated_at = ? WHERE id = ?`).bind("no_calendar_id", nowIso(), row.id).run();
+  await db
+    .prepare(`UPDATE calendar_outbox SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?`)
+    .bind("no_calendar_id", nowIso(), row.id)
+    .run();
 }
 
 async function markSent(db, row) {
@@ -203,23 +214,28 @@ export async function drainCalendarOutbox(env, { limit = 25, fetchImpl = fetch }
   const serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const candidates = await loadCandidateRows(db, limit);
   const now = Date.now();
-  const rows = candidates.filter((r) => dueForRetry(r, now)).slice(0, limit);
+  const dueRows = candidates.filter((r) => dueForRetry(r, now));
 
   let sent = 0;
   let failed = 0;
   let skipped = 0;
+  let attempted = 0; // counts only rows that reach Google, M22 fix
 
-  for (const row of rows) {
+  for (const row of dueRows) {
     if (!row.google_calendar_id) {
-      // A resource with no calendar configured is not a retry-able
-      // failure -- it may get one later -- so the row stays `pending`,
-      // counted as skipped and flagged with a distinct last_error so the
-      // owner view can tell "waiting on Google" apart from "waiting on
-      // a calendar id Roger has not set yet".
+      // A resource with no calendar configured can never succeed by
+      // waiting, so it is resolved immediately (markNoCalendar moves it
+      // out of `pending`) instead of spending one of this call's
+      // `limit` real attempts on it. Left uncapped here, a backlog of
+      // these rows would otherwise fill every slot in `limit` and the
+      // real, pushable rows behind them would never be reached (M22).
       skipped += 1;
       await markNoCalendar(db, row);
       continue;
     }
+
+    if (attempted >= limit) break; // this call's budget of real attempts is spent
+    attempted += 1;
 
     try {
       const accessToken = await getGoogleAccessToken(serviceAccount, fetchImpl);
