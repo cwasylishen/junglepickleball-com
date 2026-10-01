@@ -15,7 +15,7 @@
 // Stripe price edit the only path a price ever changes on, so B2a2's
 // offering CRUD (when it lands) must never touch this one column.
 
-import { json, notConfigured } from "./http.js";
+import { json, notConfigured, logAndMask } from "./http.js";
 import { newId, nowIso, runBatch } from "./db.js";
 import { auditStatement } from "./audit.js";
 import { confirmPaidBooking, releaseHold, addCredits } from "./booking.js";
@@ -665,14 +665,18 @@ export async function handleStripeWebhook(request, env, db) {
   // the returned row and proceeds; the other sees no row and returns
   // immediately below, computing and applying nothing.
   //
-  // Residual, accepted for this fix round: if the claimant crashes
-  // after this INSERT but before the batch below marks it 'processed',
-  // the row is left claimed-but-unprocessed and a later redelivery of
-  // the same event id will also see no row returned here and no-op
-  // (never finishing that event). This is the documented tradeoff of
-  // "claim-then-effect" named in this round's dispatch; a stuck
-  // claimed-but-unprocessed row needs a human replay from the Stripe
-  // dashboard, which assigns a fresh event id and claims cleanly.
+  // N1 fix (inspection-2.md): the claim above used to be permanent --
+  // nothing released it when an effect failed, so a thrown error after
+  // this INSERT left that event id claimed-but-unprocessed FOREVER
+  // (Stripe's retry resends the SAME event id, finds no row returned by
+  // the claim, and no-ops at `if (!claim)` below, forever). The claim
+  // and the effects are still not one D1 batch (computeEffectStatements
+  // calls B2a1's own already-atomic functions directly, not via
+  // statements this file could fold into one batch), so instead: on any
+  // failure between the claim and the processed-batch committing, the
+  // claim row is deleted so a later delivery of the SAME event id can
+  // claim and process it again, and this response is a non-2xx so
+  // Stripe actually schedules that redelivery.
   const claim = await db
     .prepare(`INSERT INTO webhook_events (id, type, received_at, status) VALUES (?,?,?, 'received') ON CONFLICT(id) DO NOTHING RETURNING id`)
     .bind(event.id, event.type, nowIso())
@@ -684,7 +688,15 @@ export async function handleStripeWebhook(request, env, db) {
     return json({ received: true });
   }
 
-  const effectStatements = await computeEffectStatements(event, env, db);
+  let effectStatements;
+  try {
+    effectStatements = await computeEffectStatements(event, env, db);
+  } catch (err) {
+    await db.prepare(`DELETE FROM webhook_events WHERE id = ? AND status = 'received'`).bind(event.id).run();
+    // eslint-disable-next-line no-console
+    console.log(`stripe_webhook_effect_failed id=${event.id} type=${event.type} stage=compute`);
+    return logAndMask(err);
+  }
 
   // FMEA top-3: the event is marked processed only in the SAME batch as
   // the effect rows this file writes directly (payments_mirror,
@@ -694,10 +706,22 @@ export async function handleStripeWebhook(request, env, db) {
   // their own and are each idempotent, so a crash between that call and
   // this batch committing is safe for THOSE effects: the one residual
   // gap is the direct effects below, named above.
-  await runBatch(db, [
-    db.prepare(`UPDATE webhook_events SET status = 'processed', processed_at = ? WHERE id = ?`).bind(nowIso(), event.id),
-    ...effectStatements,
-  ]);
+  try {
+    await runBatch(db, [
+      db.prepare(`UPDATE webhook_events SET status = 'processed', processed_at = ? WHERE id = ?`).bind(nowIso(), event.id),
+      ...effectStatements,
+    ]);
+  } catch (err) {
+    // N1: this batch failing (e.g. a CHECK violation on one of the
+    // direct effect rows) must not leave the claim stuck -- release it
+    // the same way the compute-stage catch above does, so a later
+    // delivery of this same event id is accepted and processed again
+    // rather than silently no-op'd at `if (!claim)`.
+    await db.prepare(`DELETE FROM webhook_events WHERE id = ? AND status = 'received'`).bind(event.id).run();
+    // eslint-disable-next-line no-console
+    console.log(`stripe_webhook_effect_failed id=${event.id} type=${event.type} stage=batch`);
+    return logAndMask(err);
+  }
 
   // eslint-disable-next-line no-console
   console.log(`stripe_webhook_processed id=${event.id} type=${event.type}`);
