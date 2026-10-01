@@ -40,7 +40,7 @@ becomes `500 {"error":"server_error"}` (CTL-ERR-01).
 
 | Method & path | Class | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /api/portal/me` | own | — | Signed out: `200 {authenticated:false, features:{stripe,push,gcal,passkeys,preview}}`. Signed in: `200 {authenticated:true, features, csrf_token, account:{id,email,role,display_name}, entitlement:{entitled,tier,overlap}}` | — |
+| `GET /api/portal/me` | own | — | Signed out: `200 {authenticated:false, features:{stripe,push,gcal,passkeys,preview}}`. Signed in: `200 {authenticated:true, features, csrf_token, account:{id,email,role,display_name}, entitlement:{entitled,tier,overlap}, credits}` (`credits` added portal(FR1)) | — |
 | `GET /api/portal/owner/sessions` | owner | — | `[{id,method,user_agent_family,created_at,last_used_at,current}]` (CTL-AUTH-01) | |
 | `POST /api/portal/owner/sessions/revoke-others` | owner | — | `200 {ok:true}` -- deletes every other session row of the caller's own account | |
 | `GET /api/portal/owner/health` | owner | — | `{owners, email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured}` (CTL-AUTH-06, CTL-OWN-01; §4 adds `outbox`) | |
@@ -63,9 +63,9 @@ only `{display_name}` (CTL-AUTHZ-03); every other field in the body is ignored, 
 | `GET /api/portal/resources` | own | — | `[{id, kind, name, open_time, close_time, slot_minutes, buffer_minutes, member_included, offerings:[{id,name,duration_minutes,audience,display_price_cents}]}]` | — |
 | `GET /api/portal/resources/:id/availability?date=YYYY-MM-DD` | own | — | `{slots:[{start,end,state}]}`, `state ∈ {available,taken,held,held_mine,mine,blocked,past}` (screens §10 item 2). No account fields for member/guest (CTL-AVL-01). Owner variant (`GET /api/portal/owner/resources/:id/availability`, B2a2) adds `display_name`, `booking_id`. | `400 bad_date` |
 | `GET /api/portal/resources/:id/quote?offering_id=&start=&party_size=` | own | — | `{mode, unit_cents, party_size, total_cents, credits_needed, credits_have, cancel_cutoff_minutes}` (screens §10 item 3), `mode` from `entitlement.resolveAudience` | `409 price_not_set` |
-| `POST /api/portal/bookings` | own | `{resource_id, offering_id?, start, party_size, free_kids?, payment_choice?}` | `201 {booking:{id,status,payment_mode,hold_expires_at?,checkout_url?}}`. **Must not create any row at all if a paid path is `not_configured` (S-11/F-D1) -- check Stripe configuration before inserting a hold.** | `409 slot_taken`, `409 outside_window`, `409 in_past`, `409 blocked`, `409 cap_reached`, `409 insufficient_credits`, `409 price_not_set`, `503 not_configured {feature:"stripe"}`, `400 invalid_request` |
+| `POST /api/portal/bookings` | own | `{resource_id, offering_id?, start, party_size, free_kids?, payment_choice?}` | `201 {booking:{id,status,payment_mode,hold_expires_at?,checkout_url?}}`. **Must not create any row at all if a paid path is `not_configured` (S-11/F-D1) -- check Stripe configuration before inserting a hold.** | `409 slot_taken`, `409 outside_window`, `409 in_past`, `409 blocked`, `409 cap_reached`, `409 insufficient_credits`, `409 price_not_set`, `409 price_mismatch` (CTL-STR-02, added portal(FR1)), `503 not_configured {feature:"stripe"}`, `400 invalid_request` |
 | `POST /api/portal/bookings/:id/cancel` | own | — | `200 {ok:true, credits_returned}` | `404` (not this account's or already cancelled), `409 past_cutoff` (UI string key `cancel.err_cutoff`) |
-| `GET /api/portal/bookings` | own | — | `[{id,resource,start,end,status,payment_mode}]`, this account's own rows only | — |
+| `GET /api/portal/bookings` | own | — | `[{id,resource,start,end,status,payment_mode,party_size}]` (`party_size` added portal(FR1)), this account's own rows only | — |
 
 Credit spend/return is one function in `booking.js` (CTL-CRD-01); it is never computed inline in
 the create/cancel handlers.
@@ -112,6 +112,8 @@ the create/cancel handlers.
 | `GET /api/portal/owner/accounts` | owner | — | `[{id,email,role,display_name,is_demo,entitlement:{tier,overlap}}]` (CTL-ENV-02 refuses this on a non-demo-polluted preview DB) | |
 | `GET /api/portal/owner/accounts/:id` | owner | — | account detail + grants + households + dependants + bookings | `404` |
 | `POST /api/portal/owner/accounts/:id/grant` | owner | `{tier, starts_at, ends_at, note}` | `201 {grant}` (D-A05, audited, one batch with the audit row) | `400 bad_tier` |
+| `POST /api/portal/owner/accounts/:id/grants/:grantId/end` | owner | — | `200 {grant}` -- ends a hand grant in place (added portal(FR1); audited `hand_grant_ended`; idempotent) | `404 not_found`, `403 not_a_hand_grant` (never ends a Stripe grant, P-2) |
+| `GET /api/portal/me/household` | own | — | `{tier, is_couples, partner, kids:[{first_name,birth_year}]}`, own household only (added portal(FR1), B2f1 M6 finding) | — |
 | `POST /api/portal/owner/accounts/:id/household-link` | owner | `{partner_account_id}` | `200 {household}` (D-A02) | `409 already_linked` |
 | `DELETE /api/portal/owner/households/:id` | owner | — | `200 {ok:true}` (unlink) | |
 | `POST /api/portal/owner/accounts/:id/dependants` | owner | `{first_name, birth_year}` | `201 {dependant}` (D-A03; first name + birth year only, CTL-DATA-04) | |
@@ -123,7 +125,7 @@ the create/cancel handlers.
 | `GET/POST/PATCH/DELETE /api/portal/owner/resources/:id/offerings[/:offeringId]` | owner | offering fields | offering row | |
 | `GET/POST/DELETE /api/portal/owner/blocks[/:id]` | owner | `{resource_id, kind, weekday|date, start_time, end_time, label}` | block row(s) | Warns, never bumps an existing booking (F-D3) |
 | `POST /api/portal/owner/bookings` (owner override, D-A11) | owner | `{resource_id, start, account_id? , walk_in_name?}` | `201 {booking}`, bypasses window/entitlement/payment | `409 slot_taken` (no bumping) |
-| `GET /api/portal/owner/health` | owner | — | `{owners:[...], email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured, outbox:{pending,failed}}` (CTL-OWN-01, CTL-AUTH-06, CTL-UI-06) | |
+| `GET /api/portal/owner/health` | owner | — | `{owners:[...], email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured, outbox:{pending,failed}}` (CTL-OWN-01, CTL-AUTH-06, CTL-UI-06; `outbox` wired portal(FR1)) | |
 | `GET /api/portal/owner/outbox` | owner | — | `{pending, failed:[...]}` (screens §10 item 9) | |
 | `GET /api/portal/owner/overlaps` | owner | — | accounts with >1 valid entitlement source (P-4) | |
 | `GET /api/portal/staff/calendar?date=` | staff-own | — | `[{start,end,resource,display_name,state}]`, this staff's own resource only, no email/phone/notes/payment (D-A16) | `403` if asking another resource (CTL-STF-01) |
@@ -289,3 +291,49 @@ item 10 → §4 staff calendar row.
   `createBooking` (committed independently, in parallel) and matched exactly after the fact.
   Recommended follow-up: B2a1 exports a shared `insertBookingIfFree(db, {...})` both writers
   call, so there is truly one writer.
+
+  **Both findings above are resolved as of 2026-10-01 (portal(FR1)) -- see that changelog entry.**
+
+- 2026-10-01 (portal(FR1), integration fix round -- task-conductor jp-portal-2026-09-30):
+  Closes several findings left open by the parallel build. No previously-shipped request/response
+  field was removed or renamed; every change below is additive or fixes a wiring gap between two
+  already-documented shapes.
+  - **§1/§6 finding resolved:** `src/portal/auth.js` now exports `mintSession(db, request, url,
+    account, method)`. `authVerify` and `src/portal/passkeys.js`'s login-finish both call it; the
+    passkey file's own duplicate `INSERT INTO sessions` is deleted. Cookie attributes, TTL table
+    and column shape are unchanged -- this is a refactor of where the one insert lives, not a new
+    shape.
+  - **§3/§4 CTL-BOOK-01 finding resolved:** `src/portal/booking.js` exports
+    `insertBookingAtomic(db, {...})`, the one place the overlap-guarded `bookings` INSERT is
+    built. `createBooking` (this file) and `owner.js`'s `ownerOverrideBooking` both call it now;
+    neither keeps its own copy of the SQL. Behaviour unchanged (same guard, same columns).
+  - **§2 `GET /api/portal/me` gains `credits`** (integer, the account's current balance; the
+    B2f1 finding above). `0` when the account has no `credits` row yet.
+  - **§3 `GET /api/portal/bookings` gains `party_size`** on every row (the B2f1 finding above).
+  - **§4 `GET /api/portal/owner/health` gains `outbox:{pending, failed}`** (same shape
+    `GET /api/portal/owner/outbox` already returns; `auth.js`'s `ownerHealth` now imports
+    `outboxSummary` from `./outbox.js` instead of leaving the field undocumented-but-missing).
+  - **New: `GET /api/portal/me/household`** (own) -- `{tier, is_couples, partner, kids:
+    [{first_name, birth_year}]}`, this account's own household only (the B2f1 M6 finding --
+    `portal/js/member.js`'s `memberHousehold()` already called a `/api/portal/household` path
+    expecting this shape; repointed at the real path rather than left half-built).
+  - **New: `POST /api/portal/owner/accounts/:id/grants/:grantId/end`** (owner) -- ends a
+    **hand** grant in place (`status:'ended', ends_at:now`), audited (`hand_grant_ended`). Named
+    error `403 not_a_hand_grant` if `grantId` is a Stripe-sourced grant (P-2: a Stripe
+    subscription is never ended by hand here) and `404 not_found` if `grantId` is not this
+    account's. Idempotent: ending an already-ended grant changes nothing, returns it unchanged.
+    `portal/js/owner.js`'s `endGrant()` (previously a named gap, `"end_grant_not_available"`)
+    now calls this route.
+  - **CTL-STR-02 wiring fix (not a shape change):** `booking.js`'s `createBooking` now passes
+    `expected_unit_cents` (the offering's display mirror) on the Checkout lineItem it builds for
+    `stripe.js`'s `createBookingCheckout`, which already implemented the mismatch check but was
+    never actually handed a value to check against. A mismatch now returns `409 price_mismatch`
+    (added to §3's create error list) and releases the hold, instead of falling through to the
+    generic `500`.
+  - **CTL-CAL-01 finding partially resolved:** `migrations/0007_import_idempotency.sql` adds
+    `bookings.source_event_id` (partial UNIQUE) and `credits_ledger.ref` (partial UNIQUE,
+    cheap-to-add bonus). `scripts/gcal-import.mjs --apply` still refuses -- the import-write
+    function itself (CTL-CAL-02) is not wired this round -- but the column it needs now exists.
+  - **Test harness:** `scripts/test.sh` now honours `JP_TEST_PORT`, `JP_TEST_STATE` and
+    `JP_TEST_INSPECTOR_PORT` (all optional, same defaults as before) so two runs never collide,
+    and every `node --test` invocation carries `--test-timeout=60000`.
