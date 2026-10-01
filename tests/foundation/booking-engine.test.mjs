@@ -50,7 +50,7 @@ test("S-11: a guest court booking (pay mode) with Stripe unconfigured returns 50
 test("Amendment 4: an annual-member plunge booking confirms at $0 with no checkout (included, no Stripe call)", async () => {
   const annual = await loginSeeded("member.demo@jp-demo.test"); // seeded jp_annual_single
   const resourceId = "demo-plng-00000-0000-000000000006";
-  const start = freshStartIso(1, 9);
+  const start = freshStartIso(5, 9, 47);
   const resp = await annual.client.post(
     "/api/portal/bookings",
     { resource_id: resourceId, start, party_size: 1 },
@@ -70,7 +70,7 @@ test("CTL-MSG-01: massage is always pending_payment, never included/credits, eve
   const annual = await loginSeeded("member.demo@jp-demo.test");
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('demo-memb1-0000-0000-000000000003', 10, datetime('now'))`);
   const resourceId = "demo-msg-00000-0000-000000000005";
-  const start = freshStartIso(1, 10);
+  const start = freshStartIso(6, 10, 23);
   const resp = await annual.client.post(
     "/api/portal/bookings",
     { resource_id: resourceId, offering_id: "demo-off-00000-0000-000000000005", start, party_size: 1 },
@@ -87,7 +87,7 @@ test("CTL-CRD-01 (party-size credits, atomic): 8 credits, party of 4 -> 4 left; 
   const account = await loginSeeded("guest.demo@jp-demo.test");
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${account.account.id}', 8, datetime('now'))`);
   const resourceId = "demo-court-0000-0000-000000000002";
-  const start = freshStartIso(1, 14);
+  const start = freshStartIso(1, 7, 41);
   const ok = await account.client.post(
     "/api/portal/bookings",
     { resource_id: resourceId, start, party_size: 4, payment_choice: "credits" },
@@ -99,7 +99,7 @@ test("CTL-CRD-01 (party-size credits, atomic): 8 credits, party of 4 -> 4 left; 
   assert.equal(balance, 4);
 
   d1(`UPDATE credits SET balance = 3 WHERE account_id = '${account.account.id}'`);
-  const start2 = freshStartIso(1, 16);
+  const start2 = freshStartIso(2, 11, 19);
   const before = d1(`SELECT COUNT(*) AS n FROM bookings WHERE resource_id = '${resourceId}' AND start_at = '${start2}'`)[0].n;
   const short = await account.client.post(
     "/api/portal/bookings",
@@ -122,8 +122,8 @@ test("CTL-AVL-01: availability for a member never carries another account's id, 
   // BETWEEN two grid cells and never matches any slot's exact `start`,
   // which is a bug in a test picking its own fixture time, not in the
   // availability endpoint itself.
-  const start = freshStartIso(1, 14, 30);
-  const end = freshStartIso(1, 16, 0);
+  const start = freshStartIso(2, 17, 30);
+  const end = freshStartIso(2, 19, 0);
   d1(
     `INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
      VALUES ('b2a1-avl-other', 'demo-memb2-0000-0000-000000000004', '${resourceId}', NULL, '${start}', '${end}', 1, 0, 'confirmed', 'included', 'demo-memb2-0000-0000-000000000004', datetime('now'), datetime('now'))`
@@ -144,7 +144,7 @@ test("Cancel's credit return is idempotent (run it twice -> credited once, same 
   const account = await loginSeeded("guest.demo@jp-demo.test");
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${account.account.id}', 4, datetime('now'))`);
   const resourceId = "demo-court-0000-0000-000000000004";
-  const start = freshStartIso(1, 15);
+  const start = freshStartIso(2, 13, 53);
   const create = await account.client.post(
     "/api/portal/bookings",
     { resource_id: resourceId, start, party_size: 2, payment_choice: "credits" },
@@ -172,7 +172,7 @@ test("Cancel's credit return is idempotent (run it twice -> credited once, same 
 test("PIN-13 / same-batch: a confirmed (included) booking and its calendar_outbox 'create' row always appear together", async () => {
   const member = await loginSeeded("member.demo@jp-demo.test");
   const resourceId = "demo-court-0000-0000-000000000001";
-  const start = freshStartIso(1, 16);
+  const start = freshStartIso(4, 8, 29);
   const resp = await member.client.post(
     "/api/portal/bookings",
     { resource_id: resourceId, start, party_size: 1 },
