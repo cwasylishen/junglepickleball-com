@@ -29,6 +29,17 @@ window.STR.en = Object.assign(
     "nc.stripe_billing": "Billing is not switched on yet.",
     "nc.push": "Reminders are not switched on yet.",
     "nc.gcal": "Calendar sync is not switched on yet.",
+    // Bottom-nav labels (NAV_BY_ROLE below) -- the only place this shell
+    // renders a string outside STR.en (PIN-10), so these keys live here
+    // rather than in each area's own dictionary.
+    "nav.home": "Home",
+    "nav.book": "Book",
+    "nav.bookings": "Bookings",
+    "nav.account": "Account",
+    "nav.calendar": "Calendar",
+    "nav.today": "Today",
+    "nav.members": "Members",
+    "nav.manage": "Manage",
   },
   window.STR.en
 );
@@ -67,3 +78,38 @@ async function handleLoginFragment() {
 }
 
 window.PortalApp = { navForRole, bootstrapSession, handleLoginFragment, mergeStrings };
+
+// portal(FR1): moved out of index.html's inline <script> tag -- CTL-HDR-01's
+// CSP (`script-src 'self'`) blocks an inline script with no hash/nonce, and
+// Alpine's x-data="portalShell()" resolves against any function in scope,
+// whether it got there via an inline tag or (as here) an external file, so
+// moving it costs nothing. Same body as before, verbatim.
+function portalShell() {
+  return {
+    session: { authenticated: false, features: {}, account: null },
+    nav: [],
+    loginEmail: "",
+    devLink: null,
+    async init() {
+      const verifyResult = await window.PortalApp.handleLoginFragment();
+      if (verifyResult && verifyResult.ok) {
+        await this.refreshSession();
+        return;
+      }
+      await this.refreshSession();
+    },
+    async refreshSession() {
+      this.session = await window.PortalApp.bootstrapSession();
+      this.nav = window.PortalApp.navForRole(this.session.account ? this.session.account.role : null);
+    },
+    async startLogin() {
+      const res = await PortalApi.post("/api/portal/auth/start", { email: this.loginEmail, age_16_plus: true });
+      if (res.data && res.data.dev_link) {
+        this.devLink = res.data.dev_link;
+        // eslint-disable-next-line no-console
+        console.info("[portal demo login]", res.data.dev_link);
+      }
+    },
+  };
+}
+window.portalShell = portalShell;
