@@ -29,12 +29,19 @@ export function environmentMismatch() {
 }
 
 // CTL-HDR-01: CSP + supporting headers for /portal/* HTML responses.
+// Kept byte-identical to the `/portal/*` block in `_headers` (portal(FR1)
+// fix round): 'unsafe-eval' is required by the standard (non-CSP-build)
+// Alpine v3 bundle this portal vendors at portal/vendor/, and no CDN
+// origin is listed because Alpine is self-hosted (security-posture.md
+// line 207).
 export const PORTAL_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   "Cache-Control": "no-store",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
   "Referrer-Policy": "no-referrer",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "X-Frame-Options": "DENY",
 };
 
 export function portalHtml(body, status = 200) {

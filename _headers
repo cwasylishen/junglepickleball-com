@@ -19,9 +19,15 @@
 # block covers the static /portal/* HTML and assets, which the assets
 # layer serves directly and _headers is the only way to set CSP on them.
 /portal/*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'
   Referrer-Policy: no-referrer
+  Cross-Origin-Opener-Policy: same-origin
+  ! X-Frame-Options
+  X-Frame-Options: DENY
   Cache-Control: no-store
+
+/portal/sw.js
+  Cache-Control: no-cache
 
 /api/portal/*
   Cache-Control: no-store
