@@ -29,6 +29,11 @@ window.STR.en = Object.assign(
     "nc.stripe_billing": "Billing is not switched on yet.",
     "nc.push": "Reminders are not switched on yet.",
     "nc.gcal": "Calendar sync is not switched on yet.",
+    "auth.age_confirm_title": "Confirm your age",
+    "auth.age_confirm_body": "You must be 16 or older to create a Jungle Pickleball account.",
+    "auth.age_confirm_checkbox": "I confirm I am 16 years of age or older.",
+    "auth.age_confirm_submit": "Continue",
+    "auth.age_confirm_error": "Please confirm your age to continue.",
     // Bottom-nav labels (NAV_BY_ROLE below) -- the only place this shell
     // renders a string outside STR.en (PIN-10), so these keys live here
     // rather than in each area's own dictionary.
@@ -74,7 +79,11 @@ async function handleLoginFragment() {
   const token = decodeURIComponent(match[1]);
   history.replaceState(null, "", window.location.pathname + window.location.search);
   const res = await PortalApi.post("/api/portal/auth/verify", { token });
-  return res;
+  // M7/CTL-AUTH-05: the token is returned alongside the result so the
+  // caller can ask the person the age question and retry the SAME
+  // token with their answer -- it is never re-sent as a query string
+  // or GET, only ever via this same POST path.
+  return { ...res, token };
 }
 
 window.PortalApp = { navForRole, bootstrapSession, handleLoginFragment, mergeStrings };
@@ -90,10 +99,18 @@ function portalShell() {
     nav: [],
     loginEmail: "",
     devLink: null,
+    // M7/CTL-AUTH-05/CTL-UI-04: a brand-new email verifying for the
+    // first time gets 409 age_confirmation_required from the server --
+    // this holds that pending token and shows the age prompt so the
+    // person actually answers the question, instead of the UI
+    // fabricating an answer it never asked.
+    ageConfirmToken: null,
+    ageConfirmError: false,
+    ageChecked: false,
     async init() {
       const verifyResult = await window.PortalApp.handleLoginFragment();
-      if (verifyResult && verifyResult.ok) {
-        await this.refreshSession();
+      if (verifyResult && verifyResult.error === "age_confirmation_required") {
+        this.ageConfirmToken = verifyResult.token;
         return;
       }
       await this.refreshSession();
@@ -103,12 +120,27 @@ function portalShell() {
       this.nav = window.PortalApp.navForRole(this.session.account ? this.session.account.role : null);
     },
     async startLogin() {
-      const res = await PortalApi.post("/api/portal/auth/start", { email: this.loginEmail, age_16_plus: true });
+      // age_16_plus is never sent here -- /auth/start ignores it, and
+      // the person has not been asked anything yet at this point.
+      const res = await PortalApi.post("/api/portal/auth/start", { email: this.loginEmail });
       if (res.data && res.data.dev_link) {
         this.devLink = res.data.dev_link;
         // eslint-disable-next-line no-console
         console.info("[portal demo login]", res.data.dev_link);
       }
+    },
+    // Called from the age-confirmation prompt's own "I'm 16 or older"
+    // control (portal/index.html) -- the one place this attestation is
+    // actually collected, retrying the SAME magic-link token.
+    async confirmAge16Plus() {
+      this.ageConfirmError = false;
+      const res = await PortalApi.post("/api/portal/auth/verify", { token: this.ageConfirmToken, age_16_plus: true });
+      if (!res.ok) {
+        this.ageConfirmError = true;
+        return;
+      }
+      this.ageConfirmToken = null;
+      await this.refreshSession();
     },
   };
 }

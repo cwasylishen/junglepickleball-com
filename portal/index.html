@@ -39,7 +39,26 @@
        docs/portal/ui-structure.md -- B1 only owns the mount point and the
        nav built from PortalApp.navForRole(). -->
   <main id="portal-area" class="max-w-[720px] mx-auto px-4 pb-20 pt-4">
-    <template x-if="!session.authenticated">
+    <!-- M7/CTL-AUTH-05/CTL-UI-04: shown only when the server has told us
+         (via 409 age_confirmation_required) that this email has never
+         signed in before -- the attestation is asked of the person
+         here, at this request, never assumed by the client. -->
+    <template x-if="ageConfirmToken">
+      <section>
+        <h1 class="text-2xl font-heading text-jpteal" x-text="STR.en['auth.age_confirm_title']"></h1>
+        <p class="text-sm text-slate-600 mt-1" x-text="STR.en['auth.age_confirm_body']"></p>
+        <label class="mt-4 flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" x-model="ageChecked" class="mt-0.5" />
+          <span x-text="STR.en['auth.age_confirm_checkbox']"></span>
+        </label>
+        <button type="button" id="age-confirm-submit" :disabled="!ageChecked" @click="confirmAge16Plus()"
+                class="mt-4 bg-jpteal text-white rounded px-4 py-2 disabled:opacity-50">
+          <span x-text="STR.en['auth.age_confirm_submit']"></span>
+        </button>
+        <p x-show="ageConfirmError" class="text-sm text-red-600 mt-3" x-text="STR.en['auth.age_confirm_error']"></p>
+      </section>
+    </template>
+    <template x-if="!ageConfirmToken && !session.authenticated">
       <section>
         <h1 class="text-2xl font-heading text-jpteal">Sign in</h1>
         <p class="text-sm text-slate-600 mt-1">Enter your email for a sign-in link.</p>
@@ -51,7 +70,7 @@
         <p x-show="devLink" class="text-xs text-slate-500 mt-3">Preview only: the link was written to the browser console.</p>
       </section>
     </template>
-    <template x-if="session.authenticated">
+    <template x-if="!ageConfirmToken && session.authenticated">
       <section>
         <p class="text-sm text-slate-600">Signed in as <span x-text="session.account.email"></span> (<span x-text="session.account.role"></span>).</p>
       </section>
