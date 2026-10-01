@@ -422,9 +422,17 @@ async function handleCheckoutCompleted(session, env, db) {
     return [checkoutUnpaidAuditStatement(db, session)];
   }
 
-  const metadataKind = session.metadata && session.metadata.kind;
-  const kind = metadataKind || classifyLegacySession(session); // M13
   const bookingId = (session.metadata && session.metadata.booking_id) || null;
+  const metadataKind = session.metadata && session.metadata.kind;
+  // `booking_id` is the one signal amendment 6 actually documents for
+  // "this Checkout paid for a booking" (createBookingCheckout always
+  // sets it); it is authoritative over this file's own internal
+  // `metadata.kind` convention. A hand-built event (a test fixture, or
+  // any future caller) that sets `booking_id` without also setting
+  // `kind` must still confirm the booking -- WH-006 caught this when
+  // `kind` alone gated confirmPaidBooking and a booking_id-only event
+  // silently never confirmed anything.
+  const kind = bookingId ? "booking" : metadataKind || classifyLegacySession(session); // M13
   const statements = [];
 
   if (kind === "booking" && bookingId) {
