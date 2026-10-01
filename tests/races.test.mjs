@@ -5,11 +5,55 @@
 // (waiting on B2a1), not a skip. Concurrency itself is real: `Promise.all`
 // firing N fetches with no await-gap, same process, same event loop,
 // against the one running `wrangler dev` instance.
+//
+// portal(QA3) GRID FIX: M10 landed a real S-12 grid/hours check
+// (gridAndHoursError in src/portal/booking.js) between QA2's dispatch
+// and this one. This file's old `freshStart(daysAhead, hour)` set a
+// raw UTC hour with no Costa Rica conversion (the exact M11 bug
+// booking-bounds.test.mjs's own header already documents and fixed for
+// §7) -- every HTTP booking attempt below that used it would now be
+// rejected `400 off_grid`/`outside_hours` before the race/expiry/credit
+// logic under test ever ran, for a reason that has nothing to do with
+// the case. Every fixture below now uses `crDateAt` (qa-helpers.mjs,
+// CR wall-clock -> UTC, PIN-6) and names its Costa Rica time, same as
+// booking-bounds.test.mjs already does for §7.
+//
+// RACE-002/003 specifically needed a different construction once grid
+// alignment is enforced: a single fixed-size grid can never produce two
+// DIFFERENT valid starts that overlap (adjacent grid points partition
+// time, by definition). The fix keeps the resource's normal 90-min grid
+// (no mid-test slot_minutes mutation) and instead gives the FIRST half's
+// booking a longer-than-grid-step offering (120 min, inserted as local
+// test data only) so its booking at the earlier grid point (CR 07:00,
+// ends 08:30) genuinely overlaps the second half's booking at the very
+// next grid point (CR 08:30, default 90-min duration, ends 10:00) --
+// 07:00-08:30(+30min=09:00 with the long offering) still overlaps
+// 08:30-10:00. This proves A2's "different starts, overlapping in
+// wall-clock time" shape without asking the grid to allow a non-grid
+// start.
+//
+// portal(QA3) SECOND FIXTURE FIX (same discovery pass): a non-entitled,
+// no-credit account booking a COURT hits src/portal/booking.js's "pay"
+// branch, which 503s (Stripe unset) before any write -- every account
+// in this file that books a court via HTTP is now given a same-shape
+// hand grant (grantEntitlement, qa-helpers.mjs) so resolveAudience
+// returns mode="included" and the request reaches the overlap/race
+// logic instead of being rejected for an unrelated reason (payment).
+// RACE-009 is the deliberate exception: it tests the credit-spend path
+// on purpose and keeps its own non-entitled, credited account.
+// Entitled accounts also make the offering_id override above actually
+// take effect: resolveAudience's court "pay" branch ignores the
+// caller's offering_id entirely (it looks up the resource's own
+// "everyone" offering), but the "included" branch never consults
+// offerings at all, so resolveDuration falls through to the raw
+// offering_id the request sent -- confirmed by reading both functions
+// (src/portal/entitlement.js resolveAudience, src/portal/booking.js
+// resolveDuration) before relying on it.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
-import { d1, loginFreshAccounts, BASE_URL, uniqueEmail, loginDemo, patchWithClient, signStripeBody, postRaw, resetRateLimits } from "./qa-helpers.mjs";
+import { d1, loginFreshAccounts, BASE_URL, poolEmail, loginDemo, patchWithClient, signStripeBody, postRaw, resetRateLimits, crDateAt, grantEntitlement, grantEntitlements } from "./qa-helpers.mjs";
 
 // FINDING (qa-run-1.md): loginFreshAccounts() already resets per call,
 // but RACE-007/008/011's direct loginDemo(member.demo/owner.demo) calls
@@ -17,25 +61,19 @@ import { d1, loginFreshAccounts, BASE_URL, uniqueEmail, loginDemo, patchWithClie
 // files.
 resetRateLimits();
 
-function freshStart(daysAhead, hour) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + daysAhead);
-  d.setUTCHours(hour, 0, 0, 0);
-  return d.toISOString();
-}
-
-async function bookOnce(client, csrfToken, resourceId, start) {
+async function bookOnce(client, csrfToken, resourceId, start, extra = {}) {
   return client.post(
     "/api/portal/bookings",
-    { resource_id: resourceId, start, party_size: 1 },
+    { resource_id: resourceId, start, party_size: 1, ...extra },
     { "X-CSRF-Token": csrfToken, Origin: BASE_URL }
   );
 }
 
 test("RACE-001: 20 concurrent identical-slot bookings from 20 accounts -- exactly 1 succeeds, 19 get 409", async () => {
   const accounts = await loginFreshAccounts(20, "race001");
+  grantEntitlements(accounts.map((a) => a.account.id)); // QA3 fix: see file header (batched, one d1 call for all 20)
   const resourceId = "demo-court-0000-0000-000000000003";
-  const start = freshStart(10, 8);
+  const start = crDateAt(10, 8, 30); // CR 08:30, on the 90-min grid (07:00 + 90min)
   const results = await Promise.all(accounts.map((a) => bookOnce(a.client, a.csrfToken, resourceId, start)));
   const successes = results.filter((r) => r.status === 201).length;
   const conflicts = results.filter((r) => r.status === 409).length;
@@ -45,22 +83,27 @@ test("RACE-001: 20 concurrent identical-slot bookings from 20 accounts -- exactl
   assert.equal(live, 1);
 });
 
-test("RACE-002/003 (A2 overlapping starts): resource slot length changed mid-test, overlapping starts never both survive", async () => {
+test("RACE-002/003 (A2 overlapping starts): two different, on-grid starts whose durations overlap never both survive", async () => {
   const resourceId = "demo-court-0000-0000-000000000004";
-  d1(`UPDATE resources SET slot_minutes = 60 WHERE id = '${resourceId}'`);
-  const startA = freshStart(11, 9); // 09:00
-  const dA = new Date(startA);
-  const startB = new Date(dA.getTime() + 30 * 60000).toISOString(); // 09:30, overlaps 09:00-10:00 at 60-min slots
+  const startA = crDateAt(11, 7, 0); // CR 07:00, the resource's open time -- on-grid
+  const startB = crDateAt(11, 8, 30); // CR 08:30, the very next 90-min grid point -- on-grid
+  // Local-test-only offering: 120 min duration (> the 90-min grid step),
+  // so a booking at startA ends 09:00 CR, overlapping startB's 08:30-10:00
+  // CR range. Never touches the resource's own slot_minutes (A2's
+  // premise is about overlap detection, not about the grid rule itself).
+  const longOfferingId = "qa-race002-long-offering";
+  d1(`INSERT OR REPLACE INTO offerings (id, resource_id, name, duration_minutes, audience, lookup_key, display_price_cents, active, created_at, updated_at)
+      VALUES ('${longOfferingId}', '${resourceId}', 'QA long test offering', 120, 'everyone', NULL, 0, 1, datetime('now'), datetime('now'))`);
   const accounts = await loginFreshAccounts(20, "race002");
+  grantEntitlements(accounts.map((a) => a.account.id)); // QA3 fix: see file header (batched, one d1 call for all 20)
   const half = accounts.slice(0, 10);
   const otherHalf = accounts.slice(10, 20);
   const results = await Promise.all([
-    ...half.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startA)),
+    ...half.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startA, { offering_id: longOfferingId })),
     ...otherHalf.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startB)),
   ]);
   const successes = results.filter((r) => r.status === 201).length;
   assert.equal(successes, 1, `exactly one booking must survive across BOTH overlapping starts combined, got ${successes} successes -- waiting on B2a1`);
-  d1(`UPDATE resources SET slot_minutes = 90 WHERE id = '${resourceId}'`); // restore (repeatability law)
 });
 
 test("RACE-004 (inspection): the overlap check must be one statement/batch/UNIQUE, not read-then-write across two round trips", () => {
@@ -78,13 +121,14 @@ test("RACE-004 (inspection): the overlap check must be one statement/batch/UNIQU
 
 test("RACE-005/006 (expired-hold control pair): an expired hold never blocks, an unexpired hold does", async () => {
   const resourceId = "demo-court-0000-0000-000000000001";
-  const expiredStart = freshStart(12, 10);
-  const liveStart = freshStart(13, 10);
+  const expiredStart = crDateAt(12, 10, 0); // CR 10:00, on-grid (07:00 + 2*90min)
+  const liveStart = crDateAt(13, 10, 0); // CR 10:00 a different day, on-grid
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, hold_expires_at, created_by, created_at, updated_at)
       VALUES ('qa-race005-hold', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${expiredStart}', '${new Date(new Date(expiredStart).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', datetime('now','-1 minutes'), 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, hold_expires_at, created_by, created_at, updated_at)
       VALUES ('qa-race006-hold', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${liveStart}', '${new Date(new Date(liveStart).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', datetime('now','+30 minutes'), 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
-  const actor = await loginDemo(uniqueEmail("race0056"));
+  const actor = await loginDemo(poolEmail());
+  grantEntitlement(actor.account.id); // QA3 fix: see file header
   const expiredResp = await bookOnce(actor.client, actor.csrfToken, resourceId, expiredStart);
   assert.ok([200, 201].includes(expiredResp.status), `RACE-005: an expired hold must not block a new booking, got ${expiredResp.status} -- waiting on B2a1`);
   const liveResp = await bookOnce(actor.client, actor.csrfToken, resourceId, liveStart);
@@ -93,24 +137,26 @@ test("RACE-005/006 (expired-hold control pair): an expired hold never blocks, an
 
 test("RACE-007: cancel then immediately rebook the same slot succeeds", async () => {
   const resourceId = "demo-court-0000-0000-000000000002";
-  const start = freshStart(14, 11);
+  const start = crDateAt(14, 11, 30); // CR 11:30, on-grid (07:00 + 3*90min)
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
       VALUES ('qa-race007-confirmed', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${start}', '${new Date(new Date(start).getTime() + 90 * 60000).toISOString()}', 1, 0, 'confirmed', 'included', 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   const owner1 = await loginDemo("member.demo@jp-demo.test");
   const cancel = await owner1.client.post("/api/portal/bookings/qa-race007-confirmed/cancel", {}, { "X-CSRF-Token": owner1.csrfToken, Origin: BASE_URL });
   assert.equal(cancel.status, 200, `cancel expected 200, got ${cancel.status} -- waiting on B2a1`);
-  const rebooker = await loginDemo(uniqueEmail("race007b"));
+  const rebooker = await loginDemo(poolEmail());
+  grantEntitlement(rebooker.account.id); // QA3 fix: see file header
   const rebook = await bookOnce(rebooker.client, rebooker.csrfToken, resourceId, start);
   assert.ok([200, 201].includes(rebook.status), `rebook on the now-open slot must succeed, got ${rebook.status}`);
 });
 
 test("RACE-008: concurrent cancel + book on the same slot -- never two live bookings afterward (ordering not contracted)", async () => {
   const resourceId = "demo-court-0000-0000-000000000003";
-  const start = freshStart(15, 12);
+  const start = crDateAt(15, 13, 0); // CR 13:00, on-grid (07:00 + 4*90min)
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
       VALUES ('qa-race008-confirmed', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${start}', '${new Date(new Date(start).getTime() + 90 * 60000).toISOString()}', 1, 0, 'confirmed', 'included', 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   const owner1 = await loginDemo("member.demo@jp-demo.test");
-  const other = await loginDemo(uniqueEmail("race008b"));
+  const other = await loginDemo(poolEmail());
+  grantEntitlement(other.account.id); // QA3 fix: see file header
   await Promise.all([
     owner1.client.post("/api/portal/bookings/qa-race008-confirmed/cancel", {}, { "X-CSRF-Token": owner1.csrfToken, Origin: BASE_URL }),
     bookOnce(other.client, other.csrfToken, resourceId, start),
@@ -120,13 +166,15 @@ test("RACE-008: concurrent cancel + book on the same slot -- never two live book
 });
 
 test("RACE-009 (credit race, REQ-ENT-15): 2 credits, 3 concurrent spends -- exactly 2 succeed, balance lands at 0, never negative", async () => {
-  const account = await loginDemo(uniqueEmail("race009"));
+  const account = await loginDemo(poolEmail());
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${account.account.id}', 2, datetime('now'))`);
   const resourceId = "demo-court-0000-0000-000000000004";
+  // Three DIFFERENT on-grid CR starts (08:30, 10:00, 11:30) so each
+  // booking only competes on credit balance, never on slot collision.
   const results = await Promise.all([
-    bookOnce(account.client, account.csrfToken, resourceId, freshStart(16, 8)),
-    bookOnce(account.client, account.csrfToken, resourceId, freshStart(16, 10)),
-    bookOnce(account.client, account.csrfToken, resourceId, freshStart(16, 12)),
+    bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16, 8, 30)),
+    bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16, 10, 0)),
+    bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16, 11, 30)),
   ]);
   const successes = results.filter((r) => [200, 201].includes(r.status)).length;
   assert.equal(successes, 2, `expected exactly 2 successful credit spends, got ${successes} -- waiting on B2a1`);
@@ -137,7 +185,7 @@ test("RACE-009 (credit race, REQ-ENT-15): 2 credits, 3 concurrent spends -- exac
 
 test("RACE-010 (D-A06 paid_conflict): an expired-and-superseded hold's late webhook marks paid_conflict, never confirmed, and never touches the live booking", async () => {
   const resourceId = "demo-court-0000-0000-000000000001";
-  const start = freshStart(17, 13);
+  const start = crDateAt(17, 13, 0); // CR 13:00, on-grid (07:00 + 4*90min)
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, hold_expires_at, checkout_session_id, created_by, created_at, updated_at)
       VALUES ('qa-race010-orig', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${start}', '${new Date(new Date(start).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', datetime('now','-5 minutes'), 'cs_race010', 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
@@ -154,7 +202,7 @@ test("RACE-010 (D-A06 paid_conflict): an expired-and-superseded hold's late webh
 
 test("RACE-011 (adjacent control, REQ-OWN-11): a confirmed booking is untouched when the owner edits the resource's grid out from under it", async () => {
   const resourceId = "demo-court-0000-0000-000000000002";
-  const start = freshStart(18, 9);
+  const start = crDateAt(18, 10, 0); // CR 10:00, on-grid (07:00 + 2*90min) -- this row is inserted directly, not via HTTP, but kept grid-sane for consistency with every other fixture in this file
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
       VALUES ('qa-race011-confirmed', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${start}', '${new Date(new Date(start).getTime() + 90 * 60000).toISOString()}', 1, 0, 'confirmed', 'included', 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   const owner = await loginDemo("owner.demo@jp-demo.test");

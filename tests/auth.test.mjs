@@ -15,6 +15,8 @@ import {
   BASE_URL,
   d1,
   uniqueEmail,
+  poolEmail,
+  loginNewAccountDirect,
   resetRateLimits,
 } from "./qa-helpers.mjs";
 
@@ -33,7 +35,10 @@ test("AUTH-001: login-start never returns a raw token; DB stores only a SHA-256 
 
 test("AUTH-002: a token older than 15 minutes is rejected (boundary, over)", async () => {
   const client = makeClient();
-  const email = uniqueEmail("auth002");
+  // QA3 fix (demo-account starvation): uniqueEmail() can never get a
+  // dev_link (no pre-existing account); poolEmail() draws from
+  // tests/fixtures/seed-test.sql's pre-seeded is_demo pool instead.
+  const email = poolEmail();
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   d1(`UPDATE login_tokens SET created_at = datetime('now', '-15 minutes', '-1 seconds'), expires_at = datetime('now', '-1 seconds') WHERE email = '${email}'`);
@@ -45,7 +50,7 @@ test("AUTH-002: a token older than 15 minutes is rejected (boundary, over)", asy
 
 test("AUTH-003: a token 14:59 old still verifies (boundary, under -- 'more than 15 minutes', not 15-or-more)", async () => {
   const client = makeClient();
-  const email = uniqueEmail("auth003");
+  const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   d1(`UPDATE login_tokens SET expires_at = datetime('now', '+1 seconds') WHERE email = '${email}'`);
@@ -55,7 +60,7 @@ test("AUTH-003: a token 14:59 old still verifies (boundary, under -- 'more than 
 
 test("AUTH-004: a consumed token cannot be redeemed twice", async () => {
   const client = makeClient();
-  const email = uniqueEmail("auth004");
+  const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   const first = await client.post("/api/portal/auth/verify", { token, age_16_plus: true }, ORIGIN);
@@ -70,7 +75,12 @@ test("AUTH-005: no account-enumeration -- identical shape for an existing vs nev
   const c1 = makeClient();
   const c2 = makeClient();
   const existing = await c1.post("/api/portal/auth/start", { email: "member.demo@jp-demo.test" }, ORIGIN);
-  const never = await c2.post("/api/portal/auth/start", { email: uniqueEmail("neverseen") }, ORIGIN);
+  // QA3 fix: a genuinely-never-seeded uniqueEmail() is NOT PIN-9-eligible
+  // (no pre-existing is_demo row), so comparing it against a pre-seeded
+  // demo account would test the wrong axis (PIN-9 eligibility, not
+  // enumeration) -- test-plan.md's own wording for this case requires
+  // "both are PIN-9-eligible". poolEmail() keeps both sides eligible.
+  const never = await c2.post("/api/portal/auth/start", { email: poolEmail() }, ORIGIN);
   assert.equal(existing.status, never.status);
   const keysA = Object.keys(existing.data).filter((k) => k !== "dev_link").sort();
   const keysB = Object.keys(never.data).filter((k) => k !== "dev_link").sort();
@@ -140,7 +150,7 @@ test("AUTH-011: a missing Origin header is rejected (S-12 resolves the stricter 
 
 test("AUTH-012: the session cookie carries HttpOnly; SameSite=Lax; Path=/ and an opaque value", async () => {
   const client = makeClient();
-  const email = uniqueEmail("auth012");
+  const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   const verify = await client.post("/api/portal/auth/verify", { token, age_16_plus: true }, ORIGIN);
@@ -156,7 +166,7 @@ test("AUTH-013: over local http the cookie omits Secure but keeps every other at
   // BASE_URL is http://127.0.0.1:8799 for the whole suite (PIN-16); this
   // case is the harness's normal state, not a special one.
   const client = makeClient();
-  const email = uniqueEmail("auth013");
+  const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   const verify = await client.post("/api/portal/auth/verify", { token, age_16_plus: true }, ORIGIN);
@@ -169,7 +179,7 @@ test("AUTH-013: over local http the cookie omits Secure but keeps every other at
 
 test("AUTH-014: the sessions table stores a SHA-256 digest, never the raw cookie value", async () => {
   const client = makeClient();
-  const email = uniqueEmail("auth014");
+  const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   await client.post("/api/portal/auth/verify", { token, age_16_plus: true }, ORIGIN);
@@ -181,7 +191,7 @@ test("AUTH-014: the sessions table stores a SHA-256 digest, never the raw cookie
 });
 
 test("AUTH-015/016: session age -- 30 days + 1 minute is 401, 29d23h is still 200 (boundary pair)", async () => {
-  const over = await loginDemo(uniqueEmail("sess-over"));
+  const over = await loginDemo(poolEmail()); // QA3 fix: see AUTH-002's comment
   d1(`UPDATE sessions SET created_at = datetime('now', '-30 days', '-1 minutes'), expires_at = datetime('now', '-1 minutes') WHERE account_id = '${over.account.id}'`);
   const overResp = await over.client.get("/api/portal/me");
   // loadSession() returns null once expires_at <= now, which handleMe
@@ -195,7 +205,7 @@ test("AUTH-015/016: session age -- 30 days + 1 minute is 401, 29d23h is still 20
     assert.equal(overResp.data.authenticated, false, "AUTH-015: an expired session must not be treated as signed in, whatever the status code");
   }
 
-  const under = await loginDemo(uniqueEmail("sess-under"));
+  const under = await loginDemo(poolEmail()); // QA3 fix: see AUTH-002's comment
   d1(`UPDATE sessions SET created_at = datetime('now', '-29 days', '-23 hours'), expires_at = datetime('now', '+1 hours') WHERE account_id = '${under.account.id}'`);
   const underResp = await under.client.get("/api/portal/me");
   assert.equal(underResp.status, 200);
@@ -203,7 +213,7 @@ test("AUTH-015/016: session age -- 30 days + 1 minute is 401, 29d23h is still 20
 });
 
 test("AUTH-017: logout deletes the session row; the old cookie no longer authenticates", async () => {
-  const { client, csrfToken } = await loginDemo(uniqueEmail("logout"));
+  const { client, csrfToken } = await loginDemo(poolEmail()); // QA3 fix: see AUTH-002's comment
   const cookieBefore = client.getCookie();
   const out = await client.post("/api/portal/auth/logout", {}, { "X-CSRF-Token": csrfToken, Origin: BASE_URL });
   assert.ok([200, 204].includes(out.status));
@@ -218,7 +228,7 @@ test("AUTH-017: logout deletes the session row; the old cookie no longer authent
 test("AUTH-018: the post-login session id differs from any pre-login value (no fixation)", async () => {
   const client = makeClient();
   const preLoginCookie = client.getCookie(); // null, no pre-login cookie is ever set by this app
-  const email = uniqueEmail("fixation");
+  const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
   await client.post("/api/portal/auth/verify", { token, age_16_plus: true }, ORIGIN);
@@ -227,8 +237,17 @@ test("AUTH-018: the post-login session id differs from any pre-login value (no f
 });
 
 test("AUTH-019: a brand-new email becomes role=guest on first login, confirmed via an authenticated call", async () => {
+  // QA3 fix (demo-account starvation): this case's whole point is the
+  // genuinely-new-account path (REQ-AUTH-17), so it must NOT use
+  // poolEmail() (pre-seeded, already "exists") -- a pre-seeded account
+  // would make this pass trivially without ever exercising auth.js's
+  // first-login account-creation branch. loginNewAccountDirect() keeps
+  // the email truly unseeded (no accounts row before this test) and
+  // drives the real /auth/verify route via a directly-inserted token
+  // (white-box on setup only, same technique as the M3 test), bypassing
+  // demoDevLink's S-1 e gate rather than defeating the point of the case.
   const email = uniqueEmail("newguest");
-  const { account, client } = await loginDemo(email);
+  const { account, client } = await loginNewAccountDirect(email);
   assert.equal(account.role, "guest");
   const me = await client.get("/api/portal/me");
   assert.equal(me.data.account.role, "guest");
@@ -240,8 +259,11 @@ test("AUTH-020: OWNER_EMAILS set vs empty decides owner role at login (two sub-c
   // wrangler dev process's env is fixed for the whole suite -- so this
   // case is testable only as documentation/inspection against the var
   // the harness actually ran with, named here rather than guessed.
+  // QA3 fix: same reasoning as AUTH-019 -- a never-seeded email via
+  // loginNewAccountDirect(), not the demo pool, so this is really the
+  // account-creation path deciding role, not a pre-seeded row's role.
   const email = uniqueEmail("ownervar");
-  const { account } = await loginDemo(email);
+  const { account } = await loginNewAccountDirect(email);
   assert.equal(account.role, "guest", "with this harness's OWNER_EMAILS (unset for a non-demo address), a new account must stay guest, never silently owner");
 });
 
@@ -272,7 +294,7 @@ test("AUTH-025: dev_link is absent for a non-demo TLD even with everything else 
 
 test("AUTH-026: all three PIN-9 conditions true -- dev_link present and matches the worker log", async () => {
   const client = makeClient();
-  const email = uniqueEmail("auth026");
+  const email = poolEmail(); // QA3 fix: this case requires dev_link present, so it needs a pre-seeded demo account
   const resp = await client.post("/api/portal/auth/start", { email }, ORIGIN);
   assert.ok(resp.data.dev_link, "dev_link must be present under the harness's normal PIN-9 state");
   const url = new URL(resp.data.dev_link);
@@ -285,7 +307,7 @@ test("AUTH-027: EMAIL send binding is not present in the test env (inspection)",
 });
 
 test("AUTH-021: passkey assertion with the right signature but a wrong challenge is rejected (H-3 fixture)", async () => {
-  const { client, csrfToken } = await loginDemo(uniqueEmail("pk021"));
+  const { client, csrfToken } = await loginDemo(poolEmail()); // QA3 fix: see AUTH-002's comment
   const resp = await client.post(
     "/api/portal/auth/passkey/login/finish",
     { credential: { id: "qa-fixture", response: { clientDataJSON: "e30=", authenticatorData: "", signature: "" }, wrongChallenge: true } },
@@ -295,7 +317,7 @@ test("AUTH-021: passkey assertion with the right signature but a wrong challenge
 });
 
 test("AUTH-022: passkey assertion with a mismatched clientDataJSON.origin is rejected (H-3 fixture)", async () => {
-  const { client, csrfToken } = await loginDemo(uniqueEmail("pk022"));
+  const { client, csrfToken } = await loginDemo(poolEmail()); // QA3 fix: see AUTH-002's comment
   const resp = await client.post(
     "/api/portal/auth/passkey/login/finish",
     { credential: { id: "qa-fixture", response: { clientDataJSON: Buffer.from(JSON.stringify({ origin: "https://not-this-host.example" })).toString("base64") } } },

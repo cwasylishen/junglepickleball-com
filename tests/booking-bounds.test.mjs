@@ -27,7 +27,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loginDemo, uniqueEmail, BASE_URL, d1, crDateAt, crWallClockToUtcIso, resetRateLimits } from "./qa-helpers.mjs";
+import { loginDemo, poolEmail, BASE_URL, d1, crDateAt, crWallClockToUtcIso, resetRateLimits } from "./qa-helpers.mjs";
 
 // FINDING (qa-run-1.md, self-found defect in this suite, fixed same
 // day per the seat's own law): this file logs in member.demo/owner.demo
@@ -61,7 +61,7 @@ test("BOOK-001/002 (conditional on A-13 reading 2): member window boundary -- CR
 });
 
 test("BOOK-003/004: guest non-member window boundary -- CR 08:30 (on-grid), today+2 OK, today+3 rejected", async () => {
-  const guest = await loginDemo(uniqueEmail("book003"));
+  const guest = await loginDemo(poolEmail());
   const ok = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(2, 8, 30));
   assert.equal(ok.status, 201, `BOOK-003: CR 08:30 today+2, expected 200/201, got ${ok.status}`);
   const over = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(3, 8, 30));
@@ -141,7 +141,7 @@ test("BOOK-011: a slot blocked by the owner is rejected -- block and booking bot
   const resourceId = "demo-msg-00000-0000-000000000005";
   const blockStart = crDateAt(5, 10, 0);
   d1(`INSERT INTO blocks (id, resource_id, kind, date, start_time, end_time, label, created_by, created_at) VALUES ('qa-book011-block', '${resourceId}', 'one_off', date('${blockStart}'), '10:00', '11:00', 'QA block', 'demo-owner-0000-0000-000000000001', datetime('now'))`);
-  const member = await loginDemo(uniqueEmail("book011"));
+  const member = await loginDemo(poolEmail());
   const resp = await book(member.client, member.csrfToken, resourceId, blockStart, { offering_id: "demo-off-00000-0000-000000000005" });
   assert.equal(resp.status, 409, `expected rejection for a blocked slot (CR 10:00), got ${resp.status}`);
 });
@@ -165,7 +165,7 @@ test("BOOK-012: entitled member goes straight to confirmed/no-checkout at CR 08:
   // for THIS suite, not the original table's wording. The
   // pending_payment/checkout_url shape needs a configured (sandboxed)
   // Stripe key to ever be observed and is out of this suite's reach.
-  const guest = await loginDemo(uniqueEmail("book012"));
+  const guest = await loginDemo(poolEmail());
   const guestResp = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(1, 8, 30));
   assert.equal(guestResp.status, 503, `S-11: payment needed + Stripe unset must be 503 before any hold, got ${guestResp.status}`);
   assert.deepEqual(guestResp.data, { error: "not_configured", feature: "stripe" });

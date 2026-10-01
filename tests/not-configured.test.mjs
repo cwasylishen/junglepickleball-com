@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loginDemo, d1, uniqueEmail, BASE_URL, signStripeBody, postRaw } from "./qa-helpers.mjs";
+import { loginDemo, d1, poolEmail, BASE_URL, signStripeBody, postRaw } from "./qa-helpers.mjs";
 
 const STRIPE_CALLING_ROUTES = [
   ["POST", "/api/portal/billing/checkout", { lookup_key: "jp_1m_single" }],
@@ -13,7 +13,7 @@ const STRIPE_CALLING_ROUTES = [
 ];
 
 test("CFG-001: every Stripe-calling route returns 503 {error:not_configured, feature:stripe}", async () => {
-  const member = await loginDemo(uniqueEmail("cfg001"));
+  const member = await loginDemo(poolEmail());
   for (const [method, path, body] of STRIPE_CALLING_ROUTES) {
     const resp = method === "GET"
       ? await member.client.get(path)
@@ -28,7 +28,7 @@ test("CFG-002: missing STRIPE_WEBHOOK_SECRET alone also triggers the same 503 sh
 });
 
 test("CFG-003: a paid booking on an offering with price NULL is rejected with price_not_set, not a 503", async () => {
-  const guest = await loginDemo(uniqueEmail("cfg003"));
+  const guest = await loginDemo(poolEmail());
   const resp = await guest.client.post(
     "/api/portal/bookings",
     { resource_id: "demo-plng-00000-0000-000000000006", offering_id: "demo-off-00000-0000-000000000007", start: new Date(Date.now() + 86400000).toISOString(), party_size: 1 },
@@ -54,7 +54,7 @@ test("CFG-004: calendar outbox stays pending with attempt_count 0 when GOOGLE_SE
 });
 
 test("CFG-005: push opt-in with VAPID keys unset returns not-configured, writes no subscription row, does not crash", async () => {
-  const member = await loginDemo(uniqueEmail("cfg005"));
+  const member = await loginDemo(poolEmail());
   const resp = await member.client.post(
     "/api/portal/push/subscribe",
     { endpoint: "https://example.invalid/push/abc", keys: { p256dh: "x", auth: "y" } },

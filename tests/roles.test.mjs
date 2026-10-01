@@ -8,7 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loginDemo, d1, uniqueEmail, BASE_URL, patchWithClient, resetRateLimits } from "./qa-helpers.mjs";
+import { loginDemo, d1, BASE_URL, patchWithClient, resetRateLimits } from "./qa-helpers.mjs";
 
 // FINDING (qa-run-1.md): this file logs in staff.demo more than 5 times
 // -- reset at load, same reasoning as booking-bounds.test.mjs (H-1).
@@ -111,7 +111,24 @@ test("ROLE-010: every non-owner role gets 403 on every owner-only route (matrix)
 });
 
 test("ROLE-011: mass-assignment -- smuggled role/entitlement/credits fields never take effect via PATCH /me", async () => {
-  const member = await loginDemo(uniqueEmail("role011"));
+  // QA3 fix (demo-account starvation): the test-plan's own stated test
+  // data for this case is "member.demo logged in" (a pre-seeded demo
+  // account) -- the old uniqueEmail() here invented a brand-new,
+  // never-seeded address that could never get a dev_link at all
+  // (S-1 e). Using the seeded account matches the plan's intent exactly
+  // and needs no pool.
+  //
+  // QA3 SELF-FOUND DEFECT (this run, H-1): this file resets the shared
+  // rate-limit table only ONCE at load (line 15), and by this point
+  // member.demo@jp-demo.test has already been logged in by ROLE-002,
+  // ROLE-003 and ROLE-010 (3 logins) -- this is the 4th. ROLE-012 right
+  // after it would be the 5th, and anything after that the 6th (rate-
+  // limited, no dev_link, per AUTH-006's own finding: a limited start
+  // is a silent 200 with no dev_link, never a 429). Reset here so both
+  // this test and ROLE-012 get a real dev_link regardless of how many
+  // other tests in this file logged in as member.demo before them.
+  resetRateLimits();
+  const member = await loginDemo("member.demo@jp-demo.test");
   const before = await member.client.get("/api/portal/me");
   const resp = await patchWithClient(
     member.client,
@@ -125,7 +142,7 @@ test("ROLE-011: mass-assignment -- smuggled role/entitlement/credits fields neve
 });
 
 test("ROLE-012: role=owner / account_id=<owner> in body/query never changes authorization on an ordinary member route", async () => {
-  const member = await loginDemo(uniqueEmail("role012"));
+  const member = await loginDemo("member.demo@jp-demo.test"); // QA3 fix: see ROLE-011's comment
   const resp = await member.client.get("/api/portal/owner/health?role=owner&account_id=demo-owner-0000-0000-000000000001");
   assert.equal(resp.status, 403, `the session's own role must govern, got ${resp.status}`);
 });

@@ -40,6 +40,13 @@ rm -rf "$PERSIST_DIR"
 npx wrangler d1 migrations apply PORTAL_DB --local --persist-to "$PERSIST_DIR"
 npx wrangler d1 execute PORTAL_DB --local --persist-to "$PERSIST_DIR" --file=scripts/seed-preview.sql
 
+# portal(QA3): LOCAL-ONLY QA fixture, loaded AFTER the preview seed, into
+# the same ephemeral --persist-to D1 only. Never --remote, never run
+# against the real preview D1 -- see tests/fixtures/seed-test.sql's own
+# header for why it exists (demo-account starvation, S-1 e).
+echo "== Local D1: QA-only fixture (tests/fixtures/seed-test.sql) =="
+npx wrangler d1 execute PORTAL_DB --local --persist-to "$PERSIST_DIR" --file=tests/fixtures/seed-test.sql
+
 echo "== Starting wrangler dev --local on :$PORT (inspector :$INSPECTOR_PORT) =="
 PORTAL_DEV_LOGIN=1 STRIPE_WEBHOOK_SECRET=whsec_local_test_only \
   npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
@@ -66,12 +73,22 @@ set +e
 # against the one running server, so test FILES must run serially (a
 # test file that mutates portal_meta or accounts restores it afterwards,
 # but two files doing that at once would race).
-# --test-timeout=60000 (portal(FR1)): a hung request/assertion fails
-# that one test after 60s instead of hanging the whole suite (and this
-# script's caller) indefinitely.
+# --test-timeout (portal(FR1), raised by QA3): a hung request/assertion
+# fails that one test/file instead of hanging the whole suite (and this
+# script's caller) indefinitely. QA3 (2026-10-01) raised 60000ms ->
+# 180000ms: on this shared host, `d1()` (tests/foundation/helpers.mjs)
+# spins up a real `wrangler d1 execute` CLI process per call, and
+# several OTHER seats' `wrangler dev`/`d1 execute` processes were
+# running concurrently against the same box at QA3's dispatch time
+# (confirmed via `ps aux` -- ports 8891/8901/8981/8991/18921 etc., none
+# of them this run's own) -- under that contention a single d1() call
+# that normally takes well under a second took 10-30s, and files with
+# several d1() calls per test blew the old 60s ceiling before their own
+# assertions ever got a chance to run (a harness/environment failure,
+# not a product one; named rather than silently raised without record).
 TEST_FILES=$(find tests -name '*.test.mjs' | sort)
 PORTAL_TEST_BASE_URL="http://127.0.0.1:$PORT" PORTAL_TEST_PERSIST_DIR="$PERSIST_DIR" \
-  node --test --test-concurrency=1 --test-timeout=60000 --test-reporter=spec $TEST_FILES
+  node --test --test-concurrency=1 --test-timeout=180000 --test-reporter=spec $TEST_FILES
 STATUS=$?
 set -e
 
