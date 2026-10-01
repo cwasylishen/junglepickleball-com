@@ -149,17 +149,63 @@ test("CTL-ROLE-02: PATCH role never accepts 'owner', even from the owner, and is
   }
 });
 
-test("account delete removes the row and is idempotent in end state (second delete is not_found, not a resurrection)", async () => {
+test("account delete (no history): personal-data rows are removed and the account row is anonymised, not resurrected on a second call", async () => {
   const id = "throwaway-delete-account-1";
-  d1(`INSERT INTO accounts (id, email, role, display_name, is_demo, created_at, updated_at) VALUES ('${id}','throwaway.delete@jp-demo.test','guest','',1,datetime('now'),datetime('now'))`);
+  d1(`INSERT INTO accounts (id, email, role, display_name, is_demo, created_at, updated_at) VALUES ('${id}','throwaway.delete@jp-demo.test','guest','Throwaway',1,datetime('now'),datetime('now'))`);
 
   const first = await ownerCall("DELETE", `/api/portal/owner/accounts/${id}`);
   assert.equal(first.status, 200);
-  assert.equal(d1(`SELECT COUNT(*) AS n FROM accounts WHERE id = '${id}'`)[0].n, 0);
+  const row = d1(`SELECT email, display_name, deleted_at FROM accounts WHERE id = '${id}'`)[0];
+  assert.ok(row, "the account row itself is kept (never hard-deleted)");
+  assert.notEqual(row.email, "throwaway.delete@jp-demo.test", "the real email must be gone");
+  assert.equal(row.display_name, "");
+  assert.ok(row.deleted_at, "deleted_at must be set");
 
   const second = await ownerCall("DELETE", `/api/portal/owner/accounts/${id}`);
-  assert.equal(second.status, 404);
-  assert.equal(d1(`SELECT COUNT(*) AS n FROM accounts WHERE id = '${id}'`)[0].n, 0, "the account stays gone -- the same end state as after the first call");
+  assert.equal(second.status, 404, "an already-anonymised account reports not_found, same end state");
+});
+
+// M21: the real case -- an account with booking/payment/audit history.
+// RED (see this part's dispatch return for the transcript): the
+// previous shape ran a plain `DELETE FROM accounts`, which either
+// throws SQLITE_CONSTRAINT_FOREIGNKEY (this harness enforces foreign
+// keys -- confirmed directly against this same local D1 file while
+// building this fix) or, without enforcement, orphans every row below.
+// GREEN: the account row is anonymised in place, so every FK into it
+// stays valid and the booking/payment/audit rows are untouched.
+test("M21: an account WITH booking/payment/audit history deletes cleanly -- anonymised, not cascaded, FK integrity intact", async () => {
+  const id = "m21-real-account-" + Date.now();
+  const bookingId = "m21-real-booking-" + Date.now();
+  d1(`INSERT INTO accounts (id, email, role, display_name, is_demo, created_at, updated_at) VALUES ('${id}','m21.real@jp-demo.test','guest','Real Person',1,datetime('now'),datetime('now'))`);
+  d1(
+    `INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, payment_intent_id, created_by, created_at, updated_at)
+     VALUES ('${bookingId}', '${id}', 'demo-court-0000-0000-000000000001', NULL, datetime('now','+10 days'), datetime('now','+10 days','+90 minutes'), 1, 0, 'cancelled', 'pay', 'pi_m21_real', '${id}', datetime('now'), datetime('now'))`
+  );
+  d1(`INSERT INTO payments_mirror (id, account_id, booking_id, stripe_payment_intent_id, amount_cents, status, kind, created_at, updated_at) VALUES ('m21-mirror-${id}', '${id}', '${bookingId}', 'pi_m21_real', 1500, 'paid', 'booking', datetime('now'), datetime('now'))`);
+
+  try {
+    const res = await ownerCall("DELETE", `/api/portal/owner/accounts/${id}`);
+    assert.equal(res.status, 200, `expected the delete to succeed with history present, got ${res.status} ${JSON.stringify(res.data)}`);
+
+    const account = d1(`SELECT email, deleted_at FROM accounts WHERE id = '${id}'`)[0];
+    assert.ok(account, "the account row survives (money rows still reference it)");
+    assert.notEqual(account.email, "m21.real@jp-demo.test");
+    assert.ok(account.deleted_at);
+
+    const bookingStillThere = d1(`SELECT account_id FROM bookings WHERE id = '${bookingId}'`)[0];
+    assert.equal(bookingStillThere.account_id, id, "the booking row is untouched, still pointing at the (now-anonymised) account");
+    const mirrorStillThere = d1(`SELECT account_id FROM payments_mirror WHERE id = 'm21-mirror-${id}'`)[0];
+    assert.equal(mirrorStillThere.account_id, id);
+
+    const audit = d1(`SELECT before FROM audit_log WHERE action = 'account_deleted' AND target_id = '${id}'`)[0];
+    assert.ok(audit, "the delete itself is audited");
+    assert.ok(!audit.before.includes("m21.real@jp-demo.test"), "the audit row must never re-store the deleted email");
+  } finally {
+    d1(`DELETE FROM payments_mirror WHERE id = 'm21-mirror-${id}'`);
+    d1(`DELETE FROM bookings WHERE id = '${bookingId}'`);
+    d1(`DELETE FROM audit_log WHERE target_id = '${id}' AND action = 'account_deleted'`);
+    d1(`DELETE FROM accounts WHERE id = '${id}'`);
+  }
 });
 
 test("overlaps lists an account with two entitlement sources (P-4); outbox returns the shared summary", async () => {
