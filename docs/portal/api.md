@@ -263,3 +263,29 @@ item 10 → §4 staff calendar row.
   `GET /api/portal/owner/accounts/:id`; a member reading their own household needs an "own"
   route (e.g. `GET /api/portal/household`) that does not yet exist, so M6 cannot be verified
   against real data tonight. None of these are shape changes to anything already shipped.
+- 2026-10-01 (B2a2): §4 filled in -- `src/portal/resources.js`, `owner.js`, `staff.js` and
+  `routes/owner.js` implement every row. Additive detail only, nothing already-shipped changed:
+  `POST /api/portal/owner/bookings` gains an optional `party_size?` (1-4, default 1; screens.md
+  O9's players stepper, not in B1's original request shape); `PATCH .../resources/:id` response
+  gains `misfits` (REQ-OWN-11, `[]` when the edit touched no hours/slot/buffer field);
+  `POST/GET .../blocks` response gains `conflicts` (overlapping bookings the block never
+  cancels, F-D3); `GET .../resources/:id/offerings/:offeringId` added (singular GET, matching
+  the bracket notation already in the row's path); extra named errors used by this part's own
+  handlers: `no_fields`, `bad_*` (per-field, CTL-RES-01/CTL-AUTHZ-03), `resource_forbidden`
+  (CTL-STF-01, a `resource_id` param on the staff calendar), `cannot_delete_owner`/
+  `cannot_change_owner` (role/delete guard a defensive addition, owner rows are never
+  touched by these routes).
+  **Findings (not built, reported per B2-COMMON):**
+  (1) `GET /api/portal/owner/health` is documented (§2, §4) to carry `outbox`, but the route is
+  registered in B1's `router.js` and its handler (`ownerHealth`) lives in B1's `auth.js` --
+  neither is this part's file. The exact one-line fix: in `auth.js`'s `ownerHealth`, import
+  `outboxSummary` from `./outbox.js` and add `outbox: await outboxSummary(db)` to the response.
+  Until then, `GET /api/portal/owner/outbox` (this part, fully built) is the only place that
+  data is available over HTTP.
+  (2) CTL-BOOK-01 ("only booking.js writes bookings") is, in the strict sense, still violated:
+  `owner.js`'s `ownerOverrideBooking` writes `bookings` directly (B2a1's `booking.js` exported
+  no shared insert function at the time this was written; amendment 6 did not assign this
+  interface to either part). Its occupancy predicate was checked against B2a1's real
+  `createBooking` (committed independently, in parallel) and matched exactly after the fact.
+  Recommended follow-up: B2a1 exports a shared `insertBookingIfFree(db, {...})` both writers
+  call, so there is truly one writer.
