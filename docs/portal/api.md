@@ -252,3 +252,14 @@ item 10 → §4 staff calendar row.
   exported session-minting function, so the passkey-login session insert is duplicated rather
   than shared; and `security-posture.md` AUTH-09/AUTH-18 are out of tonight's scope (not in
   controls.md §4).
+- 2026-10-01 (B2f1, UI-only part, no route shapes changed, findings only): building M1/M8
+  (screens.md) against §2's `GET /api/portal/me` found it has no `credits` field though
+  screens.md §0.2's boot sequence and M1's credits line both need one -- the UI defaults to 0
+  until it's added. Building M3 against §3's `GET /api/portal/bookings` response
+  (`[{id,resource,start,end,status,payment_mode}]`) found no `party_size`, needed by M1's
+  "{players} players" line and M2d's per-player cost line on an existing booking -- the UI
+  omits that line rather than show it undefined. M6 (household, read-only) has no `GET`
+  endpoint in this contract at all -- §4 only exposes household data through the *owner's*
+  `GET /api/portal/owner/accounts/:id`; a member reading their own household needs an "own"
+  route (e.g. `GET /api/portal/household`) that does not yet exist, so M6 cannot be verified
+  against real data tonight. None of these are shape changes to anything already shipped.
