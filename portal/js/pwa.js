@@ -1,10 +1,13 @@
-// PWA install prompt and push opt-in (B2e). Exposes `window.PortalPwa`
-// so the account area (B2f1's portal/js/account.js, per
-// docs/portal/ui-structure.md) can call into it; this file never
-// assumes any particular element exists, so it is safe to load even
-// before that area is built (see this part's return for the one
-// finding: the <script> tag and init() call that still need adding to
-// portal/index.html/app.js, which B2e does not own).
+// PWA install prompt and push opt-in (B2e). Exposes `window.PortalPwa`,
+// called by the shell (portal/js/app.js's portalShell().init(), per
+// docs/portal/ui-structure.md) once the area modules have loaded; this
+// file never assumes any particular element exists, so it is safe to
+// load even before the account area has mounted its view.
+//
+// portal(FR3b): inspection-2.md N3 -- nothing called PortalPwa, so the
+// service worker never registered and the account area never showed
+// the install/reminders row. Fixed by adding init()/mountAccountAppRow()
+// here and the one call to PortalPwa.init() in app.js.
 //
 // REQ-PWA-04/05: Android gets the native `beforeinstallprompt`; iOS
 // Safari never fires it, so canInstall()/isIos() let the caller choose
@@ -105,7 +108,94 @@
     await PortalApi.post("/api/portal/push/unsubscribe", { endpoint });
   }
 
+  // P1: fills the `#account-app-mount` row account.html leaves for this
+  // module (ui-structure.md) with the install control and the reminders
+  // opt-in. Safe to call anytime -- it does nothing until that element
+  // exists (account.js mounts it asynchronously after its own route
+  // match), and it only ever mounts once per element.
+  async function mountAccountAppRow() {
+    const mount = document.getElementById("account-app-mount");
+    if (!mount || mount.dataset.pwaMounted === "1") return;
+    mount.dataset.pwaMounted = "1";
+
+    const wrap = document.createElement("div");
+    wrap.className = "flex flex-col items-end gap-1 text-xs text-slate-500";
+    mount.appendChild(wrap);
+
+    const installLine = document.createElement("div");
+    wrap.appendChild(installLine);
+    if (isStandalone()) {
+      installLine.textContent = "App installed";
+    } else if (isIos()) {
+      installLine.textContent = "Add to Home Screen from the Share menu";
+    } else {
+      const installButton = document.createElement("button");
+      installButton.type = "button";
+      installButton.className = "text-jpteal underline disabled:no-underline disabled:opacity-50";
+      installButton.textContent = "Install app";
+      installButton.disabled = !canInstall();
+      installButton.addEventListener("click", async () => {
+        const outcome = await promptInstall();
+        installLine.textContent = outcome === "accepted" ? "App installed" : "Install app";
+        if (outcome !== "accepted") wrap.insertBefore(installButton, installLine.nextSibling);
+      });
+      installLine.appendChild(installButton);
+      window.addEventListener("beforeinstallprompt", () => {
+        installButton.disabled = false;
+      });
+    }
+
+    // REQ-PWA-07/08: features.push comes from the same /api/portal/me
+    // call every area already trusts for feature gating (nc.push,
+    // app.js's STR.en) -- never a guess from whether the browser
+    // supports the Push API.
+    const session = await window.PortalApp.bootstrapSession();
+    const pushOn = Boolean(session.features && session.features.push);
+
+    const pushLine = document.createElement("div");
+    wrap.appendChild(pushLine);
+    if (!pushOn) {
+      pushLine.textContent = (window.STR && window.STR.en && window.STR.en["nc.push"]) || "Reminders are not switched on yet.";
+      return;
+    }
+    const pushButton = document.createElement("button");
+    pushButton.type = "button";
+    pushButton.className = "text-jpteal underline";
+    pushButton.textContent = "Turn on reminders";
+    pushButton.addEventListener("click", async () => {
+      pushButton.disabled = true;
+      try {
+        await subscribeToPush();
+        pushLine.textContent = "Reminders are on";
+      } catch (err) {
+        pushLine.textContent = err && err.message ? err.message : "Could not turn on reminders.";
+        pushButton.disabled = false;
+      }
+    });
+    pushLine.appendChild(pushButton);
+  }
+
+  // Called once by the shell (app.js's portalShell().init(), per this
+  // file's own header note above) after the area modules have loaded.
+  // Registers the service worker, then mounts the account row now (in
+  // case `#/account` is already showing) and again whenever the DOM
+  // changes, since account.js injects account.html asynchronously on
+  // its own hashchange/DOMContentLoaded handler and this module has no
+  // other way to know when that fetch finishes.
+  async function init() {
+    try {
+      await registerServiceWorker();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[pwa] service worker registration failed:", err && err.message);
+    }
+    mountAccountAppRow();
+    window.addEventListener("hashchange", mountAccountAppRow);
+    new MutationObserver(mountAccountAppRow).observe(document.body, { childList: true, subtree: true });
+  }
+
   window.PortalPwa = {
+    init,
     registerServiceWorker,
     canInstall,
     promptInstall,
@@ -113,5 +203,6 @@
     isStandalone,
     subscribeToPush,
     unsubscribeFromPush,
+    mountAccountAppRow,
   };
 })();

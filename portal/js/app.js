@@ -108,6 +108,11 @@ function portalShell() {
     ageConfirmError: false,
     ageChecked: false,
     async init() {
+      // portal(FR3b): the one call into pwa.js (ui-structure.md,
+      // inspection-2.md N3) -- registers the service worker and mounts
+      // the account area's install/reminders row once it exists. Never
+      // awaited: a failed/slow registration must not block sign-in.
+      if (window.PortalPwa && typeof window.PortalPwa.init === "function") window.PortalPwa.init();
       const verifyResult = await window.PortalApp.handleLoginFragment();
       if (verifyResult && verifyResult.error === "age_confirmation_required") {
         this.ageConfirmToken = verifyResult.token;
