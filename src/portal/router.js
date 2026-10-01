@@ -232,7 +232,10 @@ export async function handlePortalRequest(request, env, url) {
     if (url.pathname === "/api/stripe/webhook" && request.method === "POST") {
       if (envClass === "mismatch") return environmentMismatch();
       const penv = buildPortalEnv(env, envClass);
-      return handleStripeWebhook(request, penv, db);
+      // M1 (CTL-ERR-01): must be awaited inside this try, or a rejected
+      // webhook promise skips logAndMask and escapes with a raw error
+      // message via the legacy catch in src/worker.js.
+      return await handleStripeWebhook(request, penv, db);
     }
 
     if (!url.pathname.startsWith("/api/portal/")) return null; // not ours
