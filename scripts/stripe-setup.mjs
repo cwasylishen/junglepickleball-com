@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// One-time setup: creates the 9 Jungle Pickleball membership/pass products
-// and prices in Stripe, found afterward by lookup_key (never by ID) from
-// src/worker.js's /api/checkout handler. Safe to re-run: each item is
-// looked up by lookup_key first and skipped if it already exists, so a
-// second run creates no duplicates.
+// One-time setup: creates the 13 Jungle Pickleball membership/pass/
+// per-booking products and prices in Stripe, found afterward by
+// lookup_key (never by ID) from src/worker.js's /api/checkout handler
+// and from src/portal/stripe.js (B2b, amendment 4/6). Safe to re-run:
+// each item is looked up by lookup_key first and skipped if it already
+// exists, so a second run creates no duplicates.
 //
 // DO NOT RUN until STRIPE_SECRET_KEY is set for Roger's own Stripe account
 // — this writes real products/prices to whatever account the key belongs to.
@@ -72,6 +73,14 @@ const ITEMS = [
   { lookupKey: "jp_annual_couples", productName: "Jungle Pickleball — Annual Couples", unitAmount: 97500, recurring: { interval: "year", interval_count: 1 } },
   { lookupKey: "jp_session_single", productName: "Jungle Pickleball — Pay to Play (90 min session)", unitAmount: 1500, recurring: null },
   { lookupKey: "jp_session_pack8", productName: "Jungle Pickleball — 8-Play Prepaid Pack", unitAmount: 10000, recurring: null },
+  // Amendment 4 (Clinton's 21:17 confirmed facts): massage and cold
+  // plunge, one-time charges, never recurring. Massage 90-min is $80
+  // here, the newest owner-confirmed figure -- the live site's $85
+  // (index.html line 339) is a logged contradiction, not edited tonight.
+  { lookupKey: "massage_60", productName: "Jungle Pickleball — Massage Therapy by Samy (60 min)", unitAmount: 5500, recurring: null },
+  { lookupKey: "massage_90", productName: "Jungle Pickleball — Massage Therapy by Samy (90 min)", unitAmount: 8000, recurring: null },
+  { lookupKey: "plunge_member", productName: "Jungle Pickleball — Cold Plunge (member)", unitAmount: 1000, recurring: null },
+  { lookupKey: "plunge_guest", productName: "Jungle Pickleball — Cold Plunge (guest)", unitAmount: 1500, recurring: null },
 ];
 
 async function findPriceByLookupKey(lookupKey) {
