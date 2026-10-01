@@ -118,7 +118,18 @@ function portalShell() {
         this.ageConfirmToken = verifyResult.token;
         return;
       }
+      const wasAuthenticated = this.session.authenticated;
       await this.refreshSession();
+      // portal(FR4-A/D1): each area module's own router (owner.js/
+      // member.js/staff.js) mounts on DOMContentLoaded, which already
+      // ran -- before this init() finished awaiting verify -- and found
+      // `session.authenticated` false, so it bailed without rendering.
+      // Firing the same "hashchange" those routers already listen for
+      // makes them re-check the (now authenticated) session and mount
+      // the role's default view, with no new wiring in any area file.
+      if (!wasAuthenticated && this.session.authenticated) {
+        window.dispatchEvent(new Event("hashchange"));
+      }
     },
     async refreshSession() {
       this.session = await window.PortalApp.bootstrapSession();
@@ -146,6 +157,9 @@ function portalShell() {
       }
       this.ageConfirmToken = null;
       await this.refreshSession();
+      // Same D1 fix as init(): the area routers' DOMContentLoaded mount
+      // already ran and bailed unauthenticated, so re-check now.
+      if (this.session.authenticated) window.dispatchEvent(new Event("hashchange"));
     },
   };
 }

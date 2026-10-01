@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Jungle Pickleball Portal</title>
   <link rel="manifest" href="/portal/manifest.webmanifest" />
+  <link rel="icon" href="/portal/icon-192.png" />
   <link rel="stylesheet" href="/portal/portal.css" />
   <!-- S-7/CTL-UI-01: self-hosted, no CDN script on portal pages. -->
   <script src="/portal/js/api.js"></script>
@@ -26,9 +27,20 @@
 <body class="font-body bg-slate-50 text-slate-900" x-data="portalShell()" x-init="init()">
 
   <!-- Top bar (screens.md §2.1). -->
-  <header class="sticky top-0 z-10 h-14 flex items-center justify-between px-4 bg-jpteal text-white font-heading">
-    <span class="font-semibold tracking-wide">JUNGLE <span class="text-jpyellow">PICKLEBALL</span></span>
-    <span x-show="session.account" x-text="session.account && session.account.display_name"></span>
+  <header class="sticky top-0 z-10 h-14 flex items-center justify-between gap-4 px-4 bg-jpteal text-white font-heading">
+    <span class="font-semibold tracking-wide shrink-0">JUNGLE <span class="text-jpyellow">PICKLEBALL</span></span>
+    <!-- Desktop nav (screens.md S-7/D2): the bottom tab bar below is
+         `flex md:hidden` (mobile only), so >=768px needs its own path to
+         the same role-based tabs. Same `nav` array, same route hrefs --
+         the area routers (hashchange listeners) are what actually mount
+         each view, so this is just another link to the same hash. -->
+    <nav x-show="session.authenticated" class="hidden md:flex md:items-center md:gap-6">
+      <template x-for="item in nav" :key="item[0]">
+        <a :href="item[0]" class="text-xs uppercase tracking-wide font-heading text-white hover:text-jpyellow"
+           x-text="window.t ? window.t(item[1]) : item[1]"></a>
+      </template>
+    </nav>
+    <span x-show="session.account" class="shrink-0" x-text="session.account && session.account.display_name"></span>
   </header>
 
   <!-- Preview ribbon: shown only when GET /api/portal/me reports a preview build. -->
