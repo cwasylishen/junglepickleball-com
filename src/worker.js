@@ -2,6 +2,9 @@
 // Assets are served by the assets layer first; this script only receives
 // requests that match no static file (i.e. /api/* and true 404s).
 
+import { handlePortalRequest, handlePortalShellFallback } from "./portal/router.js";
+import { runScheduled } from "./portal/cron.js";
+
 const SESSION_COOKIE = "jp_admin";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 const SITE_ID = "junglepickleball"; // wizardweb analytics site_id
@@ -974,6 +977,19 @@ export default {
     const p = url.pathname;
 
     try {
+      // Portal (PIN-4): dispatched to src/portal/router.js before any
+      // existing route is considered, so the portal can never shadow an
+      // existing path and an existing path can never reach the portal's
+      // own dispatch. Everything else below this block is byte-for-byte
+      // the pre-portal behaviour.
+      if (p.startsWith("/api/portal/") || (p === "/api/stripe/webhook" && request.method === "POST")) {
+        const portalResponse = await handlePortalRequest(request, env, url);
+        if (portalResponse) return portalResponse;
+      } else if (p.startsWith("/portal")) {
+        const portalShell = await handlePortalShellFallback(request, env, url);
+        if (portalShell) return portalShell;
+      }
+
       if (p.startsWith("/api/")) {
         // public endpoints
         if (p === "/api/events" && request.method === "GET") return publicEvents(env);
@@ -1032,5 +1048,11 @@ export default {
     } catch (err) {
       return json({ error: "Server error.", detail: String(err && err.message || err).slice(0, 200) }, 500);
     }
+  },
+
+  // Cron Trigger entry (PIN-14). The body lives in src/portal/cron.js,
+  // owned by B2e; this export is the one-line shell B1 adds.
+  async scheduled(controller, env) {
+    await runScheduled(env);
   },
 };
