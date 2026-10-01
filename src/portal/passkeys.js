@@ -21,54 +21,9 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { json } from "./http.js";
 import { newId, nowIso } from "./db.js";
 import { writeAudit } from "./audit.js";
-import { originMatchesRequestUrl, sha256Hex, sessionCookieHeader, publicAccount } from "./auth.js";
+import { originMatchesRequestUrl, mintSession, publicAccount } from "./auth.js";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // CTL-PK-01
-
-// Mirrors auth.js's SESSION_TTL_MS (S-5) exactly. This is duplicated
-// here, not imported, because auth.js has no exported session-minting
-// function a second login method can call -- auth.js is not this
-// part's file to add one to, so the gap is reported as a finding in
-// this part's return rather than fixed here. If S-5's values change,
-// this table must change with them.
-const SESSION_TTL_MS = { owner: 7 * 86400000, staff: 7 * 86400000, member: 30 * 86400000, guest: 30 * 86400000 };
-
-function randomTokenHex(bytes = 32) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return [...arr].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function uaFamily(request) {
-  const ua = request.headers.get("User-Agent") || "";
-  if (/iPhone|iPad/.test(ua)) return "ios";
-  if (/Android/.test(ua)) return "android";
-  if (/Chrome/.test(ua)) return "chrome";
-  if (/Safari/.test(ua)) return "safari";
-  if (/Firefox/.test(ua)) return "firefox";
-  return "other";
-}
-
-// The one place a passkey login mints a session row. Same shape as
-// auth.js's authVerify session insert (same columns, same cookie
-// helper, same TTL-by-role table) so a passkey session is
-// indistinguishable from a link session to every other part of the
-// portal -- see the SESSION_TTL_MS note above for why this one insert
-// is duplicated rather than called through.
-async function mintSessionForAccount(db, request, url, account) {
-  const sessionToken = randomTokenHex(32);
-  const sessionId = await sha256Hex(sessionToken);
-  const csrfToken = randomTokenHex(16);
-  const ttl = SESSION_TTL_MS[account.role] || SESSION_TTL_MS.guest;
-  await db
-    .prepare(
-      `INSERT INTO sessions (id, account_id, csrf_token, method, user_agent_family, created_at, expires_at, last_used_at)
-       VALUES (?,?,?,?,?,?,?,?)`
-    )
-    .bind(sessionId, account.id, csrfToken, "passkey", uaFamily(request), nowIso(), new Date(Date.now() + ttl).toISOString(), nowIso())
-    .run();
-  return { csrfToken, cookieHeader: sessionCookieHeader(url, sessionToken, ttl) };
-}
 
 // ---------- registration (own) ----------
 
@@ -249,7 +204,7 @@ export async function passkeyLoginFinish(request, env, db, url, currentSession) 
     await db.prepare(`DELETE FROM sessions WHERE id = ?`).bind(currentSession.id).run();
   }
 
-  const { csrfToken, cookieHeader } = await mintSessionForAccount(db, request, url, account);
+  const { csrfToken, cookieHeader } = await mintSession(db, request, url, account, "passkey");
   await writeAudit(db, {
     actor: account.id,
     action: account.role === "owner" ? "owner_login" : "login",

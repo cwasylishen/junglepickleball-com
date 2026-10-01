@@ -6,6 +6,7 @@ import { json } from "./http.js";
 import { newId, nowIso } from "./db.js";
 import { writeAudit } from "./audit.js";
 import { isOwnerEmail, resolveEntitlement } from "./entitlement.js";
+import { outboxSummary } from "./outbox.js";
 
 const TOKEN_TTL_MS = 15 * 60 * 1000; // PIN-8
 const SESSION_TTL_MS = { owner: 7 * 86400000, staff: 7 * 86400000, member: 30 * 86400000, guest: 30 * 86400000 }; // S-5
@@ -205,11 +206,28 @@ export async function authVerify(request, env, db, url, currentSession) {
     await db.prepare(`DELETE FROM sessions WHERE id = ?`).bind(currentSession.id).run();
   }
 
+  const { csrfToken, cookieHeader } = await mintSession(db, request, url, account, "link");
+
+  await writeAudit(db, { actor: account.id, action: account.role === "owner" ? "owner_login" : "login", targetType: "account", targetId: account.id });
+  if (account.role === "owner" && !wasOwner) {
+    await writeAudit(db, { actor: account.id, action: "owner_promoted", targetType: "account", targetId: account.id });
+  }
+
+  return json({ ok: true, first_login: firstLogin, csrf_token: csrfToken, account: publicAccount(account) }, 200, { "Set-Cookie": cookieHeader });
+}
+
+// The one place a portal login (magic link or passkey) mints a session
+// row (database doctrine). `method` is stored on the row so a session's
+// origin is always visible (`link` | `passkey`); every other column,
+// the cookie attributes and the TTL-by-role table are shared between
+// both callers so a passkey session is byte-identical in shape to a
+// link session (previously duplicated in src/portal/passkeys.js --
+// portal(FR1) fix, docs/portal/api.md §6 finding).
+export async function mintSession(db, request, url, account, method) {
   const sessionToken = randomTokenHex(32);
   const sessionId = await sha256Hex(sessionToken);
   const csrfToken = randomTokenHex(16);
   const ttl = SESSION_TTL_MS[account.role] || SESSION_TTL_MS.guest;
-  const method = "link";
   await db
     .prepare(
       `INSERT INTO sessions (id, account_id, csrf_token, method, user_agent_family, created_at, expires_at, last_used_at)
@@ -217,14 +235,7 @@ export async function authVerify(request, env, db, url, currentSession) {
     )
     .bind(sessionId, account.id, csrfToken, method, uaFamily(request), nowIso(), new Date(Date.now() + ttl).toISOString(), nowIso())
     .run();
-
-  await writeAudit(db, { actor: account.id, action: account.role === "owner" ? "owner_login" : "login", targetType: "account", targetId: account.id });
-  if (account.role === "owner" && !wasOwner) {
-    await writeAudit(db, { actor: account.id, action: "owner_promoted", targetType: "account", targetId: account.id });
-  }
-
-  const headers = { "Set-Cookie": sessionCookieHeader(url, sessionToken, ttl) };
-  return json({ ok: true, first_login: firstLogin, csrf_token: csrfToken, account: publicAccount(account) }, 200, headers);
+  return { csrfToken, cookieHeader: sessionCookieHeader(url, sessionToken, ttl) };
 }
 
 function uaFamily(request) {
@@ -321,6 +332,10 @@ export async function ownerHealth(request, env, db) {
     .all()).results || [];
   const bucket = `email_send_failed:${nowIso().slice(0, 13)}`;
   const counter = await db.prepare(`SELECT value FROM portal_meta_counters WHERE key = ?`).bind(bucket).first();
+  // portal(FR1), docs/portal/api.md §4: `outbox` was named as a finding
+  // (the route lived in this file, the reader in owner.js's
+  // outboxFailures -- database doctrine's one-reader rule, reused here
+  // rather than a second summary query).
   return json({
     owners,
     email_configured: Boolean(env.EMAIL),
@@ -328,6 +343,7 @@ export async function ownerHealth(request, env, db) {
     stripe_configured: Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET),
     gcal_configured: Boolean(env.GOOGLE_SERVICE_ACCOUNT_JSON),
     push_configured: Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY),
+    outbox: await outboxSummary(db),
   });
 }
 
