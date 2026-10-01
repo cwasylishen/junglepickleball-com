@@ -206,7 +206,7 @@ export async function updateResource(db, actorId, resourceId, body = {}) {
 
   const candidate = pickFields(body, RESOURCE_FIELDS);
   if (Object.keys(candidate).length === 0) return { error: "no_fields" };
-  if ("name" in candidate && (!candidate.name || !candidate.name.trim())) return { error: "bad_name" };
+  if ("name" in candidate && (typeof candidate.name !== "string" || !candidate.name.trim())) return { error: "bad_name" };
 
   const err = boundsError(candidate);
   if (err) return { error: err };
