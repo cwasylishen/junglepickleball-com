@@ -158,7 +158,14 @@ const B1_ROUTES = [
   { method: "POST", path: "/api/portal/auth/start", class: "public", handler: (ctx) => authStart(ctx.request, ctx.env, ctx.db, ctx.url) },
   { method: "POST", path: "/api/portal/auth/verify", class: "public", handler: (ctx) => authVerify(ctx.request, ctx.env, ctx.db, ctx.url, ctx.session) },
   { method: "POST", path: "/api/portal/auth/logout", class: "own", handler: (ctx) => logout(ctx.request, ctx.env, ctx.db, ctx.url, ctx.session) },
-  { method: "GET", path: "/api/portal/me", class: "own", handler: (ctx) => handleMe(ctx.request, ctx.env, ctx.db, ctx.url, ctx.session, ctx.account) },
+  // FR3 contract finding: api.md §2 promises anonymous callers
+  // `200 {authenticated:false, features}` (the UI needs `features`
+  // before login, e.g. to know push is on/off) -- handleMe already has
+  // that branch (above), but class "own" made authorize() reject an
+  // anonymous caller with 401 before the handler ever ran, so the
+  // branch was dead code. "public": handleMe itself still returns the
+  // full authenticated shape once a session/account is present.
+  { method: "GET", path: "/api/portal/me", class: "public", handler: (ctx) => handleMe(ctx.request, ctx.env, ctx.db, ctx.url, ctx.session, ctx.account) },
   { method: "GET", path: "/api/portal/owner/sessions", class: "owner", handler: (ctx) => ownerSessions(ctx.request, ctx.env, ctx.db, ctx.url, ctx.session, ctx.account) },
   { method: "POST", path: "/api/portal/owner/sessions/revoke-others", class: "owner", handler: (ctx) => ownerRevokeOtherSessions(ctx.request, ctx.env, ctx.db, ctx.url, ctx.session, ctx.account) },
   { method: "GET", path: "/api/portal/owner/health", class: "owner", handler: (ctx) => ownerHealth(ctx.request, ctx.env, ctx.db) },
@@ -278,7 +285,10 @@ export async function handlePortalRequest(request, env, url) {
     // authority on this very request (and every session for that
     // account is revoked), rather than surviving until that session's
     // 7-day TTL or a login that a session thief never performs.
-    if (account) await reconcileOwnerRole(db, penv, account);
+    // N2: this per-request call demotes only -- it must never PROMOTE
+    // (that happens at login: authVerify/passkeys.js, which audits
+    // `owner_promoted` and mints the owner's 7-day session per S-5).
+    if (account) await reconcileOwnerRole(db, penv, account, { allowPromotion: false });
 
     const match = matchRoute(request.method, url.pathname);
     if (!match) return json({ error: "not_found" }, 404);

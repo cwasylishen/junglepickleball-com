@@ -149,10 +149,21 @@ export async function authStart(request, env, db, url) {
 // OWNER_EMAILS). Mutates `account.role` in place and returns
 // `{ account, wasOwner, nowOwner }` so a caller that only runs at login
 // can still decide whether to write an `owner_promoted` audit row.
-export async function reconcileOwnerRole(db, env, account) {
+//
+// FR3/N2: `allowPromotion` defaults true for the login callers below.
+// router.js's per-request call passes `{ allowPromotion: false }` --
+// S-3 only ever asked for DEMOTION to take effect mid-session; letting
+// the same call PROMOTE mid-session skips the owner_promoted audit
+// (CTL-OWN-01) and leaves the session on its member/guest 30-day TTL
+// instead of S-5's 7-day owner lifetime. With promotion disallowed, an
+// eligible-but-not-yet-owner account simply stays at its current role
+// until it logs in again; demotion (eligibility lost) still applies
+// immediately either way.
+export async function reconcileOwnerRole(db, env, account, { allowPromotion = true } = {}) {
   const wasOwner = account.role === "owner";
   const seededDemoOwner = Boolean(account.is_demo) && wasOwner && env.envClass === "preview";
-  const nowOwner = isOwnerEmail(account.email, env.OWNER_EMAILS) || seededDemoOwner;
+  const eligible = isOwnerEmail(account.email, env.OWNER_EMAILS) || seededDemoOwner;
+  const nowOwner = eligible && (wasOwner || allowPromotion);
   let role = account.role;
   if (nowOwner) role = "owner";
   else if (wasOwner) {
