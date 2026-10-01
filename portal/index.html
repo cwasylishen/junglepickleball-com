@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Jungle Pickleball Portal</title>
+  <link rel="manifest" href="/portal/manifest.webmanifest" />
+  <link rel="stylesheet" href="/portal/portal.css" />
+  <!-- S-7/CTL-UI-01: self-hosted, no CDN script on portal pages. -->
+  <script defer src="/portal/vendor/alpine-3.14.9.min.js"></script>
+  <script src="/portal/js/api.js"></script>
+  <script src="/portal/js/app.js"></script>
+</head>
+<body class="font-body bg-slate-50 text-slate-900" x-data="portalShell()" x-init="init()">
+
+  <!-- Top bar (screens.md §2.1). -->
+  <header class="sticky top-0 z-10 h-14 flex items-center justify-between px-4 bg-jpteal text-white" style="font-family: Oswald, sans-serif;">
+    <span class="font-semibold tracking-wide">JUNGLE <span style="color:#EAB308">PICKLEBALL</span></span>
+    <span x-show="session.account" x-text="session.account && session.account.display_name"></span>
+  </header>
+
+  <!-- Preview ribbon: shown only when GET /api/portal/me reports a preview build. -->
+  <div x-show="session.features && session.features.preview" class="bg-jpyellow text-jpteal text-xs text-center py-1" x-text="STR.en['shell.preview_badge']"></div>
+
+  <!-- Each area (home/book/bookings/account/calendar/today/members/manage)
+       mounts here. B2f1/B2f2 register their templates against this id, per
+       docs/portal/ui-structure.md -- B1 only owns the mount point and the
+       nav built from PortalApp.navForRole(). -->
+  <main id="portal-area" class="max-w-[720px] mx-auto px-4 pb-20 pt-4">
+    <template x-if="!session.authenticated">
+      <section>
+        <h1 class="text-2xl font-heading text-jpteal">Sign in</h1>
+        <p class="text-sm text-slate-600 mt-1">Enter your email for a sign-in link.</p>
+        <form class="mt-4 flex gap-2" @submit.prevent="startLogin()">
+          <input type="email" x-model="loginEmail" required placeholder="you@example.com"
+                 class="flex-1 border border-slate-300 rounded px-3 py-2" />
+          <button type="submit" class="bg-jpteal text-white rounded px-4 py-2">Send link</button>
+        </form>
+        <p x-show="devLink" class="text-xs text-slate-500 mt-3">Preview only: the link was written to the browser console.</p>
+      </section>
+    </template>
+    <template x-if="session.authenticated">
+      <section>
+        <p class="text-sm text-slate-600">Signed in as <span x-text="session.account.email"></span> (<span x-text="session.account.role"></span>).</p>
+      </section>
+    </template>
+  </main>
+
+  <!-- Bottom tab bar (mobile). Desktop moves these into the top bar
+       (screens.md §2.1); left as a simple list here since B1 ships the
+       mount-point contract, not the final nav chrome (B2f owns that). -->
+  <nav x-show="session.authenticated" class="fixed bottom-0 inset-x-0 h-16 bg-white border-t border-slate-200 flex md:hidden">
+    <template x-for="item in nav" :key="item[0]">
+      <a :href="item[0]" class="flex-1 flex items-center justify-center text-xs uppercase font-heading text-jpteal" x-text="item[1]"></a>
+    </template>
+  </nav>
+
+  <script>
+    function portalShell() {
+      return {
+        session: { authenticated: false, features: {}, account: null },
+        nav: [],
+        loginEmail: "",
+        devLink: null,
+        async init() {
+          const verifyResult = await window.PortalApp.handleLoginFragment();
+          if (verifyResult && verifyResult.ok) {
+            await this.refreshSession();
+            return;
+          }
+          await this.refreshSession();
+        },
+        async refreshSession() {
+          this.session = await window.PortalApp.bootstrapSession();
+          this.nav = window.PortalApp.navForRole(this.session.account ? this.session.account.role : null);
+        },
+        async startLogin() {
+          const res = await PortalApi.post("/api/portal/auth/start", { email: this.loginEmail, age_16_plus: true });
+          if (res.data && res.data.dev_link) {
+            this.devLink = res.data.dev_link;
+            // eslint-disable-next-line no-console
+            console.info("[portal demo login]", res.data.dev_link);
+          }
+        },
+      };
+    }
+  </script>
+</body>
+</html>

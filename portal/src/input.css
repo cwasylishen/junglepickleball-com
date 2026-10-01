@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design rule (Amendment 4): no thick one-sided accent borders on cards
+   (e.g. border-left: 4px). Use a subtle full border or a background
+   tint instead -- applies to every card/alert/status pill in the
+   portal. */
