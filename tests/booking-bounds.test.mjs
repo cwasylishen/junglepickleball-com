@@ -98,16 +98,23 @@ test("BOOK-007 (S-12, pending M10): a start off the 90-min grid -- CR 07:15 (not
   resetRateLimits(); // self-found FR2-E fix: 7 member.demo + 1 owner.demo logins in this file exceed the 5/15min per-email limit (REQ-AUTH-07); reset before each so none of them silently withholds dev_link
   const member = await loginDemo("member.demo@jp-demo.test");
   const resp = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(3, 7, 15));
-  assert.equal(resp.status, 409, `S-12: CR 07:15 is not a grid start, expected 409, got ${resp.status} -- FAILS until M10 lands (booking.js has no grid check)`);
+  // M11 fix: api.md:66 and booking.js:409 both answer 400 off_grid for a
+  // grid miss, never 409 -- 409 is reserved for conflict-class errors
+  // (slot_taken, cap_reached, ...), which this is not.
+  assert.equal(resp.status, 400, `S-12: CR 07:15 is not a grid start, expected 400, got ${resp.status}`);
+  assert.equal(resp.data.error, "off_grid");
 });
 
 test("BOOK-008 (S-12, pending M10): a start before open (CR 06:00) and a start past the last valid grid slot (CR 19:00, ends 20:30) are both rejected", async () => {
   resetRateLimits(); // self-found FR2-E fix: 7 member.demo + 1 owner.demo logins in this file exceed the 5/15min per-email limit (REQ-AUTH-07); reset before each so none of them silently withholds dev_link
   const member = await loginDemo("member.demo@jp-demo.test");
   const before = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(3, 6, 0));
-  assert.equal(before.status, 409, `S-12: CR 06:00 is before 07:00 open, expected 409, got ${before.status} -- FAILS until M10 lands`);
+  // M11 fix: api.md:66 and booking.js:409 both answer 400 outside_hours.
+  assert.equal(before.status, 400, `S-12: CR 06:00 is before 07:00 open, expected 400, got ${before.status}`);
+  assert.equal(before.data.error, "outside_hours");
   const after = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000004", crDateAt(3, 19, 0));
-  assert.equal(after.status, 409, `S-12: CR 19:00 would end 20:30, outside 07:00-19:30 hours, expected 409, got ${after.status} -- FAILS until M10 lands`);
+  assert.equal(after.status, 400, `S-12: CR 19:00 would end 20:30, outside 07:00-19:30 hours, expected 400, got ${after.status}`);
+  assert.equal(after.data.error, "outside_hours");
 });
 
 test("BOOK-009 (D-A14 grid tail, boundary): CR 17:30 is the last valid start, ending CR 19:00 within hours -- succeeds regardless of M10", async () => {
@@ -125,7 +132,9 @@ test("BOOK-010 (S-12, pending M10; pin-wording finding): CR 18:00 -- not reachab
   // test-plan.md flagged: starts fall only at open + k*(slot+buffer);
   // 18:00 is not among 07:00..17:30 (nor is 19:00, excluded because it
   // would end 20:30). S-12 wins as the later pin.
-  assert.equal(resp.status, 409, `S-12 excludes CR 18:00 as a non-grid start, expected 409, got ${resp.status} -- FAILS until M10 lands`);
+  // M11 fix: api.md:66 and booking.js:409 both answer 400 off_grid.
+  assert.equal(resp.status, 400, `S-12 excludes CR 18:00 as a non-grid start, expected 400, got ${resp.status}`);
+  assert.equal(resp.data.error, "off_grid");
 });
 
 test("BOOK-011: a slot blocked by the owner is rejected -- block and booking both at CR 10:00 (on-grid)", async () => {
