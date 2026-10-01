@@ -22,6 +22,7 @@ import {
   ownerSessions,
   ownerRevokeOtherSessions,
   ownerHealth,
+  reconcileOwnerRole,
 } from "./auth.js";
 import { ROUTE_CLASSES, authorize } from "./authz.js";
 import { publicAccount } from "./auth.js";
@@ -245,6 +246,12 @@ export async function handlePortalRequest(request, env, url) {
 
     const session = await loadSession(request, env, db, url);
     const account = session ? await loadAccount(db, session.account_id) : null;
+    // M4/S-3: owner authority is re-derived on every request, not only
+    // at login -- an address removed from OWNER_EMAILS loses owner
+    // authority on this very request (and every session for that
+    // account is revoked), rather than surviving until that session's
+    // 7-day TTL or a login that a session thief never performs.
+    if (account) await reconcileOwnerRole(db, penv, account);
 
     const match = matchRoute(request.method, url.pathname);
     if (!match) return json({ error: "not_found" }, 404);
