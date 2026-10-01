@@ -44,7 +44,7 @@ async function ownerDeleteBlock(blockId) {
 }
 
 test("D-A11: owner override books a walk-in, bypassing window/entitlement/payment, and is audited", async () => {
-  const start = "2026-11-05T15:00:00.000Z"; // far outside any window; plain weekday slot
+  const start = "2026-11-05T14:30:00.000Z"; // 08:30 CR, on Court 2's grid; far outside any window
   const res = await ownerPost("/api/portal/owner/bookings", {
     resource_id: COURT_2,
     start,
@@ -59,8 +59,39 @@ test("D-A11: owner override books a walk-in, bypassing window/entitlement/paymen
   const auditRows = d1(`SELECT * FROM audit_log WHERE target_id = '${booking.id}' AND action = 'owner_override_booking'`);
   assert.equal(auditRows.length, 1, "exactly one audit row for the one booking actually created");
 
+  // M20/PIN-13: the calendar_outbox 'create' row must ride in the SAME
+  // batch as the override's booking write -- RED before the fix: this
+  // row never existed at all, so Roger's calendar never heard about a
+  // walk-in or owner booking.
+  const outboxRows = d1(`SELECT action, status FROM calendar_outbox WHERE booking_id = '${booking.id}'`);
+  assert.equal(outboxRows.length, 1, "exactly one calendar_outbox row for the override's booking write");
+  assert.equal(outboxRows[0].action, "create");
+  assert.equal(outboxRows[0].status, "pending");
+
+  d1(`DELETE FROM calendar_outbox WHERE booking_id = '${booking.id}'`);
   d1(`DELETE FROM bookings WHERE id = '${booking.id}'`);
   d1(`DELETE FROM audit_log WHERE target_id = '${booking.id}'`);
+});
+
+test("M10: the owner override refuses an off-grid start or one that ends after close, same rule createBooking uses", async () => {
+  const offGrid = await ownerPost("/api/portal/owner/bookings", {
+    resource_id: COURT_2,
+    start: "2026-11-05T15:00:00.000Z", // 09:00 CR -- NOT on Court 2's 90-min grid
+    walk_in_name: "Off grid",
+  });
+  assert.equal(offGrid.status, 400, JSON.stringify(offGrid.data));
+  assert.equal(offGrid.data.error, "off_grid");
+
+  const outsideHours = await ownerPost("/api/portal/owner/bookings", {
+    resource_id: COURT_2,
+    start: "2026-11-05T01:00:00.000Z", // 19:00 CR -- after Court 2's last 17:30 start
+    walk_in_name: "Too late",
+  });
+  assert.equal(outsideHours.status, 400, JSON.stringify(outsideHours.data));
+  assert.equal(outsideHours.data.error, "outside_hours");
+
+  const rows = d1(`SELECT COUNT(*) AS n FROM bookings WHERE resource_id = '${COURT_2}' AND walk_in_name IN ('Off grid', 'Too late')`)[0].n;
+  assert.equal(rows, 0, "neither refused attempt may write a row");
 });
 
 test("CTL-BOOK-01 (occupancy, run-it-twice): the same slot booked twice never double-books -- second call is 409 slot_taken, no bump, no second audit row", async () => {
@@ -105,7 +136,7 @@ test("D-A11: a blocked slot refuses the override -- no bumping, cancel the block
   try {
     const res = await ownerPost("/api/portal/owner/bookings", {
       resource_id: COURT_2,
-      start: "2026-11-07T15:00:00.000Z", // 09:00 CR local, inside the block
+      start: "2026-11-07T16:00:00.000Z", // 10:00 CR local, on Court 2's grid, inside the block
       walk_in_name: "Should be refused",
     });
     assert.equal(res.status, 409);

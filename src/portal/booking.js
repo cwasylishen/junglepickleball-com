@@ -97,6 +97,25 @@ export function generateGridForDate(resource, crDateStr) {
   return slots;
 }
 
+// D-A14/S-12: the one grid/hours check every booking writer uses --
+// createBooking below AND the owner override (owner.js's
+// ownerOverrideBooking) import this rather than keep a second copy
+// (database doctrine). D-A11 bypasses window/entitlement/payment, never
+// grid or hours, so this applies to both callers with no owner/staff
+// exemption. Returns the exact 400 error code to use, or null when the
+// start is on-grid and the whole booking fits inside opening hours.
+export function gridAndHoursError(resource, startIso, endIso) {
+  const startMin = hhmmToMinutes(crTimeStringFromUtcIso(startIso));
+  const openMin = hhmmToMinutes(resource.open_time);
+  const closeMin = hhmmToMinutes(resource.close_time);
+  if (startMin < openMin || startMin >= closeMin) return "outside_hours";
+  const step = resource.slot_minutes + resource.buffer_minutes;
+  if ((startMin - openMin) % step !== 0) return "off_grid";
+  const durationMin = Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000);
+  if (startMin + durationMin > closeMin) return "outside_hours";
+  return null;
+}
+
 // D-A13: a slot is bookable when its CR calendar date <= today(CR) +
 // window days. Owner/staff have no window (checked by the caller).
 export function withinWindow(resource, crDateStr, entitled) {
@@ -127,7 +146,7 @@ function resolveDuration(resource, offerings, offeringId) {
 // zero-row INSERT instead of a thrown FK violation. outbox.js's helper
 // is unconditional by design (flagged as a finding, not edited here --
 // outbox.js is not this part's file).
-function guardedOutboxInsertStatement(db, { bookingId, action, resourceId, payload, requireStatus }) {
+export function guardedOutboxInsertStatement(db, { bookingId, action, resourceId, payload, requireStatus }) {
   const now = nowIso();
   return db
     .prepare(
@@ -383,6 +402,12 @@ export async function createBooking(request, env, db, url, session, account) {
   const endIso = new Date(startDate.getTime() + durationMinutes * 60000).toISOString();
   const crDateStr = crDateStringFromUtc(startDate);
 
+  // S-12/D-A14: off the grid, before/after hours, or ending past close.
+  // Checked for every caller, including staff/owner self-booking --
+  // D-A11's exemption (window/entitlement/payment) never covers this.
+  const gridError = gridAndHoursError(resource, startIso, endIso);
+  if (gridError) return json({ error: gridError }, 400);
+
   // D-A13: owner/staff have no window; member/guest do.
   if (account.role !== "owner" && account.role !== "staff") {
     const entitlement = await resolveEntitlement(db, account.id, nowIsoVal);
@@ -559,9 +584,15 @@ export async function cancelBooking(request, env, db, url, session, account, par
 
   const cancelledAt = nowIsoVal;
   const statements = [
+    // M19/CTL-REF-01: a paid, confirmed booking's refund is recorded as
+    // `due` in the SAME statement as the cancel itself -- never a
+    // second write -- so owner Today/the refunds-due list sees it the
+    // instant the cancel commits. A booking that was never paid (or
+    // never confirmed) leaves refund_state untouched.
     db
       .prepare(
-        `UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, updated_at = ?
+        `UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, updated_at = ?,
+           refund_state = CASE WHEN status = 'confirmed' AND payment_mode = 'pay' AND payment_intent_id IS NOT NULL THEN 'due' ELSE refund_state END
            WHERE id = ? AND status IN ('confirmed', 'pending_payment')
            RETURNING *`
       )
@@ -627,20 +658,43 @@ export async function confirmPaidBooking(env, bookingId, { paymentIntentId, sess
   const holdExpired = Boolean(booking.hold_expires_at) && booking.hold_expires_at <= nowIsoVal;
 
   if (holdExpired) {
-    const conflict = await db
+    // M12/A2: the confirm itself carries the SAME occupancy guard the
+    // original insert used -- a plain SELECT-then-UPDATE pair (the
+    // previous shape here) leaves a gap between the two statements for
+    // a concurrent booking to land in, which this single guarded
+    // statement closes. It can confirm this row ONLY if nothing else
+    // now occupies the slot; it is a no-op (0 rows) otherwise.
+    const confirmStmt = db
       .prepare(
-        `SELECT 1 FROM bookings WHERE resource_id = ? AND id != ? AND start_at < ? AND end_at > ?
-           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
+        `UPDATE bookings SET status = 'confirmed', payment_intent_id = ?, checkout_session_id = COALESCE(?, checkout_session_id),
+           hold_expires_at = NULL, updated_at = ?
+         WHERE id = ? AND status = 'pending_payment'
+           AND NOT EXISTS (
+             SELECT 1 FROM bookings AS other
+             WHERE other.resource_id = ? AND other.id != ? AND other.start_at < ? AND other.end_at > ?
+               AND (other.status = 'confirmed' OR (other.status = 'pending_payment' AND (other.hold_expires_at IS NULL OR other.hold_expires_at > ?)))
+           )
+         RETURNING *`
       )
-      .bind(booking.resource_id, bookingId, booking.end_at, booking.start_at, nowIsoVal)
+      .bind(
+        paymentIntentId || null, sessionId || null, nowIsoVal, bookingId,
+        booking.resource_id, bookingId, booking.end_at, booking.start_at, nowIsoVal
+      );
+    const outboxStmt = guardedOutboxInsertStatement(db, { bookingId, action: "create", resourceId: booking.resource_id, payload: { booking_id: bookingId }, requireStatus: "confirmed" });
+    const results = await runBatch(db, [confirmStmt, outboxStmt]);
+    if ((results[0].results || []).length > 0) return { status: "confirmed" };
+
+    // Confirm did not happen: either the slot is now occupied (mark
+    // paid_conflict, itself guarded so it only fires if the row is
+    // still pending_payment) or a concurrent call already resolved it.
+    const conflictRow = await db
+      .prepare(`UPDATE bookings SET status = 'paid_conflict', payment_intent_id = ?, updated_at = ? WHERE id = ? AND status = 'pending_payment' RETURNING id`)
+      .bind(paymentIntentId || null, nowIsoVal, bookingId)
       .first();
-    if (conflict) {
-      await db
-        .prepare(`UPDATE bookings SET status = 'paid_conflict', payment_intent_id = ?, updated_at = ? WHERE id = ? AND status = 'pending_payment'`)
-        .bind(paymentIntentId || null, nowIsoVal, bookingId)
-        .run();
-      return { status: "paid_conflict" };
-    }
+    if (conflictRow) return { status: "paid_conflict" };
+
+    const finalRow = await db.prepare(`SELECT status FROM bookings WHERE id = ?`).bind(bookingId).first();
+    return { status: finalRow && finalRow.status === "confirmed" ? "already_confirmed" : "paid_conflict" };
   }
 
   const statements = [

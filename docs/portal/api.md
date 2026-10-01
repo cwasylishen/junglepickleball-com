@@ -63,7 +63,7 @@ only `{display_name}` (CTL-AUTHZ-03); every other field in the body is ignored, 
 | `GET /api/portal/resources` | own | — | `[{id, kind, name, open_time, close_time, slot_minutes, buffer_minutes, member_included, offerings:[{id,name,duration_minutes,audience,display_price_cents}]}]` | — |
 | `GET /api/portal/resources/:id/availability?date=YYYY-MM-DD` | own | — | `{slots:[{start,end,state}]}`, `state ∈ {available,taken,held,held_mine,mine,blocked,past}` (screens §10 item 2). No account fields for member/guest (CTL-AVL-01). Owner variant (`GET /api/portal/owner/resources/:id/availability`, B2a2) adds `display_name`, `booking_id`. | `400 bad_date` |
 | `GET /api/portal/resources/:id/quote?offering_id=&start=&party_size=` | own | — | `{mode, unit_cents, party_size, total_cents, credits_needed, credits_have, cancel_cutoff_minutes}` (screens §10 item 3), `mode` from `entitlement.resolveAudience` | `409 price_not_set` |
-| `POST /api/portal/bookings` | own | `{resource_id, offering_id?, start, party_size, free_kids?, payment_choice?}` | `201 {booking:{id,status,payment_mode,hold_expires_at?,checkout_url?}}`. **Must not create any row at all if a paid path is `not_configured` (S-11/F-D1) -- check Stripe configuration before inserting a hold.** | `409 slot_taken`, `409 outside_window`, `409 in_past`, `409 blocked`, `409 cap_reached`, `409 insufficient_credits`, `409 price_not_set`, `409 price_mismatch` (CTL-STR-02, added portal(FR1)), `503 not_configured {feature:"stripe"}`, `400 invalid_request` |
+| `POST /api/portal/bookings` | own | `{resource_id, offering_id?, start, party_size, free_kids?, payment_choice?}` | `201 {booking:{id,status,payment_mode,hold_expires_at?,checkout_url?}}`. **Must not create any row at all if a paid path is `not_configured` (S-11/F-D1) -- check Stripe configuration before inserting a hold.** | `409 slot_taken`, `409 outside_window`, `409 in_past`, `409 blocked`, `409 cap_reached`, `409 insufficient_credits`, `409 price_not_set`, `409 price_mismatch` (CTL-STR-02, added portal(FR1)), `400 off_grid` / `400 outside_hours` (D-A14/S-12, added portal(FR2-B), checked for every caller incl. staff/owner self-book), `503 not_configured {feature:"stripe"}`, `400 invalid_request` |
 | `POST /api/portal/bookings/:id/cancel` | own | — | `200 {ok:true, credits_returned}` | `404` (not this account's or already cancelled), `409 past_cutoff` (UI string key `cancel.err_cutoff`) |
 | `GET /api/portal/bookings` | own | — | `[{id,resource,start,end,status,payment_mode,party_size}]` (`party_size` added portal(FR1)), this account's own rows only | — |
 
@@ -118,17 +118,37 @@ the create/cancel handlers.
 | `DELETE /api/portal/owner/households/:id` | owner | — | `200 {ok:true}` (unlink) | |
 | `POST /api/portal/owner/accounts/:id/dependants` | owner | `{first_name, birth_year}` | `201 {dependant}` (D-A03; first name + birth year only, CTL-DATA-04) | |
 | `PATCH /api/portal/owner/accounts/:id/role` | owner | `{role}`, `role ≠ 'owner'` always enforced | `200 {account}` | `403` if `role:'owner'` attempted (CTL-ROLE-02) |
-| `DELETE /api/portal/owner/accounts/:id` | owner | — | `200 {ok:true}` | |
+| `DELETE /api/portal/owner/accounts/:id` | owner | — | `200 {ok:true}` (added portal(FR2-B): anonymises rather than deletes the row -- see appendix) | `404` (already anonymised, same end state) |
 | `GET /api/portal/owner/today?date=YYYY-MM-DD` | owner | — | every resource's bookings for that CR date, `state ∈ {confirmed,held,blocked,paid_conflict}`, `payment_intent_id`, `walk_in_name`, `block.weekly` (screens §10 item 8) | |
 | `GET /api/portal/owner/resources` / `POST` / `PATCH /:id` | owner | resource fields (CTL-AUTHZ-03 explicit list) | resource row + `unconfirmed_fields` | `400` on out-of-range values (CTL-RES-01: slot 0, buffer < 0, close ≤ open → 400) |
 | `POST /api/portal/owner/resources/:id/confirm-field` | owner | `{field}` | `200 {ok:true}` (audited; clears that name from `unconfirmed_fields`) | |
 | `GET/POST/PATCH/DELETE /api/portal/owner/resources/:id/offerings[/:offeringId]` | owner | offering fields | offering row | |
 | `GET/POST/DELETE /api/portal/owner/blocks[/:id]` | owner | `{resource_id, kind, weekday|date, start_time, end_time, label}` | block row(s) | Warns, never bumps an existing booking (F-D3) |
-| `POST /api/portal/owner/bookings` (owner override, D-A11) | owner | `{resource_id, start, account_id? , walk_in_name?}` | `201 {booking}`, bypasses window/entitlement/payment | `409 slot_taken` (no bumping) |
+| `POST /api/portal/owner/bookings` (owner override, D-A11) | owner | `{resource_id, start, account_id? , walk_in_name?}` | `201 {booking}`, bypasses window/entitlement/payment, **never grid or hours** (added portal(FR2-B)) | `409 slot_taken` (no bumping), `400 off_grid` / `400 outside_hours` |
+| `GET /api/portal/owner/refunds-due` (added portal(FR2-B), M19/CTL-REF-01) | owner | — | `[{id,resource_id,resource_name,start_at,end_at,party_size,display_name,walk_in_name,cancelled_at,payment_intent_id,refund_url}]`, every cancelled booking with `refund_state='due'`, oldest first | — |
+| `POST /api/portal/owner/bookings/:id/mark-refunded` (added portal(FR2-B)) | owner | — | `200 {ok:true}`, audited `refund_marked`; idempotent | `404 not_found` |
 | `GET /api/portal/owner/health` | owner | — | `{owners:[...], email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured, outbox:{pending,failed}}` (CTL-OWN-01, CTL-AUTH-06, CTL-UI-06; `outbox` wired portal(FR1)) | |
 | `GET /api/portal/owner/outbox` | owner | — | `{pending, failed:[...]}` (screens §10 item 9) | |
 | `GET /api/portal/owner/overlaps` | owner | — | accounts with >1 valid entitlement source (P-4) | |
 | `GET /api/portal/staff/calendar?date=` | staff-own | — | `[{start,end,resource,display_name,state}]`, this staff's own resource only, no email/phone/notes/payment (D-A16) | `403` if asking another resource (CTL-STF-01) |
+
+**B2a2 appendix (2026-10-01, portal(FR2-B)):**
+- **CTL-REF-01.** Cancelling a paid, confirmed booking (member before cutoff, or owner at any
+  time -- both go through the one `cancelBooking` in `booking.js`) sets `bookings.refund_state =
+  'due'` in the SAME statement as the cancel. `GET /api/portal/owner/today` includes a cancelled
+  row whose `refund_state` is `due` (every other cancelled row stays excluded, as before) so it
+  never disappears from the owner's view. The Stripe refund is still a dashboard act (PIN-11) --
+  `POST .../mark-refunded` only records that the owner did it.
+- **Account delete (DEL-01).** The account row is never hard-deleted once it has any
+  money/audit history -- `bookings`, `entitlement_grants`, `credits_ledger`, `payments_mirror`
+  and `audit_log.actor_account_id` all carry a reference to it, and D1 enforces foreign keys on
+  this local harness (confirmed empirically: a plain `DELETE` against an account with any such
+  row throws `SQLITE_CONSTRAINT_FOREIGNKEY`). Instead the row is anonymised in place (`email` ->
+  `deleted-<id>@deleted.invalid`, `display_name` -> `''`, `stripe_customer_id` -> `NULL`,
+  `deleted_at` set) and its login/personal-data rows are hard-deleted: `sessions`, `passkeys`,
+  `push_subscriptions`, `dependants`, `households`. Money/audit rows keep full referential
+  integrity, pointing at the now-anonymised account. The audit row for the delete itself never
+  re-stores the deleted email (the previous shape's own finding).
 
 ## 5. Stripe -- B2b (`src/portal/stripe.js`, replaces `src/portal/stripe-webhook-stub.js`)
 
@@ -242,6 +262,12 @@ item 10 → §4 staff calendar row.
   `503 billing_portal_unavailable`) and `offerings/:offeringId/price` (`404 not_found`), and
   the `history` empty-array case for an account with no `stripe_customer_id` yet. No
   previously-shipped shape changed.
+- 2026-10-01 (portal(FR2-B)): §3 `POST /api/portal/bookings` and §4's owner override gain
+  `400 off_grid`/`400 outside_hours` (M10, D-A14/S-12, no owner/staff exemption). §4 adds
+  `GET /api/portal/owner/refunds-due` and `POST .../bookings/:id/mark-refunded` (M19,
+  CTL-REF-01) and documents account delete as anonymise-in-place, never a hard delete (M21,
+  migration `0008_refund_due_and_delete.sql` adds `bookings.refund_state` and
+  `accounts.deleted_at`). No previously-shipped shape changed.
 - 2026-10-01 (B2a1): §3 appendix added -- `payment_choice?` on create (new optional field,
   nothing removed/changed), a clarification that the cancel row's `cancel.err_cutoff` is a UI
   string key, not a second JSON error code, and two findings (an `addCredits` idempotency `ref`

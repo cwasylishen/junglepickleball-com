@@ -12,7 +12,7 @@ import { auditStatement } from "./audit.js";
 import { resolveEntitlement, validGrants } from "./entitlement.js";
 import { outboxSummary } from "./outbox.js";
 import { crLocalMinutesOfUtcIso, timeToMinutes } from "./resources.js";
-import { insertBookingAtomic } from "./booking.js";
+import { insertBookingAtomic, gridAndHoursError, guardedOutboxInsertStatement } from "./booking.js";
 
 // Mirrors the 7 tier lookup_key families entitlement.js's TIER_RANK
 // recognises (not exported there -- see the B2a2 return's findings: if
@@ -234,18 +234,55 @@ export async function setRole(db, actorId, accountId, role) {
   return { account };
 }
 
-// Idempotent on STATE (a deleted account stays deleted on a second
-// call), even though the second call's response differs (not_found).
+// M21: `bookings`, `entitlement_grants`, `credits`/`credits_ledger`,
+// `payments_mirror` and `audit_log.actor_account_id` all carry a NOT
+// NULL (or FK-checked) reference to `accounts(id)`, and D1 enforces
+// foreign keys on this local harness (confirmed empirically building
+// this fix: a plain DELETE on an account with any such row throws
+// SQLITE_CONSTRAINT_FOREIGNKEY). A hard DELETE on a real account's row
+// is therefore never safe once it has any money/audit history --
+// without FK enforcement it would instead leave those rows pointing at
+// nothing, the same PII leak either way.
+//
+// So the account row stays (referential integrity for the money rows,
+// anonymise-rather-than-cascade-delete per the contract) and loses its
+// personal data instead: email -> a non-reachable placeholder,
+// display_name -> ''. `deleted_at` marks the state. Login artifacts and
+// the household/dependant PII rows are hard-deleted -- they carry no
+// money reference and are personal data outright.
+//
+// Idempotent on STATE: a second call against an already-deleted
+// account is a same-end-state no-op (reported as not_found, since
+// there is nothing left here for the caller to act on).
 export async function deleteAccount(db, actorId, accountId) {
   const existing = await db.prepare(`SELECT * FROM accounts WHERE id = ?`).bind(accountId).first();
   if (!existing) return { error: "not_found" };
   if (existing.role === "owner") return { error: "cannot_delete_owner", status: 403 };
+  if (existing.deleted_at) return { error: "not_found" }; // already anonymised -- same end state
 
+  const now = nowIso();
+  // CTL-ENV-01/02 (router.js's `demoDataAgreesWithMarker`, not this
+  // part's file) fails the WHOLE preview environment closed the moment
+  // any account's email stops matching `%@jp-demo.test` while
+  // `is_demo=1` -- found empirically running this exact delete against
+  // the preview harness (every route started returning
+  // `environment_mismatch` right after). A demo account's anonymised
+  // address must stay inside that same pattern; only a real
+  // (non-demo) account's address is safe to move off it entirely.
+  const anonymisedEmail = existing.email.endsWith("@jp-demo.test") ? `deleted-${accountId}@jp-demo.test` : `deleted-${accountId}@deleted.invalid`;
+  const anonymiseAccount = db
+    .prepare(`UPDATE accounts SET email = ?, display_name = '', stripe_customer_id = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`)
+    .bind(anonymisedEmail, now, now, accountId);
   const deleteSessions = db.prepare(`DELETE FROM sessions WHERE account_id = ?`).bind(accountId);
+  const deletePasskeys = db.prepare(`DELETE FROM passkeys WHERE account_id = ?`).bind(accountId);
   const deletePush = db.prepare(`DELETE FROM push_subscriptions WHERE account_id = ?`).bind(accountId);
-  const deleteAccountStmt = db.prepare(`DELETE FROM accounts WHERE id = ?`).bind(accountId);
-  const audit = auditStatement(db, { actor: actorId, action: "account_deleted", targetType: "account", targetId: accountId, before: { email: existing.email, role: existing.role } });
-  await db.batch([deleteSessions, deletePush, deleteAccountStmt, audit]);
+  const deleteDependants = db.prepare(`DELETE FROM dependants WHERE household_account_id = ?`).bind(accountId);
+  const deleteHouseholds = db.prepare(`DELETE FROM households WHERE payer_account_id = ? OR partner_account_id = ?`).bind(accountId, accountId);
+  // The audit row names what happened without re-storing the personal
+  // data it is removing (the exact finding against the previous shape,
+  // which kept `before.email`) -- role only, never re-stores the email.
+  const audit = auditStatement(db, { actor: actorId, action: "account_deleted", targetType: "account", targetId: accountId, before: { role: existing.role } });
+  await db.batch([anonymiseAccount, deleteSessions, deletePasskeys, deletePush, deleteDependants, deleteHouseholds, audit]);
   return { ok: true };
 }
 
@@ -260,11 +297,14 @@ export async function todayAcrossResources(db, dateStr) {
   const resources = (await db.prepare(`SELECT id, name, kind FROM resources ORDER BY kind, name`).all()).results || [];
   const resourceById = new Map(resources.map((r) => [r.id, r]));
 
+  // M19/CTL-REF-01: a cancelled-but-refund-due booking stays on Today
+  // (never just the plain `status != 'cancelled'` filter) so the owner
+  // sees it and its refund link until marked refunded.
   const bookings = (await db
     .prepare(
       `SELECT b.*, a.display_name AS account_display_name
        FROM bookings b JOIN accounts a ON a.id = b.account_id
-       WHERE b.start_at >= ? AND b.start_at < ? AND b.status != 'cancelled'
+       WHERE b.start_at >= ? AND b.start_at < ? AND (b.status != 'cancelled' OR b.refund_state = 'due')
        ORDER BY b.resource_id, b.start_at`
     )
     .bind(dayStartUtc, dayEndUtc)
@@ -276,11 +316,12 @@ export async function todayAcrossResources(db, dateStr) {
     resource_name: resourceById.get(b.resource_id)?.name || null,
     start_at: b.start_at,
     end_at: b.end_at,
-    state: b.status === "pending_payment" ? "held" : b.status, // confirmed | held | paid_conflict
+    state: b.status === "pending_payment" ? "held" : b.status, // confirmed | held | paid_conflict | cancelled
     display_name: b.walk_in_name ? null : b.account_display_name,
     walk_in_name: b.walk_in_name,
     party_size: b.party_size,
     payment_intent_id: b.payment_intent_id,
+    refund_state: b.refund_state,
     refund_url: b.payment_intent_id ? `https://dashboard.stripe.com/payments/${b.payment_intent_id}` : null,
     block: null,
   }));
@@ -402,6 +443,12 @@ export async function ownerOverrideBooking(db, actorId, body = {}) {
   const startIso = startDate.toISOString();
   const endIso = new Date(startDate.getTime() + resource.slot_minutes * 60000).toISOString();
 
+  // M10/S-12: D-A11 bypasses window/entitlement/payment, never grid or
+  // hours -- the override uses the SAME check createBooking does
+  // (booking.js's gridAndHoursError), not a second copy of the rule.
+  const gridError = gridAndHoursError(resource, startIso, endIso);
+  if (gridError) return { error: gridError };
+
   let bookingAccountId = account_id;
   let walkInName = null;
   if (account_id) {
@@ -459,7 +506,12 @@ export async function ownerOverrideBooking(db, actorId, body = {}) {
        SELECT ?, ?, ?, ?, ?, NULL, ?, ? WHERE EXISTS (SELECT 1 FROM bookings WHERE id = ?)`
     )
     .bind(newId(), actorId, "owner_override_booking", "booking", id, JSON.stringify({ resource_id, start_at: startIso, end_at: endIso, account_id: bookingAccountId, walk_in_name: walkInName, party_size: size }), now, id);
-  await db.batch([insertBookingStmt, guardedAudit]);
+  // M20/PIN-13: the calendar_outbox row rides in the SAME batch as the
+  // booking write and its audit row -- same guard shape (WHERE EXISTS
+  // the booking actually landed), so a routine slot_taken 409 still
+  // writes nothing instead of throwing an FK violation.
+  const outboxStmt = guardedOutboxInsertStatement(db, { bookingId: id, action: "create", resourceId: resource_id, payload: { booking_id: id }, requireStatus: "confirmed" });
+  await db.batch([insertBookingStmt, guardedAudit, outboxStmt]);
 
   const created = await db.prepare(`SELECT * FROM bookings WHERE id = ?`).bind(id).first();
   if (!created) return { error: "slot_taken" };
@@ -471,6 +523,54 @@ function minutesToTime(min) {
   const h = Math.floor(m / 60);
   const mm = m % 60;
   return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+// ---------- refunds due (M19/CTL-REF-01) ----------
+
+// Every cancelled booking still carrying refund_state='due', oldest
+// first -- the owner's worklist until each is marked refunded in the
+// Stripe dashboard (PIN-11: the refund itself is never automatic).
+export async function listRefundsDue(db) {
+  const rows = (await db
+    .prepare(
+      `SELECT b.id, b.resource_id, r.name AS resource_name, b.start_at, b.end_at, b.party_size,
+              b.payment_intent_id, b.cancelled_at, a.display_name AS account_display_name, b.walk_in_name
+       FROM bookings b
+       JOIN resources r ON r.id = b.resource_id
+       JOIN accounts a ON a.id = b.account_id
+       WHERE b.refund_state = 'due'
+       ORDER BY b.cancelled_at ASC`
+    )
+    .all()).results || [];
+  return rows.map((b) => ({
+    id: b.id,
+    resource_id: b.resource_id,
+    resource_name: b.resource_name,
+    start_at: b.start_at,
+    end_at: b.end_at,
+    party_size: b.party_size,
+    display_name: b.walk_in_name ? null : b.account_display_name,
+    walk_in_name: b.walk_in_name,
+    cancelled_at: b.cancelled_at,
+    payment_intent_id: b.payment_intent_id,
+    refund_url: b.payment_intent_id ? `https://dashboard.stripe.com/payments/${b.payment_intent_id}` : null,
+  }));
+}
+
+// Idempotent: marking an already-refunded (or never-due) booking is a
+// same-end-state no-op, never a second audit row.
+export async function markRefunded(db, actorId, bookingId) {
+  const existing = await db.prepare(`SELECT id, refund_state FROM bookings WHERE id = ?`).bind(bookingId).first();
+  if (!existing) return { error: "not_found" };
+  if (existing.refund_state !== "due") return { ok: true };
+
+  const now = nowIso();
+  const updateStmt = db
+    .prepare(`UPDATE bookings SET refund_state = 'refunded', updated_at = ? WHERE id = ? AND refund_state = 'due'`)
+    .bind(now, bookingId);
+  const audit = auditStatement(db, { actor: actorId, action: "refund_marked", targetType: "booking", targetId: bookingId, before: { refund_state: "due" }, after: { refund_state: "refunded" } });
+  await db.batch([updateStmt, audit]);
+  return { ok: true };
 }
 
 // ---------- outbox / overlaps ----------

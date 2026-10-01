@@ -52,7 +52,7 @@ async function create(client, csrfToken, resourceId, start, extra = {}) {
 
 test("B2a1 equal-start race: 20 concurrent creates on the same resource+start, exactly 1 success", async () => {
   const resourceId = "demo-court-0000-0000-000000000001";
-  const start = freshStartIso(1, 6);
+  const start = freshStartIso(1, 13); // 07:00 CR -- on Court 1's grid (portal(FR2-B)/M10)
   const actor = await loginSeeded("member.demo@jp-demo.test"); // included mode -- no Stripe gate in the way
   const results = await Promise.all(Array.from({ length: 20 }, () => create(actor.client, actor.csrfToken, resourceId, start)));
   const successes = results.filter((r) => r.status === 201).length;
@@ -63,22 +63,31 @@ test("B2a1 equal-start race: 20 concurrent creates on the same resource+start, e
   assert.equal(live, 1, "exactly one non-cancelled row must exist for this resource+start afterward");
 });
 
-test("B2a1 overlapping-different-start race (A2): slot length changed mid-test, two different starts that now overlap never both survive", async () => {
+test("B2a1 overlapping-different-start race (A2 + M10): slot length changed mid-test; the half-slot-offset start that used to overlap is now refused off_grid outright, never raced into a double-booking", async () => {
+  // portal(FR2-B)/M10: before the grid/hours check existed, startB
+  // (half the new slot length off startA) was accepted and could
+  // straddle/overlap startA's cell -- the exact failure this test
+  // originally named. M10 now refuses an off-grid start at the door,
+  // so the scenario below proves the SAME guarantee (never two
+  // overlapping bookings survive a slot-length change) by rejection
+  // rather than by racing the overlap guard.
   const resourceId = "demo-court-0000-0000-000000000002";
   d1(`UPDATE resources SET slot_minutes = 60 WHERE id = '${resourceId}'`);
   try {
-    const startA = freshStartIso(1, 9, 0); // 09:00-10:00 at the new 60-min length
-    const startB = freshStartIso(1, 9, 30); // 09:30-10:30 -- overlaps startA's cell
+    const startA = freshStartIso(1, 15, 0); // 09:00 CR -- on the NEW 60-min grid
+    const startB = freshStartIso(1, 15, 30); // 09:30 CR -- off the 60-min grid; would have overlapped startA's cell
     const actor = await loginSeeded("member.demo@jp-demo.test");
     const calls = [
       ...Array.from({ length: 10 }, () => create(actor.client, actor.csrfToken, resourceId, startA)),
       ...Array.from({ length: 10 }, () => create(actor.client, actor.csrfToken, resourceId, startB)),
     ];
     const results = await Promise.all(calls);
-    const successes = results.filter((r) => r.status === 201).length;
-    assert.equal(successes, 1, `exactly one booking must survive across BOTH overlapping starts combined, got ${successes}`);
+    const successesA = results.slice(0, 10).filter((r) => r.status === 201).length;
+    const offGridB = results.slice(10).filter((r) => r.status === 400 && r.data && r.data.error === "off_grid").length;
+    assert.equal(successesA, 1, `exactly one of the on-grid startA calls must succeed, got ${successesA}`);
+    assert.equal(offGridB, 10, `every off-grid startB call must be refused 400 off_grid, got statuses: ${results.slice(10).map((r) => r.status).join(",")}`);
     const live = d1(`SELECT COUNT(*) AS n FROM bookings WHERE resource_id = '${resourceId}' AND status != 'cancelled' AND start_at IN ('${startA}', '${startB}')`)[0].n;
-    assert.equal(live, 1);
+    assert.equal(live, 1, "exactly one booking must survive across both starts combined");
   } finally {
     d1(`UPDATE resources SET slot_minutes = 90 WHERE id = '${resourceId}'`); // repeatable: restore the seeded default
   }
@@ -86,8 +95,8 @@ test("B2a1 overlapping-different-start race (A2): slot length changed mid-test, 
 
 test("B2a1 expired-hold reuse: an expired pending_payment hold never blocks a new booking, with no cleanup job run first", async () => {
   const resourceId = "demo-court-0000-0000-000000000003";
-  const start = freshStartIso(1, 10);
-  const end = freshStartIso(1, 11, 30);
+  const start = freshStartIso(1, 16); // 10:00 CR -- on Court 3's grid (portal(FR2-B)/M10)
+  const end = freshStartIso(1, 17, 30);
   // Directly seeds an expired hold (hold_expires_at in the past) -- no
   // sweep/cron runs between this insert and the request below, which is
   // the point: the overlap predicate itself excludes it at read time.
@@ -104,8 +113,8 @@ test("B2a1 expired-hold reuse: an expired pending_payment hold never blocks a ne
 
 test("B2a1 cancel-then-rebook: cancelling a confirmed booking immediately frees the slot for a new one", async () => {
   const resourceId = "demo-court-0000-0000-000000000004";
-  const start = freshStartIso(1, 11);
-  const end = freshStartIso(1, 12, 30);
+  const start = freshStartIso(1, 19); // 13:00 CR -- on Court 4's grid (portal(FR2-B)/M10)
+  const end = freshStartIso(1, 20, 30);
   d1(
     `INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
      VALUES ('b2a1-rebook-src', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${start}', '${end}', 1, 0, 'confirmed', 'included', 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`
