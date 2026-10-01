@@ -151,6 +151,41 @@ Builds out §1's two placeholder route pairs with full WebAuthn ceremony detail
 (own) manage L6. RP ID is the request hostname (R-2) -- stated, not fixed, so a passkey made on
 one preview URL will not verify on the next.
 
+| Method & path | Class | Request | Response | Errors |
+|---|---|---|---|---|
+| `POST /api/portal/auth/passkey/register/start` | own | — | `PublicKeyCredentialCreationOptionsJSON` (rpID = request hostname, `excludeCredentials` = this account's existing passkeys) | — |
+| `POST /api/portal/auth/passkey/register/finish` | own | `{credential}` (`RegistrationResponseJSON`) | `200 {ok:true}` | `400 passkey_invalid` (no live challenge, expired, or the library rejects the attestation) |
+| `POST /api/portal/auth/passkey/login/start` | public (Origin-checked, CSRF-exempt) | `{email}` | `PublicKeyCredentialRequestOptionsJSON`; same fields whether or not the email/its passkeys exist (PIN-8 shape-hiding, extended) | `403 origin_required` |
+| `POST /api/portal/auth/passkey/login/finish` | public (Origin-checked, CSRF-exempt) | `{credential}` (`AuthenticationResponseJSON`), `confirm?` | same success shape as `auth/verify` (`{ok, first_login:false, csrf_token, account}` + `Set-Cookie`) | `400 passkey_invalid`, `409 confirm_account_switch {account_hint}` (same rule as magic-link verify, CTL-AUTH-02), `403 origin_required` |
+| `GET /api/portal/passkeys` | own | — | `[{id, device_type, backed_up, rp_id, created_at, last_used_at}]`, this account's own rows only | — |
+| `DELETE /api/portal/passkeys/:id` | own | — | `200 {ok:true}` | `404 not_found` (not this account's, or never existed -- never 403, so the response shape never confirms the id belongs to someone else, AUTH-14) |
+
+CTL-PK-01 (controls.md §4): every `webauthn_challenges` row is single-use, 5-minute expiry, and
+consumed by one `DELETE ... RETURNING` *before* `verifyRegistrationResponse`/
+`verifyAuthenticationResponse` ever runs -- a replayed challenge (same request body sent twice)
+finds no row the second time and gets `400 passkey_invalid`. Registration challenges are bound to
+the account (`account_id`); login challenges are bound to their own unguessable random value
+(and to `account_id` too, when login-start resolved a real email) rather than to a cookie, since
+the caller is not authenticated yet. `expectedOrigin` is always `url.origin` and `expectedRPID`
+is always `url.hostname` for the live request -- never a configured/hard-coded value (R-2).
+
+**Finding for the conductor / B1:** a passkey login success mints a session row with the same
+shape as `auth.js`'s `authVerify` (same columns, `cookieName`/`sessionCookieHeader` reused for
+byte-identical cookie attributes, same TTL-by-role table), but `auth.js` has no exported
+session-minting function for a second login method to call -- `authVerify` builds the session
+inline. `src/portal/passkeys.js` duplicates that one `INSERT INTO sessions` and its
+`SESSION_TTL_MS` table locally (commented at the duplication site) rather than edit `auth.js`,
+which is not this part's file. Recommend `auth.js` export something like
+`mintSession(db, request, url, account, method) -> {csrfToken, cookieHeader}` that `authVerify`
+and `passkeys.js` both call, so the session write stays the one place the database doctrine
+requires.
+
+**Finding (scope, not built):** `security-posture.md` AUTH-09 (passkey registration requires a
+magic-link/passkey auth within the last 10 minutes, `403 reauth_required` otherwise) and AUTH-18
+(rate-limit the 31st failed passkey-login finish per IP per 15 min) are not in `risk/controls.md`
+§4's one B2c control (CTL-PK-01) or this dispatch's acceptance list, so neither is built tonight
+-- listed here for the conductor/security-steward to adopt or decline.
+
 ## 7. Google Calendar -- B2d (`src/portal/gcal.js`)
 
 No new `/api/portal/*` route is required for the one-way push itself (it drains
@@ -211,3 +246,9 @@ item 10 → §4 staff calendar row.
   column and a guarded-outbox-insert variant, both migrations/outbox.js changes outside this
   part's files) plus the still-undefined owner-override export CTL-BOOK-01 needs from B2a2's
   side. No previously-shipped §3 shape changed.
+- 2026-10-01 (B2c): §6 filled in with the full request/response table for both placeholder route
+  pairs plus `GET/DELETE /api/portal/passkeys[/:id]`, and CTL-PK-01's challenge-consumption rule.
+  No shape B1 placeholder-sketched in §1 changed. Two findings recorded: `auth.js` has no
+  exported session-minting function, so the passkey-login session insert is duplicated rather
+  than shared; and `security-posture.md` AUTH-09/AUTH-18 are out of tonight's scope (not in
+  controls.md §4).
