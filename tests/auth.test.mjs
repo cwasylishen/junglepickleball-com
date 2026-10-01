@@ -78,7 +78,7 @@ test("AUTH-005: no account-enumeration -- identical shape for an existing vs nev
   assert.equal("dev_link" in existing.data, "dev_link" in never.data, "presence of dev_link must not differ by account existence");
 });
 
-test("AUTH-006/007: per-email rate limit -- 5th start OK, 6th is 429 (boundary pair)", async () => {
+test("AUTH-006/007: per-email rate limit -- 5th start OK, 6th issues no new token, same 200 shape (amendment 5 F-11: PIN-8 wins over a 429 leak)", async () => {
   const email = uniqueEmail("rate-email");
   let last;
   for (let i = 0; i < 5; i++) {
@@ -86,15 +86,19 @@ test("AUTH-006/007: per-email rate limit -- 5th start OK, 6th is 429 (boundary p
     last = await c.post("/api/portal/auth/start", { email }, ORIGIN);
   }
   assert.equal(last.status, 200, "AUTH-007: the 5th start for this email must still succeed");
+  const beforeCount = d1(`SELECT COUNT(*) AS n FROM login_tokens WHERE email = '${email}'`)[0].n;
   const sixth = await makeClient().post("/api/portal/auth/start", { email }, ORIGIN);
-  assert.equal(sixth.status, 429, "AUTH-006: the 6th start for the same email must be rate-limited");
+  assert.equal(sixth.status, 200, "AUTH-006 (amendment 5 F-11): a rate-limited 6th start gets the identical 200 shape as every other start, never a 429 -- PIN-8's shape-hiding rule extends to the rate limit itself");
+  assert.equal("dev_link" in sixth.data, false, "a rate-limited start must never issue a dev_link");
+  const afterCount = d1(`SELECT COUNT(*) AS n FROM login_tokens WHERE email = '${email}'`)[0].n;
+  assert.equal(afterCount, beforeCount, "a rate-limited 6th start must write no new login_tokens row, even though it reports success");
 });
 
-test("AUTH-008/009: per-IP rate limit -- 20 starts OK across distinct emails, 21st is 429, no KV binding used", async () => {
+test("AUTH-008/009: per-IP rate limit -- 20 starts OK across distinct emails, 21st issues no new token, same 200 shape (amendment 5 F-11), no KV binding used", async () => {
   resetRateLimits();
   // DEFECT FOUND AND FIXED IN THIS SUITE (qa-run-1.md): the cleanup reset
-  // must run even when an assertion above throws, or a 429 surprise here
-  // leaves the IP counter maxed for every test that runs after this one
+  // must run even when an assertion above throws, or a stale counter
+  // leaves the IP budget maxed for every test that runs after this one
   // in the same invocation (H-1) -- exactly the shared-mutable-state
   // failure mode this file exists to prevent. try/finally, not a bare
   // trailing call.
@@ -105,8 +109,11 @@ test("AUTH-008/009: per-IP rate limit -- 20 starts OK across distinct emails, 21
       last = await c.post("/api/portal/auth/start", { email: uniqueEmail(`rate-ip-${i}`) }, ORIGIN);
     }
     assert.equal(last.status, 200);
-    const twentyFirst = await makeClient().post("/api/portal/auth/start", { email: uniqueEmail("rate-ip-21") }, ORIGIN);
-    assert.equal(twentyFirst.status, 429, "AUTH-008: the 21st start from this IP in the window must be rate-limited");
+    const email21 = uniqueEmail("rate-ip-21");
+    const twentyFirst = await makeClient().post("/api/portal/auth/start", { email: email21 }, ORIGIN);
+    assert.equal(twentyFirst.status, 200, "AUTH-008 (amendment 5 F-11): the 21st start from this IP gets the identical 200 shape, never a 429 -- PIN-8 wins");
+    const rows = d1(`SELECT COUNT(*) AS n FROM login_tokens WHERE email = '${email21}'`)[0].n;
+    assert.equal(rows, 0, "a rate-limited start must write no login_tokens row, even though it reports success");
     // AUTH-009: no new KV binding for this -- schema/binding inspection.
     const toml = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
     assert.ok(!/kind\s*=\s*"kv_namespace"/i.test(toml), "AUTH-009: rate limiting must use D1 (rate_limits table), not a new KV binding");
