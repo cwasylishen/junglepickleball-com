@@ -138,6 +138,56 @@ function guardedOutboxInsertStatement(db, { bookingId, action, resourceId, paylo
     .bind(newId(), bookingId, action, resourceId, JSON.stringify(payload || {}), now, now, bookingId, requireStatus);
 }
 
+// CTL-BOOK-01: the ONE place the overlap-guarded `bookings` INSERT is
+// written. Every writer of a booking row -- this file's own
+// createBooking below, and the owner override in owner.js -- builds its
+// insert through this function rather than keeping its own copy of the
+// SQL (database doctrine: one writer, named once). It returns an
+// unexecuted, bound statement (never runs it itself) so each caller can
+// fold it into its OWN batch() alongside whatever else must commit
+// atomically with it (member creation needs credits/outbox rows in the
+// same batch; the owner override needs its audit row) -- CTL-BOOK-01's
+// "one writer" is about the SQL, not about which other rows ride along
+// in the same transaction.
+//
+// A2's one-statement guard: the row is only inserted when nothing live
+// occupies an overlapping time range AND (for a credit spend) the
+// balance covers it -- both checked inside the same WHERE as the INSERT,
+// so a concurrent twin of this exact call can produce at most one
+// surviving row between them. `requiredCredits` is 0 for every caller
+// that does not spend credits (owner override, included, massage/plunge
+// pay), so the balance check is then trivially satisfied.
+export function insertBookingAtomic(
+  db,
+  { accountId, resourceId, offeringId = null, startIso, endIso, partySize, freeKids = 0, status, paymentMode, holdExpiresAt = null, creditsSpent = 0, walkInName = null, createdBy, createdAt = nowIso(), requiredCredits = 0 }
+) {
+  const id = newId();
+  const stmt = db
+    .prepare(
+      `INSERT INTO bookings (
+         id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids,
+         status, payment_mode, hold_expires_at, credits_spent, checkout_session_id, payment_intent_id,
+         walk_in_name, block_weekly_id, created_by, created_at, updated_at
+       )
+       SELECT ?,?,?,?,?,?,?,?, ?,?,?,?,NULL,NULL, ?,NULL, ?,?,?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM bookings
+         WHERE resource_id = ? AND start_at < ? AND end_at > ?
+           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))
+       )
+       AND COALESCE((SELECT balance FROM credits WHERE account_id = ?), 0) >= ?
+       RETURNING *`
+    )
+    .bind(
+      id, accountId, resourceId, offeringId, startIso, endIso, partySize, freeKids,
+      status, paymentMode, holdExpiresAt, creditsSpent,
+      walkInName, createdBy, createdAt, createdAt,
+      resourceId, endIso, startIso, createdAt,
+      accountId, requiredCredits
+    );
+  return { id, statement: stmt };
+}
+
 function creditReturnStatements(db, { bookingId, accountId, amount, cancelledAt }) {
   return [
     db
@@ -382,40 +432,30 @@ export async function createBooking(request, env, db, url, session, account) {
     }
   }
 
-  const id = newId();
   const createdAt = nowIsoVal;
   const holdExpiresAt = paymentMode === "pay" ? new Date(nowDate.getTime() + (CHECKOUT_MINUTES + HOLD_EXTRA_MINUTES) * 60000).toISOString() : null;
   const status = paymentMode === "pay" ? "pending_payment" : "confirmed";
   const requiredCredits = paymentMode === "credits" ? partySize : 0;
 
-  // A2's one-statement guard: the row is only inserted when nothing
-  // live occupies an overlapping time range AND (for a credit spend)
-  // the balance covers it -- both checked inside the same WHERE as the
-  // INSERT, so a concurrent twin of this exact request can produce at
-  // most one surviving row between them.
-  const insertStmt = db
-    .prepare(
-      `INSERT INTO bookings (
-         id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids,
-         status, payment_mode, hold_expires_at, credits_spent, checkout_session_id, payment_intent_id,
-         walk_in_name, block_weekly_id, created_by, created_at, updated_at
-       )
-       SELECT ?,?,?,?,?,?,?,?, ?,?,?,?,NULL,NULL, NULL,NULL, ?,?,?
-       WHERE NOT EXISTS (
-         SELECT 1 FROM bookings
-         WHERE resource_id = ? AND start_at < ? AND end_at > ?
-           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))
-       )
-       AND COALESCE((SELECT balance FROM credits WHERE account_id = ?), 0) >= ?
-       RETURNING *`
-    )
-    .bind(
-      id, account.id, resourceId, audience.offering_id || offeringId || null, startIso, endIso, partySize, freeKids,
-      status, paymentMode, holdExpiresAt, creditsSpent,
-      account.id, createdAt, createdAt,
-      resourceId, endIso, startIso, nowIsoVal,
-      account.id, requiredCredits
-    );
+  // CTL-BOOK-01: the shared, overlap-guarded insert (see insertBookingAtomic
+  // above) -- this is the only place a booking row is written, by self or
+  // by the owner override (src/portal/owner.js).
+  const { id, statement: insertStmt } = insertBookingAtomic(db, {
+    accountId: account.id,
+    resourceId,
+    offeringId: audience.offering_id || offeringId || null,
+    startIso,
+    endIso,
+    partySize,
+    freeKids,
+    status,
+    paymentMode,
+    holdExpiresAt,
+    creditsSpent,
+    createdBy: account.id,
+    createdAt,
+    requiredCredits,
+  });
 
   let row;
   if (paymentMode === "pay") {
@@ -444,7 +484,11 @@ export async function createBooking(request, env, db, url, session, account) {
       checkout = await createBookingCheckout(env, {
         account,
         bookingId: id,
-        lineItems: [{ lookup_key: audience.lookup_key, quantity }],
+        // CTL-STR-02: the offering's display mirror travels with the
+        // request so stripe.js can refuse a live Price that no longer
+        // matches what the portal showed, instead of charging whatever
+        // Stripe currently has on file.
+        lineItems: [{ lookup_key: audience.lookup_key, quantity, expected_unit_cents: audience.unit_cents }],
         expiresAt: Math.floor(nowDate.getTime() / 1000) + CHECKOUT_MINUTES * 60,
         successUrl: `${url.origin}/portal/#/bookings/${id}?paid=1`,
         cancelUrl: `${url.origin}/portal/#/bookings/${id}?cancelled=1`,
@@ -457,6 +501,9 @@ export async function createBooking(request, env, db, url, session, account) {
         .bind(nowIsoVal, id)
         .run();
       if (err && err.code === "not_configured") return notConfigured("stripe");
+      // CTL-STR-02: a mismatch is reported as the named 409, hold already
+      // released above -- never the generic 500 a rethrow would produce.
+      if (err && err.code === "price_mismatch") return json({ error: "price_mismatch" }, 409);
       throw err;
     }
     await db.prepare(`UPDATE bookings SET checkout_session_id = ? WHERE id = ?`).bind(checkout.sessionId, id).run();
@@ -546,14 +593,18 @@ export async function listMyBookings(request, env, db, url, session, account) {
     (
       await db
         .prepare(
-          `SELECT b.id, r.name AS resource_name, b.start_at, b.end_at, b.status, b.payment_mode
+          `SELECT b.id, r.name AS resource_name, b.start_at, b.end_at, b.status, b.payment_mode, b.party_size
              FROM bookings b JOIN resources r ON r.id = b.resource_id
              WHERE b.account_id = ? ORDER BY b.start_at DESC`
         )
         .bind(account.id)
         .all()
     ).results || [];
-  return json(rows.map((r) => ({ id: r.id, resource: r.resource_name, start: r.start_at, end: r.end_at, status: r.status, payment_mode: r.payment_mode })));
+  // portal(FR1), api.md §3 appendix finding: `party_size` was missing,
+  // though M1's "{players} players" line and M2d's per-player cost line
+  // on an existing booking both need it (member.js already reads
+  // `b.party_size` defensively -- this just fills the gap it names).
+  return json(rows.map((r) => ({ id: r.id, resource: r.resource_name, start: r.start_at, end: r.end_at, status: r.status, payment_mode: r.payment_mode, party_size: r.party_size })));
 }
 
 // ---------------------------------------------------------------------
