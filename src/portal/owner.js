@@ -12,6 +12,7 @@ import { auditStatement } from "./audit.js";
 import { resolveEntitlement, validGrants } from "./entitlement.js";
 import { outboxSummary } from "./outbox.js";
 import { crLocalMinutesOfUtcIso, timeToMinutes } from "./resources.js";
+import { insertBookingAtomic } from "./booking.js";
 
 // Mirrors the 7 tier lookup_key families entitlement.js's TIER_RANK
 // recognises (not exported there -- see the B2a2 return's findings: if
@@ -96,6 +97,58 @@ export async function handGrantEntitlement(db, actorId, accountId, { tier, start
 
   const grant = await db.prepare(`SELECT * FROM entitlement_grants WHERE id = ?`).bind(id).first();
   return { grant };
+}
+
+// portal(FR1): the end-grant route named as a gap in portal/js/owner.js
+// (`endGrant()` showed "end_grant_not_available" rather than act, per
+// its own comment -- posting a second grant would NOT end the first,
+// only add a confusing second row). This ends the NAMED grant in place
+// -- never touches a Stripe-sourced grant (P-2: hand grants and Stripe
+// grants are separate sources, CTL-ENT-01, and only an owner hand grant
+// is ever ended by hand here). Audited, one transaction. Idempotent:
+// ending an already-ended grant changes nothing and still returns it.
+export async function endHandGrant(db, actorId, accountId, grantId) {
+  const grant = await db.prepare(`SELECT * FROM entitlement_grants WHERE id = ? AND account_id = ?`).bind(grantId, accountId).first();
+  if (!grant) return { error: "not_found" };
+  if (grant.source !== "hand") return { error: "not_a_hand_grant", status: 403 }; // never a Stripe grant
+  if (grant.status === "ended") return { grant }; // idempotent no-op
+
+  const now = nowIso();
+  const updateStmt = db.prepare(`UPDATE entitlement_grants SET status = 'ended', ends_at = ?, updated_at = ? WHERE id = ?`).bind(now, now, grantId);
+  const audit = auditStatement(db, { actor: actorId, action: "hand_grant_ended", targetType: "entitlement_grant", targetId: grantId, before: { ends_at: grant.ends_at, status: grant.status }, after: { ends_at: now, status: "ended" } });
+  await db.batch([updateStmt, audit]);
+
+  const updated = await db.prepare(`SELECT * FROM entitlement_grants WHERE id = ?`).bind(grantId).first();
+  return { grant: updated };
+}
+
+// portal(FR1): own-scoped household read (api.md §9/B2f1 finding M6 --
+// "a member reading their own household needs an 'own' route"). Reuses
+// the same households/dependants query vocabulary getAccountDetail
+// already owns (database doctrine: no second copy); returns only the
+// shape M6 needs, never the raw household/dependant rows.
+export async function getOwnHousehold(db, accountId) {
+  const ent = await resolveEntitlement(db, accountId);
+  const isCouples = Boolean(ent.tier && ent.tier.endsWith("_couples"));
+  const asPayer = await db.prepare(`SELECT * FROM households WHERE payer_account_id = ? AND status != 'unlinked'`).bind(accountId).first();
+  const asPartner = await db.prepare(`SELECT * FROM households WHERE partner_account_id = ? AND status != 'unlinked'`).bind(accountId).first();
+  const household = asPayer || asPartner || null;
+
+  let partner = null;
+  if (household) {
+    const partnerId = household.payer_account_id === accountId ? household.partner_account_id : household.payer_account_id;
+    if (partnerId) {
+      const partnerAccount = await db.prepare(`SELECT display_name, email FROM accounts WHERE id = ?`).bind(partnerId).first();
+      partner = partnerAccount ? partnerAccount.display_name || partnerAccount.email : null;
+    }
+  }
+
+  // D-A03/CTL-DATA-04: kids attached to this account's own id (the
+  // paying adult), first name + birth year only -- same shape and same
+  // table addDependant (above) writes.
+  const kids = (await db.prepare(`SELECT first_name, birth_year FROM dependants WHERE household_account_id = ? ORDER BY birth_year DESC`).bind(accountId).all()).results || [];
+
+  return { tier: ent.tier, is_couples: isCouples, partner, kids };
 }
 
 // D-A02. Idempotent (repeatable, database doctrine): linking the SAME
@@ -326,32 +379,15 @@ export async function deleteBlock(db, actorId, blockId) {
 
 // ---------- owner booking override (D-A11) ----------
 //
-// FINDING (named in the B2a2 return): at the time this was started,
-// `src/portal/booking.js` (B2a1) was still amendment-6's interface stub
-// and exported no booking-insert function for this file to call. Per
-// this part's dispatch ("import B2a1's exported function if one
-// exists, or write through the same occupancy rule and name the
-// dependency as a finding"), this function writes `bookings` directly,
-// using the same atomic INSERT...SELECT...WHERE NOT EXISTS...RETURNING
-// guard. B2a1 committed its real `createBooking` later in the same
-// parallel window; its body (read, not imported -- it is an HTTP
-// handler shaped for member/guest self-booking, not a plain insert
-// function this file could call for an owner override that bypasses
-// window/entitlement/payment) uses the identical SQL pattern, which
-// this file's occupancy predicate was then updated to match exactly
-// (an expired, uncleaned hold never blocks a slot in either writer).
-// CTL-BOOK-01 ("only booking.js writes bookings/cells") is still, in
-// the strict sense, violated by this file's own INSERT -- there are now
-// two writers that happen to agree, not one. The clean fix is for B2a1
-// to export a shared pure function (e.g. `insertBookingIfFree(db, {...})`
-// returning the created row or null) that both this file and
-// `createBooking` call, so there is truly one writer. Flagged for a
-// follow-up fix dispatch rather than built here, given this part's own
-// 60-minute timebox and that editing booking.js is not in this file's
-// exclusive ownership. The audit row is written in the SAME batch,
-// guarded by `WHERE EXISTS (SELECT 1 FROM bookings WHERE id=?)`, so the
-// audit never fires for a booking the guarded insert did not actually
-// create -- the whole activity is one transaction, all-or-nothing.
+// portal(FR1) fix: now calls booking.js's exported insertBookingAtomic
+// (CTL-BOOK-01) instead of keeping its own copy of the overlap-guarded
+// INSERT -- the finding below (from the original B2a2 build, when
+// booking.js exported no shared insert function yet) is resolved; left
+// in place as the history of why this was two writers until now. The
+// audit row is written in the SAME batch, guarded by `WHERE EXISTS
+// (SELECT 1 FROM bookings WHERE id=?)`, so the audit never fires for a
+// booking the guarded insert did not actually create -- the whole
+// activity is one transaction, all-or-nothing.
 export async function ownerOverrideBooking(db, actorId, body = {}) {
   const { resource_id, start, account_id, walk_in_name, party_size } = body;
   if (Boolean(account_id) === Boolean(walk_in_name)) return { error: "bad_request" }; // exactly one of the two
@@ -391,26 +427,27 @@ export async function ownerOverrideBooking(db, actorId, body = {}) {
     .first();
   if (blocked) return { error: "blocked" };
 
-  const id = newId();
   const now = nowIso();
-  const insertBookingStmt = db
-    .prepare(
-      `INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids,
-         status, payment_mode, hold_expires_at, credits_spent, checkout_session_id, payment_intent_id,
-         walk_in_name, block_weekly_id, created_by, cancelled_at, cancelled_by, note, created_at, updated_at)
-       SELECT ?, ?, ?, NULL, ?, ?, ?, 0, 'confirmed', 'override', NULL, 0, NULL, NULL, ?, NULL, ?, NULL, NULL, NULL, ?, ?
-       WHERE NOT EXISTS (
-         SELECT 1 FROM bookings
-         WHERE resource_id = ? AND start_at < ? AND end_at > ?
-           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))
-       )`
-    )
-    // Occupancy predicate kept byte-identical to B2a1's own createBooking
-    // guard (src/portal/booking.js) -- an expired, uncleaned hold never
-    // blocks a slot in either writer. Checked against B2a1's real,
-    // independently-committed body after the fact (see the finding
-    // above); the two were NOT coordinated in advance.
-    .bind(id, bookingAccountId, resource_id, startIso, endIso, size, walkInName, actorId, now, now, resource_id, endIso, startIso, now);
+  // CTL-BOOK-01: the one shared overlap-guarded insert (booking.js),
+  // never a second copy of the SQL here. An override never spends
+  // credits (requiredCredits 0) and is always 'confirmed'/'override'.
+  const { id, statement: insertBookingStmt } = insertBookingAtomic(db, {
+    accountId: bookingAccountId,
+    resourceId: resource_id,
+    offeringId: null,
+    startIso,
+    endIso,
+    partySize: size,
+    freeKids: 0,
+    status: "confirmed",
+    paymentMode: "override",
+    holdExpiresAt: null,
+    creditsSpent: 0,
+    walkInName,
+    createdBy: actorId,
+    createdAt: now,
+    requiredCredits: 0,
+  });
   // The audit row must see the SAME outcome the guarded insert above
   // either did or didn't produce -- auditStatement() (audit.js) builds a
   // plain, unconditional INSERT, so it isn't used here. This statement

@@ -20,6 +20,8 @@ import {
   listAccounts,
   getAccountDetail,
   handGrantEntitlement,
+  endHandGrant,
+  getOwnHousehold,
   linkHousehold,
   unlinkHousehold,
   addDependant,
@@ -91,6 +93,16 @@ async function postGrant(ctx) {
   const result = await handGrantEntitlement(ctx.db, ctx.account.id, ctx.params.id, body);
   if (result.error) return errorResponse(result);
   return json({ grant: result.grant }, 201);
+}
+
+async function postEndGrant(ctx) {
+  const result = await endHandGrant(ctx.db, ctx.account.id, ctx.params.id, ctx.params.grantId);
+  if (result.error) return errorResponse(result);
+  return json({ grant: result.grant });
+}
+
+async function getMyHousehold(ctx) {
+  return json(await getOwnHousehold(ctx.db, ctx.account.id));
 }
 
 async function postHouseholdLink(ctx) {
@@ -240,10 +252,12 @@ async function getStaffCalendar(ctx) {
 
 export const ROUTES = [
   { method: "PATCH", path: "/api/portal/me", class: "own", handler: patchMe },
+  { method: "GET", path: "/api/portal/me/household", class: "own", handler: getMyHousehold },
 
   { method: "GET", path: "/api/portal/owner/accounts", class: "owner", handler: getAccounts },
   { method: "GET", path: "/api/portal/owner/accounts/:id", class: "owner", handler: getAccountById },
   { method: "POST", path: "/api/portal/owner/accounts/:id/grant", class: "owner", handler: postGrant },
+  { method: "POST", path: "/api/portal/owner/accounts/:id/grants/:grantId/end", class: "owner", handler: postEndGrant },
   { method: "POST", path: "/api/portal/owner/accounts/:id/household-link", class: "owner", handler: postHouseholdLink },
   { method: "DELETE", path: "/api/portal/owner/households/:id", class: "owner", handler: deleteHousehold },
   { method: "POST", path: "/api/portal/owner/accounts/:id/dependants", class: "owner", handler: postDependant },
