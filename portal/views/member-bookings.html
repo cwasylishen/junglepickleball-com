@@ -1,0 +1,83 @@
+<!-- M3 My bookings + M3b detail (screens.md). Mounted by portal/js/member.js. -->
+<section x-data="memberBookings()" x-init="load()">
+  <h1 class="font-heading text-2xl text-jpteal" x-text="topLine()"></h1>
+
+  <div class="mt-3 flex rounded-lg border border-slate-200 overflow-hidden">
+    <button class="flex-1 py-2 text-sm font-heading uppercase" :class="tab === 'upcoming' ? 'bg-jpteal text-white' : 'bg-white text-jpteal'" @click="tab = 'upcoming'" x-text="t('bookings.upcoming')"></button>
+    <button class="flex-1 py-2 text-sm font-heading uppercase" :class="tab === 'past' ? 'bg-jpteal text-white' : 'bg-white text-jpteal'" @click="tab = 'past'" x-text="t('bookings.past')"></button>
+  </div>
+
+  <template x-if="loading">
+    <div class="mt-3 space-y-2" aria-busy="true">
+      <template x-for="i in 4" :key="i"><div class="h-[72px] rounded-lg bg-slate-100 animate-pulse"></div></template>
+    </div>
+  </template>
+
+  <template x-if="!loading && error">
+    <div class="mt-3 rounded-xl border border-[#fca5a5] bg-[#fee2e2] p-4">
+      <p class="text-[#b91c1c] text-sm" x-text="t('state.error_title')"></p>
+      <button class="mt-2 rounded-lg border border-jpteal px-3 py-1 text-sm text-jpteal" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="!loading && !error">
+    <div class="mt-3 space-y-2">
+      <template x-if="visible().length === 0 && tab === 'upcoming'">
+        <div class="text-center py-6">
+          <p class="text-sm text-slate-500" x-text="t('bookings.empty_upcoming')"></p>
+          <a href="#/book" class="mt-2 inline-block rounded-lg bg-jpyellow px-4 py-2 font-heading uppercase text-sm text-black" x-text="t('home.book_court')"></a>
+        </div>
+      </template>
+      <template x-if="visible().length === 0 && tab === 'past'">
+        <p class="text-sm text-slate-500 text-center py-6" x-text="t('bookings.empty_past')"></p>
+      </template>
+
+      <template x-for="b in visible()" :key="b.id">
+        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 min-h-[72px]">
+          <div class="flex items-center gap-3">
+            <div class="text-center w-10">
+              <div class="font-heading text-xs uppercase text-jpteal" x-text="weekdayLabel(b.start)"></div>
+              <div class="font-heading text-xl text-jpteal" x-text="dayNumber(b.start)"></div>
+            </div>
+            <div>
+              <p class="font-semibold" :class="b.status === 'cancelled' ? 'line-through text-slate-400' : ''" x-text="b.resource"></p>
+              <p class="text-sm text-slate-500" x-text="crTime(b.start) + '–' + crTime(b.end)"></p>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="text-xs uppercase font-heading px-2 py-1 rounded-full inline-block" :class="chipClass(b.status)" x-text="t('chip.' + b.status)"></span>
+            <div class="mt-1">
+              <!-- The server is the one source of the cancel cutoff (D-A08);
+                   the button always shows and a too-late tap resolves inline
+                   via the sheet's cancel.err_cutoff, matching the 409 the
+                   cancel endpoint returns rather than guessing client-side. -->
+              <button x-show="tab === 'upcoming' && b.status !== 'cancelled' && b.status !== 'held' && b.status !== 'held_mine'" class="text-xs text-jpteal underline" @click="openCancel(b)" x-text="t('act.cancel')"></button>
+              <button x-show="b.status === 'held' || b.status === 'held_mine'" class="text-xs text-jpteal underline" @click="payNow(b)" x-text="t('act.pay_now')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <button x-show="tab === 'past' && pastHasMore" class="w-full text-sm text-jpteal underline py-2" @click="showMorePast()" x-text="t('act.show_more')"></button>
+    </div>
+  </template>
+
+  <!-- Cancel sheet -->
+  <div x-show="cancelTarget" class="fixed inset-0 bg-black/40 flex items-end md:items-center md:justify-center z-20">
+    <div class="bg-white rounded-t-xl md:rounded-xl w-full md:w-[480px] p-4" @click.outside="cancelTarget = null">
+      <template x-if="cancelTarget">
+        <div>
+          <p class="font-heading text-lg text-jpteal" x-text="t('cancel.title', {resource: cancelTarget.resource, date: crDateLabel(cancelTarget.start), time: crTime(cancelTarget.start)})"></p>
+          <p class="text-sm text-slate-600 mt-2" x-text="cancelConsequence()"></p>
+          <p x-show="cancelError" class="text-sm text-[#b91c1c] mt-2" x-text="cancelError"></p>
+          <div class="mt-4 flex gap-2">
+            <button class="flex-1 rounded-lg border border-[#dc2626] text-[#b91c1c] bg-white py-2" :disabled="cancelling" @click="doCancel()" x-text="t('cancel.confirm')"></button>
+            <button class="flex-1 rounded-lg border border-jpteal text-jpteal bg-white py-2" @click="cancelTarget = null" x-text="t('cancel.keep')"></button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <p x-show="toast" class="fixed bottom-20 inset-x-4 text-center bg-jpteal text-white rounded-lg py-2 z-30" x-text="toast"></p>
+</section>

@@ -1,0 +1,89 @@
+<!-- M1 Home (screens.md). Mounted into #portal-area by portal/js/member.js. -->
+<section x-data="memberHome()" x-init="load()">
+  <p class="text-sm text-slate-500" x-show="!loading" x-text="t('home.hello', {first_name: firstName})"></p>
+
+  <!-- Loading -->
+  <template x-if="loading">
+    <div class="mt-3 space-y-3" aria-busy="true">
+      <div class="h-32 rounded-xl bg-slate-100 animate-pulse"></div>
+      <div class="h-16 rounded-xl bg-slate-100 animate-pulse"></div>
+      <div class="h-10 rounded-xl bg-slate-100 animate-pulse"></div>
+    </div>
+  </template>
+
+  <!-- Error -->
+  <template x-if="!loading && error">
+    <div class="mt-3 rounded-xl border border-[#fca5a5] bg-[#fee2e2] p-4">
+      <p class="font-semibold text-[#b91c1c]" x-text="t('state.error_title')"></p>
+      <p class="text-sm text-[#b91c1c] mt-1" x-text="t('state.error_body')"></p>
+      <button class="mt-3 rounded-lg border border-jpteal px-4 py-2 text-sm text-jpteal" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="!loading && !error">
+    <div class="mt-3 space-y-6">
+      <!-- Next up / hold card -->
+      <template x-if="holdBooking">
+        <div class="rounded-xl border border-[#f59e0b] bg-[#fffbeb] p-4">
+          <p class="text-xs uppercase tracking-widest font-heading text-[#92400e]" x-text="t('home.next_label')"></p>
+          <p class="font-heading text-lg text-[#92400e] mt-1" x-text="t('home.hold_title', {resource: holdBooking.resource, date: crDate(holdBooking.start), time: crTime(holdBooking.start)})"></p>
+          <p class="text-sm text-[#92400e] mt-1" x-text="t('home.hold_ends', {time: crTime(holdBooking.hold_expires_at || holdBooking.start)})"></p>
+          <a :href="'#/bookings/' + holdBooking.id" class="mt-3 inline-block rounded-lg bg-jpyellow px-4 py-2 font-heading uppercase text-sm text-black" x-text="t('act.pay_now')"></a>
+        </div>
+      </template>
+      <template x-if="!holdBooking && nextUp">
+        <div class="rounded-xl bg-jpteal text-white p-4">
+          <p class="text-xs uppercase tracking-widest font-heading text-jpyellow" x-text="t('home.next_label')"></p>
+          <p class="font-heading text-xl mt-1" x-text="nextUp.resource"></p>
+          <p class="font-heading text-2xl" x-text="crDate(nextUp.start) + ' · ' + crTime(nextUp.start) + '–' + crTime(nextUp.end)"></p>
+          <div class="mt-3 flex gap-2">
+            <a :href="'#/bookings/' + nextUp.id" class="rounded-lg border border-white px-4 py-2 text-sm" x-text="t('act.view')"></a>
+            <button class="rounded-lg border border-white px-4 py-2 text-sm" @click="cancelFromHome(nextUp.id)" x-text="t('act.cancel')"></button>
+          </div>
+        </div>
+      </template>
+      <template x-if="!holdBooking && !nextUp">
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
+          <p class="font-heading text-lg text-jpteal" x-text="t('home.empty_title')"></p>
+          <p class="text-sm text-slate-600 mt-1" x-text="t('home.empty_body', {open: '07:00', close: '19:30'})"></p>
+        </div>
+      </template>
+
+      <!-- Primary actions -->
+      <div>
+        <a href="#/book" class="block text-center rounded-lg bg-jpyellow py-3 font-heading uppercase text-black" x-text="t('home.book_court')"></a>
+        <div class="mt-2 grid grid-cols-2 gap-2">
+          <a href="#/book?want=massage" class="rounded-lg border border-jpteal py-3 text-center font-heading uppercase text-sm text-jpteal" x-text="t('home.book_massage')"></a>
+          <a href="#/book?want=plunge" class="rounded-lg border border-jpteal py-3 text-center font-heading uppercase text-sm text-jpteal" x-text="t('home.book_plunge')"></a>
+        </div>
+      </div>
+
+      <!-- Status card -->
+      <div class="rounded-xl p-4 border"
+           :class="statusTint === 'ok' ? 'bg-[#f0fdf4] border-[#bbf7d0]' : (statusTint === 'warn' ? 'bg-[#fffbeb] border-[#fde68a]' : 'bg-slate-50 border-slate-200')">
+        <p class="text-sm" :class="statusTint === 'warn' ? 'text-[#92400e]' : 'text-slate-700'" x-text="statusLine"></p>
+        <p class="text-sm mt-2" x-text="creditsLine"></p>
+      </div>
+
+      <!-- Coming up -->
+      <div>
+        <p class="text-xs uppercase tracking-widest font-heading text-slate-500" x-text="t('home.upcoming_label')"></p>
+        <template x-if="comingUp.length === 0">
+          <p class="text-sm text-slate-500 mt-2" x-text="t('bookings.empty_upcoming')"></p>
+        </template>
+        <div class="mt-2 space-y-2">
+          <template x-for="b in comingUp" :key="b.id">
+            <a :href="'#/bookings/' + b.id" class="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span>
+                <span class="font-heading text-jpteal" x-text="crDate(b.start)"></span>
+                <span class="text-sm text-slate-600 ml-2" x-text="b.resource + ' · ' + crTime(b.start)"></span>
+              </span>
+              <span class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass(b.status)" x-text="t('chip.' + b.status)"></span>
+            </a>
+          </template>
+        </div>
+        <a href="#/bookings" class="mt-2 inline-block text-sm text-jpteal underline" x-text="t('home.all_bookings')"></a>
+      </div>
+    </div>
+  </template>
+</section>

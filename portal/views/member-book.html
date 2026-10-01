@@ -1,0 +1,191 @@
+<!-- M2 Booking flow (screens.md). One scrolling page: resource -> duration
+     (multi-offering resources) -> date -> slot grid -> party size
+     (per_player resources) -> confirm. Mounted by portal/js/member.js. -->
+<section x-data="memberBook()" x-init="load()">
+  <h1 class="font-heading text-2xl text-jpteal" x-text="t('book.title')"></h1>
+
+  <template x-if="loadingResources">
+    <div class="mt-3 grid grid-cols-2 gap-3" aria-busy="true">
+      <template x-for="i in 6" :key="i"><div class="h-24 rounded-xl bg-slate-100 animate-pulse"></div></template>
+    </div>
+  </template>
+
+  <template x-if="!loadingResources && resourceError">
+    <div class="mt-3 rounded-xl border border-[#fca5a5] bg-[#fee2e2] p-4">
+      <p class="font-semibold text-[#b91c1c]" x-text="t('state.error_title')"></p>
+      <button class="mt-3 rounded-lg border border-jpteal px-4 py-2 text-sm text-jpteal" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="!loadingResources && !resourceError && resources.length === 0">
+    <p class="mt-3 text-sm text-slate-600" x-text="t('book.no_resources')"></p>
+  </template>
+
+  <!-- M2a Resource picker -->
+  <template x-if="!loadingResources && !resourceError && !resource">
+    <div class="mt-3">
+      <p class="text-sm text-slate-600" x-text="t('book.pick_top')"></p>
+      <p class="text-xs uppercase tracking-widest font-heading text-slate-500 mt-4" x-text="t('book.courts_label')"></p>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <template x-for="r in courts()" :key="r.id">
+          <button class="rounded-xl border border-slate-200 bg-white p-3 text-left" @click="pickResource(r)">
+            <p class="font-heading text-lg text-jpteal" x-text="r.name"></p>
+            <p class="text-sm text-slate-600 mt-1" x-text="priceLine(r)"></p>
+          </button>
+        </template>
+      </div>
+      <p class="text-xs uppercase tracking-widest font-heading text-slate-500 mt-4" x-text="t('book.amenities_label')"></p>
+      <div class="mt-2 space-y-3">
+        <template x-for="r in amenities()" :key="r.id">
+          <button class="w-full flex gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left" @click="pickResource(r)">
+            <img x-show="isMassage(r)" src="/assets/services/massage-samy.jpg" class="w-[72px] h-[72px] rounded-lg object-cover" alt="" />
+            <span>
+              <span class="font-heading text-lg text-jpteal block" x-text="r.name"></span>
+              <span class="text-sm text-slate-600 block" x-show="isMassage(r)" x-text="t('book.massage_durations')"></span>
+              <span class="text-sm text-slate-600 block" x-text="priceLine(r)"></span>
+            </span>
+          </button>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- Chosen resource: back link + duration/date/grid/players/confirm -->
+  <template x-if="resource">
+    <div class="mt-3">
+      <button class="text-sm text-jpteal underline" @click="reset()" x-text="t('act.back')"></button>
+      <h2 class="font-heading text-lg text-jpteal mt-2" x-text="resource.name"></h2>
+
+      <!-- M2a2 Duration choice -->
+      <template x-if="resource.offerings && resource.offerings.length > 1">
+        <div class="mt-3">
+          <p class="text-sm text-slate-600" x-text="t('book.duration_top')"></p>
+          <div class="mt-2 grid grid-cols-2 gap-3">
+            <template x-for="o in resource.offerings" :key="o.id">
+              <button class="rounded-xl border p-3 text-center h-[72px]"
+                      :class="offering && offering.id === o.id ? 'border-2 border-jpteal' : 'border-slate-200'"
+                      @click="pickOffering(o)">
+                <span class="font-heading text-xl block" x-text="o.duration_minutes + ' min'"></span>
+                <span class="text-sm text-slate-600" x-text="money(o.display_price_cents)"></span>
+              </button>
+            </template>
+          </div>
+          <p class="text-sm text-slate-500 mt-2" x-show="!offering" x-text="t('book.duration_first')"></p>
+        </div>
+      </template>
+
+      <!-- M2b Date strip + M2c grid -->
+      <template x-if="offering || !(resource.offerings && resource.offerings.length > 1)">
+        <div class="mt-4">
+          <div class="flex gap-2 overflow-x-auto pb-1">
+            <template x-for="d in dateOptions" :key="d">
+              <button class="shrink-0 w-14 h-16 rounded-lg flex flex-col items-center justify-center"
+                      :class="date === d ? 'bg-jpteal text-jpyellow' : 'bg-white border border-slate-200 text-slate-700'"
+                      @click="pickDate(d)">
+                <span class="font-heading text-xs uppercase" x-text="weekdayLabel(d)"></span>
+                <span class="font-heading text-xl" x-text="dayNumber(d)"></span>
+              </button>
+            </template>
+          </div>
+
+          <template x-if="loadingSlots">
+            <div class="mt-3 grid gap-2" :class="gridCols()" aria-busy="true">
+              <template x-for="i in 8" :key="i"><div class="h-16 rounded-lg bg-slate-100 animate-pulse"></div></template>
+            </div>
+          </template>
+
+          <template x-if="!loadingSlots && slotError">
+            <div class="mt-3 rounded-xl border border-[#fca5a5] bg-[#fee2e2] p-4">
+              <p class="text-[#b91c1c] text-sm" x-text="t('state.error_title')"></p>
+              <button class="mt-2 rounded-lg border border-jpteal px-3 py-1 text-sm text-jpteal" @click="loadSlots()" x-text="t('act.retry')"></button>
+            </div>
+          </template>
+
+          <template x-if="!loadingSlots && !slotError && date">
+            <div class="mt-3">
+              <p class="text-sm text-slate-700" x-text="t('book.slots_top', {free: freeCount(), total: slots.length, date: crDateLabel(date)})"></p>
+              <div class="flex gap-3 text-xs mt-1 mb-2">
+                <span><span class="inline-block w-3 h-3 rounded-sm border border-jpteal align-middle"></span> <span x-text="t('slot.available')"></span></span>
+                <span><span class="inline-block w-3 h-3 rounded-sm bg-slate-200 align-middle"></span> <span x-text="t('slot.taken')"></span></span>
+                <span><span class="inline-block w-3 h-3 rounded-sm border border-dashed border-[#f59e0b] bg-[#fffbeb] align-middle"></span> <span x-text="t('slot.held')"></span></span>
+                <span><span class="inline-block w-3 h-3 rounded-sm bg-[#f1f5f9] align-middle"></span> <span x-text="t('slot.blocked')"></span></span>
+              </div>
+              <template x-if="slots.length === 0">
+                <p class="text-sm text-slate-500" x-text="t('book.day_full', {date: crDateLabel(date)})"></p>
+              </template>
+              <div class="grid gap-2" :class="gridCols()">
+                <template x-for="s in slots" :key="s.start">
+                  <button class="rounded-lg p-2 text-center"
+                          :disabled="!['available','held_mine','mine'].includes(s.state)"
+                          :class="slotClass(s)"
+                          @click="pickSlot(s)">
+                    <span class="font-heading block" x-text="crTime(s.start)"></span>
+                    <span class="text-xs block" x-text="slotLabel(s)"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- M2d Players -->
+      <template x-if="slot && priceMode() === 'per_player'">
+        <div class="mt-4">
+          <p class="text-sm text-slate-700" x-text="t('book.players_top')"></p>
+          <div class="flex items-center gap-4 mt-2">
+            <button class="w-14 h-14 rounded-lg border border-jpteal text-2xl" @click="partySize = Math.max(1, partySize - 1)">&minus;</button>
+            <span class="font-heading text-4xl w-10 text-center" x-text="partySize"></span>
+            <button class="w-14 h-14 rounded-lg border border-jpteal text-2xl" @click="partySize = Math.min(4, partySize + 1)">+</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- M2e Confirm -->
+      <template x-if="slot">
+        <div class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <p class="text-sm text-slate-700" x-text="t('book.confirm_top')"></p>
+          <p class="font-heading text-lg text-jpteal mt-1" x-text="resource.name + (offering ? (' · ' + offering.duration_minutes + ' min') : '') + ' · ' + crDateLabel(date) + ' · ' + crTime(slot.start) + '–' + crTime(slot.end)"></p>
+
+          <template x-if="loadingQuote">
+            <div class="h-6 rounded bg-slate-100 animate-pulse mt-2"></div>
+          </template>
+
+          <template x-if="!loadingQuote && quote">
+            <p class="text-sm text-slate-700 mt-2" x-text="quoteLine()"></p>
+          </template>
+
+          <p class="text-xs text-slate-500 mt-3" x-text="t('book.cancel_rule', {cutoff: cutoffLabel()})"></p>
+
+          <!-- Payments-not-switched-on, checked from /me features BEFORE any 503 -->
+          <template x-if="needsStripeAndOff()">
+            <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p class="font-heading text-jpteal" x-text="t('nc.stripe_title')"></p>
+              <p class="text-sm text-slate-600 mt-1" x-text="t('nc.stripe_book_body')"></p>
+              <button x-show="quote && quote.credits_have >= partySize" class="mt-2 rounded-lg border border-jpteal px-3 py-1 text-sm text-jpteal" @click="useCreditsInstead()" x-text="t('book.use_credits_instead')"></button>
+            </div>
+          </template>
+
+          <template x-if="!needsStripeAndOff()">
+            <button class="mt-3 w-full rounded-lg bg-jpyellow py-3 font-heading uppercase text-black"
+                    :disabled="confirming" @click="confirm()"
+                    x-text="confirming ? t('book.opening_payment') : (quote && quote.mode === 'card' ? t('book.to_payment') : t('book.confirm'))"></button>
+          </template>
+
+          <template x-if="confirmError">
+            <p class="text-sm text-[#b91c1c] mt-2" x-text="confirmError"></p>
+          </template>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <!-- Success -->
+  <template x-if="done">
+    <div class="mt-4 rounded-xl border border-[#bbf7d0] bg-[#f0fdf4] p-4 text-center">
+      <p class="font-heading text-xl text-[#15803d]" x-text="t('book.done_title')"></p>
+      <p class="font-heading text-2xl text-jpteal mt-1" x-text="crDateLabel(date) + ' · ' + crTime(slot.start) + '–' + crTime(slot.end)"></p>
+      <a href="#/home" class="mt-3 inline-block rounded-lg bg-jpyellow px-4 py-2 font-heading uppercase text-black" x-text="t('act.done')"></a>
+    </div>
+  </template>
+</section>

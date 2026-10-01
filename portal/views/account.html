@@ -1,0 +1,47 @@
+<!-- M7 Account (screens.md §2.2, §4). Mounted by portal/js/account.js.
+     Rows after "App and reminders" and "Passkeys" are mount points only --
+     portal/js/pwa.js (B2e) and portal/js/passkeys.js (B2c) own those
+     screens (P1/L6) and attach themselves here (ui-structure.md). -->
+<section x-data="accountHub()" x-init="load()">
+  <h1 class="font-heading text-2xl text-jpteal" x-text="t('tab.account')"></h1>
+
+  <template x-if="loading">
+    <div class="mt-3 h-16 rounded-xl bg-slate-100 animate-pulse" aria-busy="true"></div>
+  </template>
+
+  <template x-if="!loading && account">
+    <div class="mt-3 space-y-4">
+      <div class="rounded-xl border border-slate-200 bg-white p-4">
+        <p class="font-semibold" x-text="account.display_name"></p>
+        <p class="text-sm text-slate-500" x-text="account.email"></p>
+        <span class="mt-1 inline-block text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-jpteal" x-text="t('chip.' + account.role)"></span>
+      </div>
+
+      <div class="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+        <a x-show="showRow('billing')" href="#/account/billing" class="flex items-center justify-between px-4 py-3">
+          <span x-text="t('account.billing')"></span>
+          <span class="text-xs text-slate-400" x-text="features.stripe ? '' : t('account.hint_billing_off')"></span>
+        </a>
+        <a x-show="showRow('history')" href="#/account/history" class="flex items-center justify-between px-4 py-3">
+          <span x-text="t('account.history')"></span>
+        </a>
+        <a x-show="showRow('household')" href="#/account/household" class="flex items-center justify-between px-4 py-3">
+          <span x-text="t('account.household')"></span>
+        </a>
+        <!-- P1 mount point (B2e/pwa.js). -->
+        <div id="account-app-mount" class="px-4 py-3 flex items-center justify-between">
+          <span x-text="t('account.app')"></span>
+        </div>
+        <!-- L6 mount point (B2c/passkeys.js). -->
+        <div id="account-passkeys-mount" class="px-4 py-3 flex items-center justify-between">
+          <span x-text="t('account.passkeys')"></span>
+        </div>
+      </div>
+
+      <button class="w-full text-left rounded-xl border border-[#dc2626] text-[#b91c1c] bg-white px-4 py-3" @click="signOut()" x-text="t('account.sign_out')"></button>
+      <p class="text-xs text-slate-400 text-center" x-text="t('account.version', {id: buildId})"></p>
+    </div>
+  </template>
+
+  <p x-show="toast" class="fixed bottom-20 inset-x-4 text-center bg-jpteal text-white rounded-lg py-2 z-30" x-text="toast"></p>
+</section>

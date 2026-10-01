@@ -1,0 +1,62 @@
+<!-- S1 Staff calendar (screens.md §6). Names only -- never email, phone,
+     notes, price or payment state beyond "awaiting payment" (D-A16).
+     Mounted by portal/js/staff.js. -->
+<section x-data="staffCalendar()" x-init="load()">
+  <h1 class="font-heading text-2xl text-jpteal" x-text="resourceTitle()"></h1>
+  <p class="text-sm text-slate-600" x-text="topLine()"></p>
+
+  <div class="flex gap-2 overflow-x-auto pb-1 mt-3">
+    <template x-for="d in dateOptions" :key="d">
+      <button class="shrink-0 w-14 h-16 rounded-lg flex flex-col items-center justify-center"
+              :class="date === d ? 'bg-jpteal text-jpyellow' : 'bg-white border border-slate-200 text-slate-700'"
+              @click="pickDate(d)">
+        <span class="font-heading text-xs uppercase" x-text="weekdayLabel(d)"></span>
+        <span class="font-heading text-xl" x-text="dayNumber(d)"></span>
+      </button>
+    </template>
+  </div>
+
+  <template x-if="loading">
+    <div class="mt-3 space-y-2" aria-busy="true">
+      <template x-for="i in 4" :key="i"><div class="h-[72px] rounded-lg bg-slate-100 animate-pulse"></div></template>
+    </div>
+  </template>
+
+  <template x-if="!loading && error">
+    <div class="mt-3 rounded-xl border border-[#fca5a5] bg-[#fee2e2] p-4">
+      <p class="text-[#b91c1c] text-sm" x-text="t('state.error_title')"></p>
+      <button class="mt-2 rounded-lg border border-jpteal px-3 py-1 text-sm text-jpteal" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="!loading && !error && noResource">
+    <p class="text-sm text-slate-600 mt-3" x-text="t('staff.no_resource')"></p>
+  </template>
+
+  <template x-if="!loading && !error && !noResource">
+    <div class="mt-3 space-y-1">
+      <template x-if="rows.length === 0">
+        <p class="text-sm text-slate-500 py-6 text-center" x-text="t('staff.empty_day', {date: crDateLabel(date)})"></p>
+      </template>
+      <template x-for="r in rows" :key="r.start + r.display_name">
+        <template x-if="r.kind === 'free'">
+          <div class="text-xs text-slate-400 py-1 px-2" x-text="t('staff.free', {start: crTime(r.start), end: crTime(r.end)})"></div>
+        </template>
+        <template x-if="r.kind === 'blocked'">
+          <div class="rounded-lg p-2 min-h-[72px] flex items-center justify-between bg-[#f1f5f9] text-slate-500">
+            <span x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
+            <span x-text="t('slot.blocked')"></span>
+          </div>
+        </template>
+        <template x-if="r.kind === 'booking'">
+          <div class="rounded-lg border border-slate-200 bg-white p-2 min-h-[72px] flex items-center justify-between">
+            <span class="font-heading text-lg text-jpteal" x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
+            <span class="text-sm font-semibold" x-text="r.display_name"></span>
+            <span x-show="r.length_label" class="text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-slate-600" x-text="r.length_label"></span>
+            <span x-show="r.state !== 'confirmed'" class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass(r.state)" x-text="r.state === 'held' ? t('staff.awaiting') : t('chip.' + r.state)"></span>
+          </div>
+        </template>
+      </template>
+    </div>
+  </template>
+</section>
