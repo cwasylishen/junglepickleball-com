@@ -12,6 +12,7 @@ schema.sql
 src
 functions
 tests
+scripts
 *.py
 *.md
 .wrangler

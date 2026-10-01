@@ -861,6 +861,100 @@ async function adminSettings(request, env) {
   return json({ error: "Method not allowed." }, 405);
 }
 
+// ---------- Stripe checkout (memberships + pay-to-play) ----------
+//
+// NOTE ON PLACEMENT: this project ships as a single Worker (main =
+// src/worker.js); the functions/ directory is dead code here — it is
+// listed in .assetsignore and never runs (see README "Events admin" and
+// the dormant functions/_shared.js). So the checkout route lives next to
+// every other /api/* handler in this file, not as a second, unexecuted
+// copy under functions/api/checkout.js.
+//
+// Prices are looked up by Stripe's `lookup_key` so no price ID or dollar
+// amount is hardcoded here — scripts/stripe-setup.mjs is what creates the
+// actual products/prices in Stripe with amounts matching the posted sign.
+
+const STRIPE_API = "https://api.stripe.com/v1";
+
+// lookup_key -> Checkout Session mode. Subscription intervals (month/year,
+// interval_count) live on the Stripe Price itself, not here.
+const CHECKOUT_ITEMS = {
+  jp_1m_single: { mode: "subscription" },
+  jp_3m_single: { mode: "subscription" },
+  jp_3m_couples: { mode: "subscription" },
+  jp_6m_single: { mode: "subscription" },
+  jp_6m_couples: { mode: "subscription" },
+  jp_annual_single: { mode: "subscription" },
+  jp_annual_couples: { mode: "subscription" },
+  jp_session_single: { mode: "payment" },
+  jp_session_pack8: { mode: "payment" },
+};
+
+// Stripe's API takes application/x-www-form-urlencoded with PHP-style
+// bracket nesting for objects and arrays (e.g. line_items[0][price]=...).
+function stripeForm(obj, prefix = "") {
+  const parts = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v == null) continue;
+    const key = prefix ? `${prefix}[${k}]` : k;
+    if (Array.isArray(v)) {
+      v.forEach((item, i) => {
+        const arrKey = `${key}[${i}]`;
+        if (item && typeof item === "object") parts.push(stripeForm(item, arrKey));
+        else parts.push(`${encodeURIComponent(arrKey)}=${encodeURIComponent(item)}`);
+      });
+    } else if (typeof v === "object") {
+      parts.push(stripeForm(v, key));
+    } else {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`);
+    }
+  }
+  return parts.filter(Boolean).join("&");
+}
+
+async function stripeRequest(env, method, path, body) {
+  const res = await fetch(`${STRIPE_API}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body ? stripeForm(body) : undefined,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data.error && data.error.message) || `Stripe error ${res.status}`);
+  return data;
+}
+
+async function handleCheckout(request, env, url) {
+  if (!env.STRIPE_SECRET_KEY) {
+    return json({ error: "Payments are not configured yet. Message Roger on WhatsApp to join." }, 503);
+  }
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid request." }, 400); }
+  const lookupKey = String(body.lookupKey || "").trim();
+  const item = CHECKOUT_ITEMS[lookupKey];
+  if (!item) return json({ error: `Unknown membership or pass: ${lookupKey}` }, 400);
+
+  try {
+    const prices = await stripeRequest(
+      env, "GET", `/prices?active=true&limit=1&lookup_keys[]=${encodeURIComponent(lookupKey)}`
+    );
+    const price = prices.data && prices.data[0];
+    if (!price) return json({ error: `No Stripe price is set up yet for ${lookupKey}.` }, 503);
+
+    const session = await stripeRequest(env, "POST", "/checkout/sessions", {
+      mode: item.mode,
+      line_items: [{ price: price.id, quantity: 1 }],
+      success_url: `${url.origin}/membership-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${url.origin}/membership-cancel`,
+    });
+    return json({ url: session.url });
+  } catch (err) {
+    return json({ error: `Stripe error: ${String((err && err.message) || err).slice(0, 200)}` }, 502);
+  }
+}
+
 // ---------- legacy redirects (belt and suspenders for the worker path) ----------
 
 const REDIRECTS = { "/index.php": "/", "/home": "/", "/wp-login.php": "/", "/wp-admin": "/" };
@@ -891,6 +985,7 @@ export default {
         if (p === "/api/config" && request.method === "GET") {
           return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
         }
+        if (p === "/api/checkout" && request.method === "POST") return handleCheckout(request, env, url);
         if (p === "/api/login" && request.method === "POST") return handleLogin(request, env);
         if (p === "/api/logout" && request.method === "POST") {
           return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });

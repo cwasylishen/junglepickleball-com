@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Membership | Jungle Pickleball, Ojochal, Costa Rica</title>
+    <meta name="description" content="Jungle Pickleball membership rates in Ojochal, Costa Rica: monthly, 3-month, 6-month and annual plans for singles and couples, plus pay-to-play options for non-members.">
+
+    <link rel="canonical" href="https://junglepickleball.com/membership" />
+    <meta name="theme-color" content="#0f393b" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Jungle Pickleball Membership" />
+    <meta property="og:description" content="Monthly, 3-month, 6-month and annual membership rates for singles and couples at Jungle Pickleball, Ojochal." />
+    <meta property="og:image" content="https://junglepickleball.com/assets/hero/hero.jpg" />
+
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <script>
+      // ---------------------------------------------------------------
+      // Single config object for this page. Nothing else on the page
+      // needs to change once these are real:
+      //   - each tier's Stripe lookup_key resolves to a live Price
+      //     (see scripts/stripe-setup.mjs, run once against Roger's account)
+      //   - portalLoginUrl is set to Stripe's no-code Customer Portal
+      //     login link, so members manage their own card on file at Stripe
+      //   - bookingUrl is set to a Google Calendar appointment-schedule link
+      // ---------------------------------------------------------------
+      const MEMBERSHIP_CONFIG = {
+        // Roger's WhatsApp (text only) — the fallback whenever checkout
+        // is not yet configured (STRIPE_SECRET_KEY unset -> 503) or fails.
+        whatsappNumber: "50689893111",
+
+        // Stripe's hosted, no-code Customer Portal login link (Settings ->
+        // Billing -> Customer portal -> "Create a portal link"). Members
+        // use it to update their card or cancel; we never store card data.
+        portalLoginUrl: null,
+
+        // Set to a Google Calendar appointment-schedule URL to replace the
+        // "Book a court" placeholder with a real booking embed/link.
+        bookingUrl: null,
+
+        tiers: [
+          { id: "month-1", name: "1 Month", lookupKey: "jp_1m_single", price: 75, months: 1 },
+          { id: "month-3", name: "3 Month", lookupKey: "jp_3m_single", price: 200, months: 3 },
+          { id: "month-3-couples", name: "3 Month Couples", lookupKey: "jp_3m_couples", price: 375, months: 3 },
+          { id: "month-6-single", name: "6 Month Single", lookupKey: "jp_6m_single", price: 400, months: 6 },
+          { id: "month-6-couples", name: "6 Month Couples", lookupKey: "jp_6m_couples", price: 650, months: 6 },
+          { id: "annual-single", name: "Annual Single", lookupKey: "jp_annual_single", price: 750, months: 12 },
+          { id: "annual-couples", name: "Annual Couples", lookupKey: "jp_annual_couples", price: 975, months: 12 }
+        ],
+
+        // One-time, non-membership passes (mode=payment).
+        passes: [
+          { id: "pay-to-play", name: "Pay to Play", lookupKey: "jp_session_single" },
+          { id: "pack-8", name: "8-Play Prepaid Pack", lookupKey: "jp_session_pack8" }
+        ]
+      };
+
+      // Calls the checkout endpoint for the given item's lookup_key and
+      // sends the browser to the resulting Stripe Checkout page. If
+      // payments are not configured yet (503) or the call fails for any
+      // other reason, falls back to WhatsApp with a prefilled message
+      // naming the item, so Roger can always take the join by hand.
+      async function startCheckout(id, name, lookupKey) {
+        try {
+          const res = await fetch("/api/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lookupKey }),
+          });
+          const data = await res.json();
+          if (res.ok && data.url) {
+            window.location.href = data.url;
+            return;
+          }
+        } catch (err) {
+          // network or server error — fall through to WhatsApp
+        }
+        const text = encodeURIComponent(`I want the ${name} membership`);
+        window.location.href = `https://wa.me/${MEMBERSHIP_CONFIG.whatsappNumber}?text=${text}`;
+      }
+
+      function joinTier(id) {
+        const tier = MEMBERSHIP_CONFIG.tiers.find(t => t.id === id);
+        if (!tier) return;
+        startCheckout(tier.id, tier.name, tier.lookupKey);
+      }
+
+      function buyPass(id) {
+        const pass = MEMBERSHIP_CONFIG.passes.find(p => p.id === id);
+        if (!pass) return;
+        startCheckout(pass.id, pass.name, pass.lookupKey);
+      }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <nav class="bg-[#0f393b]/95 backdrop-blur sticky top-0 w-full z-50 border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <a href="/" class="text-2xl md:text-3xl font-bold font-heading uppercase tracking-tighter text-white" aria-label="Jungle Pickleball home">
+                Jungle<span class="text-yellow-400">Pickleball</span>
+            </a>
+            <div class="flex items-center gap-6 font-heading text-lg tracking-wide">
+                <a href="/" class="text-white hover:text-yellow-400 transition">HOME</a>
+                <a href="https://wa.me/50689893111" class="bg-yellow-400 text-black px-6 py-2 rounded font-bold hover:bg-yellow-300 transition">BOOK COURT</a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="max-w-7xl mx-auto px-6 pt-16 pb-10 text-center">
+        <span class="text-yellow-400 font-bold tracking-widest uppercase text-sm bg-jungle inline-block px-3 py-1 rounded-full">Join the Club</span>
+        <h1 class="text-4xl md:text-6xl font-bold font-heading uppercase mt-4 text-jungle">Membership</h1>
+        <p class="text-slate-600 mt-4 max-w-2xl mx-auto font-light">
+            Pick a plan that fits how often you play. Every membership includes a free kid under 16 per paying adult.
+            Not ready to join? Pay-to-play options are below.
+        </p>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 pb-24">
+
+        <!-- 1 Month -->
+        <section class="mb-10">
+            <h2 class="font-heading uppercase text-sm tracking-widest text-slate-500 mb-4 text-center">Monthly</h2>
+            <div class="max-w-md mx-auto bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
+                <h3 class="font-heading text-2xl text-jungle uppercase">1 Month</h3>
+                <p class="text-sm text-slate-500 mt-1">Per person</p>
+                <p class="text-4xl font-bold font-heading text-jungle mt-4">$75</p>
+                <p class="text-sm text-slate-500 mt-1">$75.00/mo</p>
+                <button onclick="joinTier('month-1')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+            </div>
+        </section>
+
+        <!-- 3 Month -->
+        <section class="mb-10">
+            <h2 class="font-heading uppercase text-sm tracking-widest text-slate-500 mb-4 text-center">3 Month</h2>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
+                    <h3 class="font-heading text-2xl text-jungle uppercase">3 Month</h3>
+                    <p class="text-sm text-slate-500 mt-1">Per person</p>
+                    <p class="text-4xl font-bold font-heading text-jungle mt-4">$200</p>
+                    <p class="text-sm text-slate-500 mt-1">$66.67/mo &mdash; $200 &divide; 3 vs $75/mo at 1 month</p>
+                    <button onclick="joinTier('month-3')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
+                    <h3 class="font-heading text-2xl text-jungle uppercase">3 Month Couples</h3>
+                    <p class="text-sm text-slate-500 mt-1">Two people</p>
+                    <p class="text-4xl font-bold font-heading text-jungle mt-4">$375</p>
+                    <p class="text-sm text-slate-500 mt-1">$125.00/mo for two &mdash; $375 &divide; 3 vs $150/mo for two at 1 month</p>
+                    <button onclick="joinTier('month-3-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6 Month -->
+        <section class="mb-10">
+            <h2 class="font-heading uppercase text-sm tracking-widest text-slate-500 mb-4 text-center">6 Month</h2>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
+                    <h3 class="font-heading text-2xl text-jungle uppercase">6 Month Single</h3>
+                    <p class="text-sm text-slate-500 mt-1">Per person</p>
+                    <p class="text-4xl font-bold font-heading text-jungle mt-4">$400</p>
+                    <p class="text-sm text-slate-500 mt-1">$66.67/mo &mdash; $400 &divide; 6 vs $75/mo at 1 month</p>
+                    <button onclick="joinTier('month-6-single')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
+                    <h3 class="font-heading text-2xl text-jungle uppercase">6 Month Couples</h3>
+                    <p class="text-sm text-slate-500 mt-1">Two people</p>
+                    <p class="text-4xl font-bold font-heading text-jungle mt-4">$650</p>
+                    <p class="text-sm text-slate-500 mt-1">$108.33/mo for two &mdash; $650 &divide; 6 vs $150/mo for two at 1 month</p>
+                    <button onclick="joinTier('month-6-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Annual -->
+        <section class="mb-14">
+            <h2 class="font-heading uppercase text-sm tracking-widest text-slate-500 mb-4 text-center">Annual</h2>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="bg-white border-2 border-yellow-400 rounded-xl shadow-sm p-8 text-center">
+                    <h3 class="font-heading text-2xl text-jungle uppercase">Annual Single</h3>
+                    <p class="text-sm text-slate-500 mt-1">Per person</p>
+                    <p class="text-4xl font-bold font-heading text-jungle mt-4">$750</p>
+                    <p class="text-sm text-slate-500 mt-1">$62.50/mo &mdash; $750 &divide; 12 vs $75/mo at 1 month</p>
+                    <button onclick="joinTier('annual-single')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                </div>
+                <div class="bg-white border-2 border-yellow-400 rounded-xl shadow-sm p-8 text-center">
+                    <h3 class="font-heading text-2xl text-jungle uppercase">Annual Couples</h3>
+                    <p class="text-sm text-slate-500 mt-1">Two people</p>
+                    <p class="text-4xl font-bold font-heading text-jungle mt-4">$975</p>
+                    <p class="text-sm text-slate-500 mt-1">$81.25/mo for two &mdash; $975 &divide; 12 vs $150/mo for two at 1 month</p>
+                    <button onclick="joinTier('annual-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                </div>
+            </div>
+        </section>
+
+        <p class="text-center text-slate-500 text-sm mb-20">Kids under 16: one free per paying adult on any membership.</p>
+
+        <!-- Non-members -->
+        <section class="mb-20 bg-jungle rounded-xl p-10 text-white">
+            <h2 class="font-heading text-2xl uppercase text-center mb-6">Not a Member Yet?</h2>
+            <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+                <div class="bg-white/10 rounded-lg p-6 text-center">
+                    <h3 class="font-heading text-xl uppercase">Pay to Play</h3>
+                    <p class="text-3xl font-bold font-heading mt-3">$15</p>
+                    <p class="text-sm text-green-100 mt-1">Per person, per 90-minute session</p>
+                    <button onclick="buyPass('pay-to-play')" class="mt-5 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Pay to Play</button>
+                </div>
+                <div class="bg-white/10 rounded-lg p-6 text-center">
+                    <h3 class="font-heading text-xl uppercase">8-Play Prepaid</h3>
+                    <p class="text-3xl font-bold font-heading mt-3">$100</p>
+                    <p class="text-sm text-green-100 mt-1">$12.50 per play &mdash; $100 &divide; 8. Usable for individual or group play. Prepay does not apply to other member amenities.</p>
+                    <button onclick="buyPass('pack-8')" class="mt-5 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Buy the Pack</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Manage my membership -->
+        <section class="mb-20 text-center">
+            <h2 class="font-heading text-xl uppercase text-jungle mb-3">Already a Member?</h2>
+            <p class="text-slate-600 max-w-xl mx-auto mb-5">
+                Update your payment method or cancel anytime in Stripe's secure portal. We never see or store your card number.
+            </p>
+            <a id="manage-membership-link" href="https://wa.me/50689893111?text=I%20want%20to%20manage%20my%20membership" class="inline-block border-2 border-jungle text-jungle font-bold font-heading uppercase tracking-wide px-8 py-3 rounded hover:bg-jungle hover:text-white transition">
+                Manage My Membership
+            </a>
+            <script>
+              // STRIPE_PORTAL_LOGIN_URL config value, applied once set.
+              if (MEMBERSHIP_CONFIG.portalLoginUrl) {
+                document.getElementById("manage-membership-link").href = MEMBERSHIP_CONFIG.portalLoginUrl;
+              }
+            </script>
+        </section>
+
+        <!-- Book a court placeholder -->
+        <section id="book-a-court" class="mb-20 border border-dashed border-slate-300 rounded-xl p-10 text-center">
+            <h2 class="font-heading text-2xl uppercase text-jungle mb-3">Book a Court</h2>
+            <p class="text-slate-600 max-w-xl mx-auto mb-6">
+                Online booking is coming soon. For now, message Roger directly on WhatsApp to reserve your court time.
+            </p>
+            <!--
+              When MEMBERSHIP_CONFIG.bookingUrl above is set to a Google
+              Calendar appointment-schedule link, replace this WhatsApp
+              button with that link (or an embed) and nothing else on the
+              page needs to change.
+            -->
+            <a href="https://wa.me/50689893111?text=I%20want%20to%20book%20a%20court" class="inline-block bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide px-8 py-3 rounded hover:bg-yellow-300 transition">
+                Message Roger on WhatsApp
+            </a>
+        </section>
+
+        <!-- Payment -->
+        <section class="text-center text-slate-600 text-sm mb-10">
+            <p class="font-bold text-jungle mb-1">Payment accepted</p>
+            <p>Cash (dollars or colones), SINPE, or credit card.</p>
+            <p class="mt-4">Questions? See Roger &mdash; WhatsApp <a href="https://wa.me/50689893111" class="text-green-700 font-bold underline">+506 8989 3111</a> (text only).</p>
+        </section>
+
+    </main>
+
+    <footer class="bg-[#0c3637] text-gray-300 border-t border-green-900">
+        <div class="w-full h-2 bg-gradient-to-r from-yellow-500 via-green-500 to-yellow-500"></div>
+        <div class="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row justify-between items-center text-xs text-gray-500 uppercase tracking-widest">
+            <p>&copy; 2026 Jungle Pickleball. All Rights Reserved.</p>
+            <div class="flex items-center gap-3 mt-4 md:mt-0">
+                <span class="text-[10px] opacity-50">Built and hosted by</span>
+                <a href="https://wizardweb.ca" target="_blank" rel="noopener" class="text-white font-bold border border-white/20 px-3 py-1 rounded hover:bg-white hover:text-black transition-all duration-300">
+                    wizardweb.ca
+                </a>
+            </div>
+        </div>
+    </footer>
+
+<script>(function(){var S="junglepickleball";function vid(){try{var k="wzv",x=localStorage.getItem(k);if(!x){x=Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(k,x)}return x}catch(e){return""}}
+function send(t){try{var r=document.referrer;try{if(r&&new URL(r).hostname===location.hostname)r=""}catch(e){}navigator.sendBeacon("https://app.wizardweb.ca/api/ingest",JSON.stringify({site_id:S,type:t,path:location.pathname,referrer:r,visitor:vid()}))}catch(e){}}
+send("pageview");document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"],a[href*="api.whatsapp.com"],a[href*="whatsapp.com/send"]');if(a)send("whatsapp");},true);})();</script>
+</body>
+</html>
