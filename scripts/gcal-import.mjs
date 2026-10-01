@@ -32,13 +32,18 @@
 //     the "Known gap" error below, because booking.js does not yet
 //     export an import-write function for this script to call.
 //
-// Known gap (reported, not built -- outside B2d's owned files):
+// Known gap (portal(FR1) update -- the column landed, the writer did not):
 //   CTL-CAL-01 names the import's idempotency key as a UNIQUE
-//   `source_event_id` on the imported row. No such column exists on
-//   `bookings` (migrations/ is not a B2d file). Tonight's dry run
-//   de-duplicates against existing bookings by (resource_id, start_at,
-//   end_at) instead, which is weaker. docs/portal/gcal-import.md names
-//   the exact migration this needs before --apply can ever run safely.
+//   `source_event_id` on the imported row. `migrations/0007_import_
+//   idempotency.sql` (portal(FR1)) now adds that column (partial UNIQUE
+//   index, NULL-safe for every non-imported booking), so the column
+//   exists as of this fix round -- but `src/portal/booking.js` still
+//   exports no import-write function for `--apply` to call through
+//   (CTL-CAL-02), so `--apply` still refuses below, unchanged. Tonight's
+//   dry run still de-duplicates against existing bookings by
+//   (resource_id, start_at, end_at) rather than `source_event_id`, since
+//   nothing has been imported yet to compare against.
+//   docs/portal/gcal-import.md names the remaining work.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -232,10 +237,13 @@ async function runApply(args) {
   // CTL-CAL-02: the import writes only through booking.js's own
   // exported functions, never a direct INSERT -- and that function
   // does not exist yet (see "Known gap" at the top of this file and
-  // the per-part return). Refusing here, loudly, is correct: a
+  // the per-part return). `migrations/0007_import_idempotency.sql`
+  // (portal(FR1)) added `bookings.source_event_id` for this writer to
+  // use once it exists, but the writer itself is still not wired, so
+  // this refusal is unchanged. Refusing here, loudly, is correct: a
   // fabricated success would be worse than this.
   throw new ImportRefused(
-    "apply_not_wired: src/portal/booking.js does not yet export an import-write function for this script to call through (CTL-CAL-02). Nothing was written."
+    "apply_not_wired: src/portal/booking.js does not yet export an import-write function for this script to call through (CTL-CAL-02). migrations/0007_import_idempotency.sql has added bookings.source_event_id for it to use. Nothing was written."
   );
 }
 
