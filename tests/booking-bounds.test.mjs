@@ -62,6 +62,17 @@ test("BOOK-001/002 (conditional on A-13 reading 2): member window boundary -- CR
 
 test("BOOK-003/004: guest non-member window boundary -- CR 08:30 (on-grid), today+2 OK, today+3 rejected", async () => {
   const guest = await loginDemo(poolEmail());
+  // QA3 SELF-FOUND DEFECT (this run): a non-entitled, no-credit guest
+  // booking a COURT hits src/portal/booking.js's "pay" branch, which
+  // 503s (Stripe unset, S-11) before any write -- the exact same
+  // confound races.test.mjs's own header already names and fixes via
+  // grantEntitlement. This case needs the booking to actually SUCCEED
+  // to test the window boundary (REQ-BOOK-12), so it needs the
+  // credits-eligible path instead (entitling it would make the window
+  // rule itself the MEMBER one, not the non-member one this case is
+  // named for) -- 2 credits covers both the OK and the (separately
+  // rejected, so never actually spent) over-window attempt.
+  d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${guest.account.id}', 2, datetime('now'))`);
   const ok = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(2, 8, 30));
   assert.equal(ok.status, 201, `BOOK-003: CR 08:30 today+2, expected 200/201, got ${ok.status}`);
   const over = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(3, 8, 30));
