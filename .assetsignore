@@ -53,6 +53,19 @@
 # refused by simply never being negated below.
 !/portal
 !/portal/*
+
+# FR3/SCV-05 (F-1): `!/portal/*` re-includes the directory entry
+# `portal/src` itself even though nothing below ever negates its
+# children -- a bare directory entry with no trailing slash still
+# resolves as "served" for the one file directly inside it
+# (`portal/src/input.css`, the Tailwind build input). Refusing the
+# directory explicitly, after the negation above and before any of
+# portal's other children are negated, closes that gap the same way
+# the header comment already describes for an un-negated path.
+# Proof: tests/foundation/assets-private.test.mjs (PIN-18).
+/portal/src
+/portal/src/*
+
 !/portal/js
 !/portal/js/*
 !/portal/views
