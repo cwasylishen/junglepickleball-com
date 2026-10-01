@@ -62,3 +62,21 @@ INSERT INTO credits (account_id, balance, updated_at) VALUES
   ('demo-memb1-0000-0000-000000000003', 0, datetime('now')),
   ('demo-memb2-0000-0000-000000000004', 0, datetime('now')),
   ('demo-guest-0000-0000-000000000005', 0, datetime('now'));
+
+-- ---------------------------------------------------------------------
+-- portal(FR1): two sample massage bookings with Samy (staff.demo, the
+-- resource's assigned staff), made by member.demo, tomorrow and the day
+-- after in Costa Rica local time (UTC-6, A8) -- so the staff calendar
+-- demo (GET /api/portal/staff/calendar) is not empty on a fresh preview
+-- DB. `payment_mode='override'`/`status='confirmed'` (rather than
+-- CTL-MSG-01's real pending_payment-then-webhook path) because this is
+-- seed data, not a live booking flow, and needs no Stripe webhook to
+-- land already-confirmed on a cold database.
+-- ---------------------------------------------------------------------
+INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at) VALUES
+  ('demo-bkg-msg1-0-000-000000000001', 'demo-memb1-0000-0000-000000000003', 'demo-msg-00000-0000-000000000005', 'demo-off-00000-0000-000000000005',
+    datetime('now', '+1 day', 'start of day', '+16 hours'), datetime('now', '+1 day', 'start of day', '+17 hours'),
+    1, 0, 'confirmed', 'override', 'demo-owner-0000-0000-000000000001', datetime('now'), datetime('now')),
+  ('demo-bkg-msg2-0-000-000000000002', 'demo-memb1-0000-0000-000000000003', 'demo-msg-00000-0000-000000000005', 'demo-off-00000-0000-000000000006',
+    datetime('now', '+2 day', 'start of day', '+20 hours'), datetime('now', '+2 day', 'start of day', '+21 hours'),
+    1, 0, 'confirmed', 'override', 'demo-owner-0000-0000-000000000001', datetime('now'), datetime('now'));

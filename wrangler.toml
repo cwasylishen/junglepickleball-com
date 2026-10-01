@@ -74,3 +74,15 @@ crons = ["*/15 * * * *"]
 # Stripe dashboard config (Roger's account) once payments go live:
 #   Webhook endpoint URL: https://junglepickleball.com/api/stripe/webhook
 #   Event to send: checkout.session.completed
+#
+# Portal secrets/vars (names only -- no values here, ever; each gates its
+# own feature via `features.*`/`isStripeConfigured`/etc. when unset,
+# never a hard failure):
+#   OWNER_EMAILS                 - comma-separated list, portal owner role (S-3)
+#   STRIPE_SECRET_KEY            - secret
+#   STRIPE_WEBHOOK_SECRET        - secret
+#   GOOGLE_SERVICE_ACCOUNT_JSON  - secret (B2d, Calendar push)
+#   VAPID_PUBLIC_KEY             - var (B2e, push)
+#   VAPID_PRIVATE_KEY            - secret (B2e, push)
+#   VAPID_SUBJECT                - var, e.g. mailto:owner@junglepickleball.com (B2e, push)
+#   EMAIL                        - secret/binding, outbound magic-link email (not yet provisioned)
