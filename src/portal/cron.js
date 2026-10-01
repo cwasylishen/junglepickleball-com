@@ -1,8 +1,33 @@
-// Stub scheduled-handler body (PIN-14). B1 writes this stub; B2e owns
-// the real body (24h/2h push reminders, deduplicated via
-// reminder_sends, and the calendar_outbox drain) and never reopens
-// worker.js to add it (breakdown.md §2) -- src/worker.js's scheduled()
-// export always calls this function; B2e fills in what it does.
+// Scheduled-handler body (PIN-14, amendment 6). B1 wires the three jobs
+// below; B2e owns this file from here on, including the real bodies of
+// push.js (24h/2h reminders, deduplicated via reminder_sends) and
+// gcal.js (the calendar_outbox drain, already stubbed by B1), plus the
+// D-A19 retention purge stubbed inline here. It never reopens
+// worker.js to add a fourth job (breakdown.md §2) -- src/worker.js's
+// scheduled() export always calls this one function.
+//
+// Each job runs in its own try/catch (amendment 6) so one failure never
+// stops the others -- a push-provider outage must not also stop the
+// calendar drain or the retention purge, and vice versa.
+
+import { sendDueReminders } from "./push.js";
+import { drainCalendarOutbox } from "./gcal.js";
+
+// D-A19 retention: magic-link rows purged 24h after expiry, session
+// rows purged after expiry (amendment 2). No-op stub until B2e writes
+// the real DELETE statements -- it changes no row, same discipline as
+// the other interface stubs this file calls.
+async function purgeExpiredRows(env) {
+  return { purged: 0 };
+}
+
+// LOG-02: never logs the error's own message, only its class and a
+// random id, same discipline as http.js's logAndMask.
+function logJobFailure(job, err) {
+  const errorId = crypto.randomUUID();
+  // eslint-disable-next-line no-console
+  console.error(`cron_${job}_failed id=${errorId} class=${(err && err.name) || "Error"}`);
+}
 
 export async function runScheduled(env) {
   const db = env.PORTAL_DB;
@@ -13,5 +38,20 @@ export async function runScheduled(env) {
   // unconfigured database does nothing rather than erroring.
   const marker = await db.prepare(`SELECT env FROM portal_meta WHERE id = 1`).first();
   if (!marker) return;
-  // B2e: send 24h/2h reminders and drain calendar_outbox here.
+
+  try {
+    await sendDueReminders(env);
+  } catch (err) {
+    logJobFailure("reminders", err);
+  }
+  try {
+    await drainCalendarOutbox(env, {});
+  } catch (err) {
+    logJobFailure("gcal_drain", err);
+  }
+  try {
+    await purgeExpiredRows(env);
+  } catch (err) {
+    logJobFailure("purge", err);
+  }
 }

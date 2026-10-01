@@ -11,7 +11,11 @@ Costa Rica for display). Money is integer cents. Every non-GET `/api/portal/*` r
 the four in `CSRF_EXEMPT_ROUTES` (`src/portal/auth.js`) requires header `X-CSRF-Token`
 matching the session's token, **and** an `Origin` header matching the request origin. A
 `route class` of `public`/`own`/`staff-own`/`owner` is enforced centrally by
-`src/portal/router.js` reading `ROUTES` (never a per-handler check). `403 csrf_required` /
+`src/portal/router.js` reading `ROUTES` (never a per-handler check). `ROUTES` is assembled
+from one file per B2 part under `src/portal/routes/` (`booking.js`, `owner.js`, `stripe.js`,
+`passkeys.js`, `push.js`, each exporting its own `ROUTES` array) plus `router.js`'s own B1
+routes -- a part edits only its own file, never `router.js`'s table directly (B1-fix,
+amendment 6). `403 csrf_required` /
 `401 not_authenticated` / `403 owner_only` / `403 staff_only` / `403 route_unclassed` are
 possible on every protected route and are not repeated per row below. Any unhandled throw
 becomes `500 {"error":"server_error"}` (CTL-ERR-01).
@@ -99,10 +103,11 @@ the create/cancel handlers.
 | `GET /api/portal/billing/history` | own | — | `[{amount_cents, kind, status, created_at}]` from Stripe `charges?customer=`, only the caller's own `stripe_customer_id` (CTL-STR-03) | `503 not_configured` |
 | `POST /api/portal/owner/resources/:id/offerings/:offeringId/price` | owner | `{price_cents}` | `200 {offering}` -- creates a new Stripe Price on the same product with the same `lookup_key` + `transfer_lookup_key=true`, updates the mirror (amendment 4 decision 7) | `503 not_configured`, changes nothing when unset |
 
-**Replacing B1's stub:** B2b changes the one import line in `src/portal/router.js`
-(`import { handleStripeWebhook } from "./stripe-webhook-stub.js"`) to its own
-`./stripe.js`, in a commit that touches only that line -- the same append-only discipline as
-this document.
+**Replacing B1's stub:** `src/portal/router.js` already imports `handleStripeWebhook` from
+`./stripe.js` (B1-fix, amendment 6). B1 commits that file with
+`isStripeConfigured`/`createBookingCheckout`/`handleStripeWebhook` as non-throwing interface
+stubs (amendment 6's interface-first commit); B2b replaces the stub bodies in place -- it
+never needs to touch `router.js`'s import line.
 
 ## 6. Passkeys -- B2c (`src/portal/passkeys.js`, `portal/js/passkeys.js`)
 
@@ -141,3 +146,8 @@ item 10 → §4 staff calendar row.
 ## Changelog
 
 - 2026-09-30 (B1): initial contract.
+- 2026-09-30 (B1-fix, amendment 6): `src/portal/router.js`'s `ROUTES` table now supports
+  `:param` path segments (literal segments always win over a `:param` at the same position),
+  is assembled from the five per-part route files under `src/portal/routes/` instead of being
+  appended to directly, and dispatches the Stripe webhook straight to `src/portal/stripe.js`
+  (no more `stripe-webhook-stub.js`). No request/response shape above changed.
