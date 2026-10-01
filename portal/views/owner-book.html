@@ -1,0 +1,81 @@
+<div x-data="ownerBook()" x-init="init()">
+  <h1 class="text-2xl font-heading uppercase text-jpteal" x-text="t('tab.book')"></h1>
+  <p class="text-sm text-slate-600 mt-1" x-text="t('obook.top')"></p>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 h-40 bg-slate-100 rounded" aria-label="loading"></div>
+  </template>
+
+  <template x-if="state === 'offline' || state === 'not_found' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="state === 'not_found' ? t('state.not_wired') : t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="loadResources()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'empty'">
+    <p class="mt-4 text-sm text-slate-600" x-text="t('book.no_resources')"></p>
+  </template>
+
+  <template x-if="state === 'ok' && !done">
+    <div>
+      <div class="mt-3 flex gap-2 overflow-x-auto">
+        <template x-for="r in resources" :key="r.id">
+          <button type="button" class="shrink-0 px-3 py-1 rounded-full text-sm border"
+            :class="resourceId === r.id ? 'bg-jpteal text-white border-jpteal' : 'border-slate-300'"
+            @click="resourceId = r.id; loadSlots()" x-text="r.name"></button>
+        </template>
+      </div>
+
+      <input type="date" x-model="date" @change="loadSlots()" class="mt-3 border border-slate-300 rounded-lg px-2 py-2" />
+
+      <div class="mt-3 grid grid-cols-4 gap-2">
+        <template x-for="s in slots" :key="s.start">
+          <button type="button" :disabled="s.state !== 'available'"
+            class="p-2 rounded-lg text-xs border"
+            :class="s.state === 'available' ? (selected === s.start ? 'bg-jpteal text-white border-jpteal' : 'border-jpteal text-jpteal') : 'bg-slate-100 border-slate-200 text-slate-400'"
+            @click="selected = s.start">
+            <span x-text="h.fmtTime(s.start)"></span>
+            <div x-show="s.display_name" class="truncate" x-text="s.display_name"></div>
+          </button>
+        </template>
+      </div>
+
+      <div class="mt-4 flex gap-2">
+        <label class="flex items-center gap-1 text-sm"><input type="radio" value="account" x-model="forMode" /> <span x-text="t('obook.for_account')"></span></label>
+        <label class="flex items-center gap-1 text-sm"><input type="radio" value="walk_in" x-model="forMode" /> <span x-text="t('obook.for_walk_in')"></span></label>
+      </div>
+
+      <template x-if="forMode === 'account'">
+        <div class="mt-2 relative">
+          <input type="text" x-model="searchQ" @input="search()" :placeholder="t('obook.search_ph')" class="w-full border border-slate-300 rounded-lg px-2 py-2" />
+          <div x-show="searchResults.length" class="border border-slate-200 rounded-lg mt-1 bg-white">
+            <template x-for="a in searchResults" :key="a.id">
+              <button type="button" class="block w-full text-left px-3 py-2 text-sm" @click="pick(a)" x-text="a.display_name + ' · ' + a.email"></button>
+            </template>
+          </div>
+        </div>
+      </template>
+      <template x-if="forMode === 'walk_in'">
+        <input type="text" x-model="walkInName" :placeholder="t('obook.walk_in_name')" class="mt-2 w-full border border-slate-300 rounded-lg px-2 py-2" />
+      </template>
+
+      <label class="block mt-3 text-sm">
+        Players
+        <input type="number" min="1" max="4" x-model.number="players" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+      </label>
+
+      <p class="mt-2 text-xs text-slate-500" x-text="t('obook.bypass')"></p>
+      <p x-show="err" class="mt-2 text-sm text-red-700" x-text="err === 'slot_taken' ? t('book.err_taken') : (err === 'blocked' ? t('book.err_blocked') : t('state.error_body'))"></p>
+
+      <button class="mt-4 w-full py-3 rounded-lg bg-jpyellow font-heading uppercase text-sm" :disabled="!selected" @click="confirm()" x-text="t('obook.confirm')"></button>
+    </div>
+  </template>
+
+  <template x-if="done">
+    <div class="mt-6 text-center">
+      <p class="text-lg font-heading text-jpteal" x-text="t('obook.done')"></p>
+      <a href="#/today" class="mt-2 inline-block underline text-jpteal" x-text="t('act.done')"></a>
+    </div>
+  </template>
+</div>

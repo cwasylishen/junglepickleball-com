@@ -1,0 +1,66 @@
+<div x-data="ownerResourceEditor()" x-init="init()">
+  <a href="#/manage/resources" class="text-sm text-jpteal underline" x-text="t('act.back')"></a>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 h-64 bg-slate-100 rounded" aria-label="loading"></div>
+  </template>
+
+  <template x-if="state === 'not_found' || state === 'offline' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="state === 'not_found' ? t('state.not_wired') : t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'ok'">
+    <div>
+      <h1 class="text-2xl font-heading text-jpteal mt-1" x-text="resource.name"></h1>
+      <p x-show="unconfirmed.length" class="mt-1 text-sm text-amber-800" x-text="t('res.defaults_banner', {n: unconfirmed.length})"></p>
+
+      <template x-if="misfits && misfits.length">
+        <div class="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-400 text-amber-800 text-sm" x-text="t('res.misfits', {n: misfits.length})"></div>
+      </template>
+
+      <div class="mt-4 space-y-3">
+        <template x-for="field in ['name','opens','closes','slot','buffer','window_member','window_guest','cap','cutoff']" :key="field">
+          <div class="flex items-end gap-2">
+            <label class="flex-1 text-sm">
+              <span class="flex items-center gap-2">
+                <span x-text="t('res.' + field)"></span>
+                <button type="button" x-show="isDefault(field)" class="text-xs px-2 py-0.5 rounded-full border border-amber-400 bg-amber-50 text-amber-800" @click="confirmField(field)" x-text="t('chip.default_confirm')"></button>
+              </span>
+              <input x-show="['name'].includes(field)" type="text" x-model="form[field === 'name' ? 'name' : field]" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="['opens','closes'].includes(field)" type="time" x-model="form[field === 'opens' ? 'open_time' : 'close_time']" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="field === 'slot'" type="number" x-model.number="form.slot_minutes" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="field === 'buffer'" type="number" x-model.number="form.buffer_minutes" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="field === 'window_member'" type="number" x-model.number="form.member_window_days" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="field === 'window_guest'" type="number" x-model.number="form.non_member_window_days" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="field === 'cap'" type="number" :placeholder="t('res.cap_none')" x-model.number="form.max_active_per_account" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+              <input x-show="field === 'cutoff'" type="number" x-model.number="form.cancel_cutoff_minutes" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+          </div>
+        </template>
+
+        <label class="block text-sm">
+          <span x-text="t('res.gcal')"></span>
+          <input type="text" :placeholder="t('res.gcal_ph')" x-model="form.google_calendar_id" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+        </label>
+
+        <template x-if="(resource.offerings || []).length">
+          <div class="mt-2">
+            <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Offerings</h2>
+            <template x-for="o in resource.offerings" :key="o.id">
+              <div class="flex justify-between text-sm py-1">
+                <span x-text="o.name + ' · ' + o.duration_minutes + ' min'"></span>
+                <span class="font-mono text-xs text-slate-400" x-text="o.lookup_key"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <p x-show="saveError" class="mt-3 text-sm text-red-700" x-text="t('state.error_body')"></p>
+      <button class="mt-4 w-full py-3 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="save()" x-text="t('act.save')"></button>
+    </div>
+  </template>
+</div>

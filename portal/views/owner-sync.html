@@ -1,0 +1,39 @@
+<div x-data="ownerSync()" x-init="init()">
+  <a href="#/manage" class="text-sm text-jpteal underline" x-text="t('act.back')"></a>
+  <h1 class="text-2xl font-heading uppercase text-jpteal mt-1" x-text="t('manage.sync')"></h1>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 h-24 bg-slate-100 rounded" aria-label="loading"></div>
+  </template>
+
+  <template x-if="state === 'offline' || state === 'not_found' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="state === 'not_found' ? t('state.not_wired') : t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'ok'">
+    <div>
+      <p class="text-sm text-slate-600 mt-1"
+         x-text="!configured ? t('sync.off_top', {n: pending}) : (failed.length ? t('sync.fail_top', {n: failed.length}) : t('sync.ok_top'))"></p>
+
+      <template x-if="!failed.length">
+        <p class="mt-4 text-sm text-slate-600" x-text="t('sync.empty')"></p>
+      </template>
+
+      <div class="mt-4 space-y-2">
+        <template x-for="f in failed" :key="f.id">
+          <div class="p-3 rounded-xl border border-red-300 bg-red-50 text-sm">
+            <div class="flex justify-between">
+              <span x-text="f.resource"></span>
+              <span x-text="t('sync.attempts', {n: f.attempts})"></span>
+            </div>
+            <div class="text-slate-600" x-text="h.fmtDate(f.booking_start) + ' ' + h.fmtTime(f.booking_start)"></div>
+            <div class="text-red-700 text-xs mt-1" x-text="f.last_error"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+</div>

@@ -1,0 +1,228 @@
+<div x-data="ownerMemberDetail()" x-init="init()">
+  <a href="#/members" class="text-sm text-jpteal underline" x-text="t('act.back')"></a>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 space-y-2" aria-label="loading">
+      <div class="h-10 bg-slate-100 rounded"></div>
+      <div class="h-24 bg-slate-100 rounded"></div>
+    </div>
+  </template>
+
+  <template x-if="state === 'not_found'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700" x-text="t('state.not_wired')"></div>
+  </template>
+
+  <template x-if="state === 'offline' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'ok'">
+    <div>
+      <div class="mt-3 flex items-center gap-2 flex-wrap">
+        <h1 class="text-2xl font-heading text-jpteal" x-text="account.display_name"></h1>
+        <span class="text-xs px-2 py-0.5 rounded-full border border-slate-300 text-slate-600" x-text="account.role"></span>
+        <span x-show="overlap" class="text-xs px-2 py-0.5 rounded-full border border-amber-400 bg-amber-50 text-amber-800" x-text="t('member.overlap_flag')"></span>
+      </div>
+      <p class="text-sm text-slate-500" x-text="account.email"></p>
+      <p class="text-xs text-slate-500" x-text="t('member.since', {date: h.fmtDate(account.created_at)})"></p>
+
+      <!-- Membership -->
+      <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+        <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Membership</h2>
+        <template x-for="g in grants" :key="g.id">
+          <div class="mt-2 text-sm">
+            <div class="flex justify-between">
+              <span x-text="g.tier"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full border" :class="g.status === 'active' ? 'border-green-400 bg-green-50 text-green-700' : 'border-slate-300 text-slate-500'" x-text="g.status"></span>
+            </div>
+            <div class="text-slate-500" x-text="g.source === 'stripe' ? t('member.source_stripe') : t('member.source_granted', {owner: g.created_by || 'owner', note: g.note || ''})"></div>
+            <div class="text-slate-500" x-text="h.fmtDate(g.starts_at) + ' – ' + h.fmtDate(g.ends_at)"></div>
+            <div x-show="g.linked_by_email" class="text-amber-800 text-xs mt-1" x-text="t('member.linked_by_email')"></div>
+            <button x-show="g.status === 'active' && g.source !== 'stripe'" class="mt-1 text-xs underline text-jpteal" @click="endGrant(g)" x-text="t('member.end_grant')"></button>
+          </div>
+        </template>
+        <p x-show="saveError === 'end_grant_not_available'" class="mt-2 text-xs text-slate-500" x-text="t('state.not_wired')"></p>
+        <p x-show="!grants.length" class="text-sm text-slate-500 mt-1" x-text="t('member.no_grant')"></p>
+        <p x-show="hasActiveStripe" class="mt-2 text-xs text-amber-800" x-text="t('member.grant_overlap')"></p>
+        <button class="mt-3 w-full py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="openGrant()" x-text="t('member.grant')"></button>
+      </section>
+
+      <!-- Household -->
+      <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+        <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Household</h2>
+        <template x-if="household">
+          <div class="mt-2 text-sm flex justify-between items-center">
+            <span x-text="household.payer_account_id === account.id ? household.partner_account_id : household.payer_account_id"></span>
+            <button class="underline text-jpteal" @click="unlinkPartner()" x-text="t('member.unlink')"></button>
+          </div>
+        </template>
+        <template x-if="!household">
+          <div class="mt-2 text-sm flex justify-between items-center">
+            <span class="text-slate-500" x-text="isCouplesTier ? t('member.no_partner') : t('member.link_needs_couples')"></span>
+            <button :disabled="!isCouplesTier" :class="isCouplesTier ? 'text-jpteal underline' : 'text-slate-400'" @click="openPartner()" x-text="t('member.link_partner')"></button>
+          </div>
+        </template>
+
+        <div class="mt-3">
+          <template x-if="!dependants.length">
+            <p class="text-sm text-slate-500" x-text="t('member.no_kids')"></p>
+          </template>
+          <template x-for="k in dependants" :key="k.id">
+            <div class="flex justify-between text-sm py-1">
+              <span x-text="k.first_name + ' · born ' + k.birth_year"></span>
+              <button class="underline text-jpteal" @click="k.__removing = true" x-text="t('member.remove_kid')"></button>
+            </div>
+          </template>
+          <button class="mt-2 text-sm underline text-jpteal" @click="openKid()" x-text="t('member.add_kid')"></button>
+        </div>
+      </section>
+
+      <!-- Role -->
+      <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+        <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Role</h2>
+        <div class="mt-2 flex justify-between items-center text-sm">
+          <span class="px-2 py-0.5 rounded-full border border-slate-300" x-text="account.role"></span>
+          <button x-show="account.role !== 'owner'" class="underline text-jpteal" @click="openRole()" x-text="t('member.set_role')"></button>
+        </div>
+        <p x-show="account.role === 'owner'" class="text-xs text-slate-500 mt-1" x-text="t('role.owner_note')"></p>
+      </section>
+
+      <!-- Credits -->
+      <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+        <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Credits</h2>
+        <p class="mt-1 text-sm" x-text="t('member.credits', {n: account.credits || 0})"></p>
+      </section>
+
+      <!-- Bookings -->
+      <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+        <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Bookings</h2>
+        <template x-if="!bookings.length"><p class="text-sm text-slate-500 mt-1" x-text="t('member.no_bookings')"></p></template>
+        <div class="divide-y divide-slate-100">
+          <template x-for="b in bookings" :key="b.id">
+            <div class="flex justify-between text-sm py-1">
+              <span x-text="b.resource + ' · ' + h.fmtDate(b.start) + ' ' + h.fmtTime(b.start)"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full border border-slate-300" x-text="b.status"></span>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- Payments -->
+      <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+        <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Payments</h2>
+        <template x-if="!payments.length"><p class="text-sm text-slate-500 mt-1" x-text="t('member.payments_off')"></p></template>
+        <div class="divide-y divide-slate-100">
+          <template x-for="p in payments" :key="p.id">
+            <div class="flex justify-between text-sm py-1">
+              <span x-text="h.fmtDate(p.created_at) + ' · ' + p.kind"></span>
+              <span x-text="h.fmtMoney(p.amount_cents)"></span>
+              <a x-show="p.payment_intent_id" :href="'https://dashboard.stripe.com/payments/' + p.payment_intent_id" target="_blank" rel="noopener" class="underline text-jpteal text-xs" x-text="t('today.refund')"></a>
+              <span x-show="!p.payment_intent_id" class="text-xs text-slate-400" x-text="t('member.no_stripe')"></span>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- Grant sheet -->
+      <template x-if="grantSheet">
+        <div class="fixed inset-0 bg-black/30 flex items-end md:items-center justify-center z-20" @click.self="grantSheet = false">
+          <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
+            <h2 class="font-heading text-lg text-jpteal" x-text="t('member.grant')"></h2>
+            <label class="block mt-3 text-sm">
+              <span x-text="t('member.grant_tier')"></span>
+              <select x-model="grantForm.tier" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1">
+                <template x-for="tr in tiers" :key="tr.key"><option :value="tr.key" x-text="tr.label"></option></template>
+              </select>
+            </label>
+            <label class="block mt-2 text-sm">
+              <span x-text="t('member.grant_start')"></span>
+              <input type="date" x-model="grantForm.starts_at" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+            <label class="block mt-2 text-sm">
+              <span x-text="t('member.grant_end')"></span>
+              <input type="date" x-model="grantForm.ends_at" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+            <label class="block mt-2 text-sm">
+              <span x-text="t('member.grant_note')"></span>
+              <input type="text" x-model="grantForm.note" placeholder="Cash / SINPE / CourtReserve / Other" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+            <p x-show="saveError" class="mt-2 text-sm text-red-700" x-text="t('state.error_body')"></p>
+            <div class="mt-4 flex gap-2">
+              <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="submitGrant()" x-text="t('member.grant_confirm')"></button>
+              <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="grantSheet = false" x-text="t('cancel.keep')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Role sheet -->
+      <template x-if="roleSheet">
+        <div class="fixed inset-0 bg-black/30 flex items-end md:items-center justify-center z-20" @click.self="roleSheet = false">
+          <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
+            <h2 class="font-heading text-lg text-jpteal" x-text="t('member.set_role')"></h2>
+            <label class="flex items-center gap-2 mt-3 text-sm"><input type="radio" value="staff" x-model="roleChoice" /> Staff</label>
+            <p class="text-xs text-slate-500 ml-6" x-text="t('role.staff_effect')"></p>
+            <label class="flex items-center gap-2 mt-2 text-sm"><input type="radio" value="member" x-model="roleChoice" /> Member</label>
+            <p class="text-xs text-slate-500 ml-6" x-text="t('role.member_effect')"></p>
+            <label class="flex items-center gap-2 mt-2 text-sm"><input type="radio" value="guest" x-model="roleChoice" /> Guest</label>
+            <p class="text-xs text-slate-500 ml-6" x-text="t('role.guest_effect')"></p>
+            <div class="mt-4 flex gap-2">
+              <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="submitRole()" x-text="t('act.save')"></button>
+              <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="roleSheet = false" x-text="t('cancel.keep')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Kid sheet -->
+      <template x-if="kidSheet">
+        <div class="fixed inset-0 bg-black/30 flex items-end md:items-center justify-center z-20" @click.self="kidSheet = false">
+          <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
+            <h2 class="font-heading text-lg text-jpteal" x-text="t('member.add_kid')"></h2>
+            <label class="block mt-3 text-sm">
+              <span x-text="t('member.kid_name')"></span>
+              <input type="text" x-model="kidForm.first_name" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+            <label class="block mt-2 text-sm">
+              <span x-text="t('member.kid_year')"></span>
+              <select x-model.number="kidForm.birth_year" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1">
+                <template x-for="y in birthYears()" :key="y"><option :value="y" x-text="y"></option></template>
+              </select>
+            </label>
+            <div class="mt-4 flex gap-2">
+              <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="submitKid()" x-text="t('member.grant_confirm')"></button>
+              <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="kidSheet = false" x-text="t('cancel.keep')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Partner sheet -->
+      <template x-if="partnerSheet">
+        <div class="fixed inset-0 bg-black/30 flex items-end md:items-center justify-center z-20" @click.self="partnerSheet = false">
+          <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
+            <h2 class="font-heading text-lg text-jpteal" x-text="t('member.link_partner')"></h2>
+            <label class="block mt-3 text-sm">
+              <span x-text="t('member.partner_search')"></span>
+              <input type="email" x-model="partnerEmail" @input="searchPartner()" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+            <div x-show="partnerResults.length" class="border border-slate-200 rounded-lg mt-1 bg-white">
+              <template x-for="a in partnerResults" :key="a.id">
+                <button type="button" class="block w-full text-left px-3 py-2 text-sm" @click="pickPartner(a)" x-text="a.display_name + ' · ' + a.email"></button>
+              </template>
+            </div>
+            <p x-show="saveError === 'partner_taken'" class="mt-2 text-sm text-red-700" x-text="t('member.err_partner_taken')"></p>
+            <p x-show="saveError === 'pick_a_result'" class="mt-2 text-sm text-red-700" x-text="t('member.partner_search')"></p>
+            <div class="mt-4 flex gap-2">
+              <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="submitPartner()" x-text="t('member.link_confirm')"></button>
+              <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="partnerSheet = false" x-text="t('cancel.keep')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>

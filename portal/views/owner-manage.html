@@ -1,0 +1,51 @@
+<div x-data="ownerManage()" x-init="init()">
+  <h1 class="text-2xl font-heading uppercase text-jpteal" x-text="t('tab.manage')"></h1>
+  <p class="text-sm text-slate-600 mt-1" x-text="totalDefaults > 0 ? t('manage.top', {n: totalDefaults}) : t('manage.top_done')"></p>
+
+  <div class="mt-4 divide-y divide-slate-200 border border-slate-200 rounded-xl bg-white">
+    <a href="#/manage/resources" class="flex justify-between items-center px-4 py-3">
+      <span x-text="t('manage.resources')"></span>
+      <span class="text-sm text-slate-500" x-text="resourcesDefaults > 0 ? (resourcesDefaults + ' to confirm') : ''"></span>
+    </a>
+    <a href="#/manage/prices" class="flex justify-between items-center px-4 py-3">
+      <span x-text="t('manage.prices')"></span>
+      <span class="text-sm text-slate-500" x-text="pricesUnset > 0 ? (pricesUnset + ' not set') : ''"></span>
+    </a>
+    <a href="#/manage/blocks" class="flex justify-between items-center px-4 py-3">
+      <span x-text="t('manage.blocks')"></span>
+      <span class="text-sm text-slate-500" x-text="weeklyBlocks + ' weekly'"></span>
+    </a>
+    <a href="#/manage/sync" class="flex justify-between items-center px-4 py-3">
+      <span x-text="t('manage.sync')"></span>
+      <span class="text-sm text-slate-500" x-text="syncHint === 'off' ? t('sync.hint_off') : (syncHint === 'ok' ? t('sync.hint_ok') : t('sync.hint_failed', {n: syncHint}))"></span>
+    </a>
+  </div>
+
+  <template x-if="health">
+    <section class="mt-4 p-4 rounded-xl border border-slate-200 bg-white">
+      <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500" x-text="t('owner.health_top')"></h2>
+      <div class="mt-2 text-sm divide-y divide-slate-100">
+        <div class="flex justify-between py-1">
+          <span x-text="t('owner.health_owners')"></span>
+          <span x-text="(health.owners || []).length"></span>
+        </div>
+        <div class="flex justify-between py-1">
+          <span x-text="t('owner.health_email')"></span>
+          <span x-text="health.email_configured ? t('owner.on') : t('owner.off')"></span>
+        </div>
+        <div class="flex justify-between py-1">
+          <span x-text="t('owner.health_stripe')"></span>
+          <span x-text="health.stripe_configured ? t('owner.on') : t('owner.off')"></span>
+        </div>
+        <div class="flex justify-between py-1">
+          <span x-text="t('owner.health_gcal')"></span>
+          <span x-text="health.gcal_configured ? t('owner.on') : t('owner.off')"></span>
+        </div>
+        <div class="flex justify-between py-1">
+          <span x-text="t('owner.health_push')"></span>
+          <span x-text="health.push_configured ? t('owner.on') : t('owner.off')"></span>
+        </div>
+      </div>
+    </section>
+  </template>
+</div>

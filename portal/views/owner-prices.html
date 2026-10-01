@@ -1,0 +1,73 @@
+<div x-data="ownerPrices()" x-init="init()">
+  <a href="#/manage" class="text-sm text-jpteal underline" x-text="t('act.back')"></a>
+  <h1 class="text-2xl font-heading uppercase text-jpteal mt-1" x-text="t('manage.prices')"></h1>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 space-y-2" aria-label="loading">
+      <template x-for="n in 6" :key="n"><div class="h-14 bg-slate-100 rounded"></div></template>
+    </div>
+  </template>
+
+  <template x-if="state === 'offline' || state === 'not_found' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="state === 'not_found' ? t('state.not_wired') : t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'not_configured'">
+    <div class="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+      <p x-text="t('nc.prices')"></p>
+    </div>
+  </template>
+
+  <template x-if="state === 'ok'">
+    <div>
+      <p class="text-sm text-slate-600 mt-1" x-text="unsetCount === 0 ? t('prices.top_ok') : t('prices.top', {n: unsetCount})"></p>
+      <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500 mt-4" x-text="t('prices.sec_bookings')"></h2>
+      <div class="mt-2 divide-y divide-slate-200 border border-slate-200 rounded-xl bg-white">
+        <template x-for="item in items" :key="item.offering.id">
+          <div class="flex justify-between items-center px-4 py-3">
+            <div>
+              <div class="text-sm font-semibold" x-text="item.resource.name + (item.offering.name ? (' · ' + item.offering.name) : '')"></div>
+              <div class="text-xs font-mono text-slate-400" x-text="item.offering.lookup_key"></div>
+            </div>
+            <div class="text-right">
+              <template x-if="!item.offering.lookup_key">
+                <div class="text-sm text-slate-500" x-text="t('prices.included_annual')"></div>
+              </template>
+              <template x-if="item.offering.lookup_key">
+                <div class="text-sm" :class="item.offering.display_price_cents == null ? 'text-amber-800' : 'text-slate-800'"
+                     x-text="item.offering.display_price_cents == null ? t('prices.not_set') : h.fmtMoney(item.offering.display_price_cents)"></div>
+              </template>
+              <button x-show="item.offering.lookup_key" class="text-xs underline text-jpteal" @click="open(item)" x-text="t('prices.edit')"></button>
+            </div>
+          </div>
+        </template>
+        <template x-if="!items.length">
+          <div class="px-4 py-3 text-sm text-slate-500">No priced items yet.</div>
+        </template>
+      </div>
+
+      <template x-if="editing">
+        <div class="fixed inset-0 bg-black/30 flex items-end md:items-center justify-center z-20" @click.self="close()">
+          <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
+            <h2 class="font-heading text-lg text-jpteal" x-text="editing.resource.name"></h2>
+            <label class="block mt-3 text-sm">
+              <span>$</span>
+              <input type="text" inputmode="decimal" x-model="amountInput" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-1" />
+            </label>
+            <p class="text-xs text-slate-500 mt-2" x-text="t('prices.effect_booking')"></p>
+            <p x-show="saveState === 'bad_amount'" class="text-sm text-red-700 mt-1" x-text="t('prices.err_amount')"></p>
+            <p x-show="saveState === 'stripe_error'" class="text-sm text-red-700 mt-1" x-text="t('prices.err_stripe')"></p>
+            <p x-show="saveState === 'not_configured'" class="text-sm text-slate-600 mt-1" x-text="t('nc.prices')"></p>
+            <div class="mt-4 flex gap-2">
+              <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="save()" x-text="saveState === 'saving' ? t('prices.saving') : t('prices.save_stripe')" :disabled="saveState === 'saving'"></button>
+              <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="close()" x-text="t('cancel.keep')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>
