@@ -103,3 +103,33 @@ export function newId() {
 export function nowIso() {
   return new Date().toISOString();
 }
+
+// ---------- PIN-6 Costa Rica <-> UTC conversion (FR2-E, fixes M11) ----------
+// BRIEF-AND-PINS.md PIN-6: every stored instant is UTC ISO-8601; every
+// displayed time is America/Costa_Rica, a FIXED UTC-6 offset with no DST.
+// So CR wall-clock + 6h == the UTC instant. This is the one conversion
+// every booking-window/grid fixture in the suite depends on -- get it
+// wrong here and every test built on it "passes" without ever exercising
+// the CR time it names (M11's defect).
+const CR_UTC_OFFSET_HOURS = 6;
+
+// Pure, no "now" dependency: the CR wall-clock reading (year, 1-12 month,
+// day, hour, minute) that a test can name directly, converted to the UTC
+// instant PIN-6 requires on the wire. Exported so a test file can assert
+// the conversion itself in isolation, e.g. CR 07:00 on a given date ==
+// 13:00Z.
+export function crWallClockToUtcIso(year, month, day, hour, minute = 0) {
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0) + CR_UTC_OFFSET_HOURS * 3600 * 1000).toISOString();
+}
+
+// `daysAhead` CR calendar days from TODAY in Costa Rica (not the test
+// runner's own zone) at the named CR hour:minute. Replaces the old local
+// `crDateAt` in booking-bounds.test.mjs, which set UTC hours while the
+// tests named CR times (M11).
+export function crDateAt(daysAhead, hour, minute = 0) {
+  const nowUtc = new Date();
+  // Shift "now" back 6h and read its UTC Y/M/D: that is today's CR
+  // calendar date, because CR local = UTC - 6h exactly, always (no DST).
+  const nowCr = new Date(nowUtc.getTime() - CR_UTC_OFFSET_HOURS * 3600 * 1000);
+  return crWallClockToUtcIso(nowCr.getUTCFullYear(), nowCr.getUTCMonth() + 1, nowCr.getUTCDate() + daysAhead, hour, minute);
+}
