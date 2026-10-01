@@ -5,11 +5,9 @@
 // hashchange it fetches this area's view template into #portal-area and
 // lets Alpine process the newly-injected DOM.
 //
-// FINDING (see return): docs/portal/api.md §2's GET /api/portal/me does
-// not carry `credits` or the entitlement's `ends_at`, though screens.md's
-// boot sequence (§0.2) and M1/M8 need both. This file treats a missing
-// `credits` as 0 and shows membership status without a specific end
-// date rather than inventing one.
+// GET /api/portal/me now carries `credits` (portal(FR1), api.md §2). It
+// still has no entitlement `ends_at`, so this file shows membership
+// status without a specific end date rather than inventing one.
 
 if (!window.t) {
   window.t = function (key, vars) {
@@ -274,9 +272,6 @@ function memberHome() {
         .sort(function (a, b) { return a.start.localeCompare(b.start); });
       this.holdBooking = upcoming.find(function (b) { return b.status === "held" || b.status === "held_mine"; }) || null;
       var rest = upcoming.filter(function (b) { return b !== this.holdBooking; }, this);
-      // FINDING: GET /api/portal/bookings (api.md §3) does not return
-      // `party_size`, though screens.md's "{players} players" line
-      // needs it. Home shows the time only until that's added.
       this.nextUp = rest[0] || null;
       this.comingUp = rest.slice(1, 4);
       var ent = me.data.entitlement || { entitled: false };
@@ -288,8 +283,6 @@ function memberHome() {
         this.statusTint = "page";
         this.statusLine = t("home.status_guest");
       }
-      // FINDING: /api/portal/me does not return `credits` (api.md §2);
-      // screens.md's boot sequence (§0.2) expects it. Defaults to 0.
       var credits = me.data.credits || 0;
       this.creditsLine = credits > 0 ? t("home.credits", { n: credits }) : t("home.no_credits");
       this.loading = false;
@@ -648,7 +641,7 @@ function memberHousehold() {
     async load() {
       this.loading = true;
       this.error = false;
-      var res = await PortalApi.get("/api/portal/household");
+      var res = await PortalApi.get("/api/portal/me/household");
       if (!res.ok) { this.error = true; this.loading = false; return; }
       this.household = res.data;
       this.loading = false;

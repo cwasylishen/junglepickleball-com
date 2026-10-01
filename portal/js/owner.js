@@ -545,15 +545,16 @@
           this.saveError = classify(res);
         }
       },
-      endGrant(_grant) {
-        // FINDING: src/portal/owner.js (B2a2) ships only POST .../grant
-        // (always inserts a new row) -- there is no endpoint that ends an
-        // existing grant in place. Posting a second grant with today's
-        // end date would NOT end the original (still 'active' with its
-        // own ends_at); it would silently add a second, confusing row.
-        // Rather than build that deception, this button names the gap
-        // instead of acting on it until B2a2 adds an end/update route.
-        this.saveError = "end_grant_not_available";
+      async endGrant(grant) {
+        // portal(FR1): the end-grant route this file's own comment used
+        // to name as missing now exists (docs/portal/api.md §4).
+        this.saveError = null;
+        const res = await PortalApi.post("/api/portal/owner/accounts/" + this.id() + "/grants/" + grant.id + "/end", {});
+        if (res.ok) {
+          await this.load();
+        } else {
+          this.saveError = classify(res);
+        }
       },
       openKid() {
         this.saveError = null;
