@@ -16,3 +16,20 @@ scripts
 *.py
 *.md
 .wrangler
+
+# Portal additions (B1.13, A4/S-8, CTL-ASSET-01). The portal's own
+# public UI lives under portal/ and IS served -- only its non-public
+# siblings are listed here. The file-count probe
+# (tests/foundation/assets-private.test.mjs) checks this list stays
+# correct as new private paths are added.
+migrations
+tests
+docs
+tailwind.portal.config.js
+portal/src
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+*.pem
+*.key

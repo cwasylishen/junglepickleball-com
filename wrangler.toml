@@ -14,10 +14,14 @@ binding = "EVENTS"
 id = "0c6dbe2eca394cc8a4ddf98147dc0332"
 
 # wizardweb analytics network (same account) - read-only stats for the admin.
+# migrations_dir points at a directory that does not exist (SCV-04 guard,
+# amendment 5): `wrangler d1 migrations apply ANALYTICS` can then never
+# pick up a portal migration by accident.
 [[d1_databases]]
 binding = "ANALYTICS"
 database_name = "wizardweb"
 database_id = "69028e1f-c781-4501-b0a8-5404801366f4"
+migrations_dir = "migrations-analytics-none"
 
 # Club database: members, bookings, payments, settings.
 # Uncomment once the D1 database exists (create "junglepickleball-db" and set its id).
@@ -33,6 +37,18 @@ database_id = "69028e1f-c781-4501-b0a8-5404801366f4"
 [[services]]
 binding = "WARD_MAIL"
 service = "ward-mail"
+
+# Member + owner portal database (PIN-5). Separate from the legacy DB
+# binding above so ensureSchema()'s `members`/`bookings` tables never
+# collide with the portal's own tables of the same name.
+[[d1_databases]]
+binding = "PORTAL_DB"
+database_name = "junglepickleball-portal-preview"
+database_id = "ca34a6c4-47e9-4e0e-baa5-8dd816700ca3"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/15 * * * *"]
 
 # Required Worker secrets (Settings -> Variables and Secrets in the dashboard):
 #   ADMIN_USERNAME        - Roger's admin username (plaintext var is fine)

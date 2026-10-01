@@ -13,3 +13,15 @@
 
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
+
+# Portal (CTL-HDR-01). /api/portal/* responses are Worker-generated JSON
+# and already carry their own headers from src/portal/http.js; this
+# block covers the static /portal/* HTML and assets, which the assets
+# layer serves directly and _headers is the only way to set CSP on them.
+/portal/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+
+/api/portal/*
+  Cache-Control: no-store

@@ -5,9 +5,15 @@
   "description": "Static one-page site for Jungle Pickleball, Ojochal, Costa Rica.",
   "scripts": {
     "build": "tailwindcss -i ./src/input.css -o ./assets/styles.css --minify",
-    "watch": "tailwindcss -i ./src/input.css -o ./assets/styles.css --watch"
+    "watch": "tailwindcss -i ./src/input.css -o ./assets/styles.css --watch",
+    "build:portal": "tailwindcss -c ./tailwind.portal.config.js -i ./portal/src/input.css -o ./portal/portal.css --minify",
+    "test": "bash scripts/test.sh"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17"
+  },
+  "dependencies": {
+    "@block65/webcrypto-web-push": "2.0.0",
+    "@simplewebauthn/server": "14.0.3"
   }
 }
