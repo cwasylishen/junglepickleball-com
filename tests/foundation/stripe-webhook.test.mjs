@@ -24,7 +24,21 @@ function sign(secret, rawBody, timestamp) {
 async function postWebhook(rawBody, signatureHeader) {
   const headers = { "Content-Type": "application/json" };
   if (signatureHeader !== undefined) headers["Stripe-Signature"] = signatureHeader;
-  const res = await fetch(`${BASE_URL}/api/stripe/webhook`, { method: "POST", headers, body: rawBody });
+  // Same one-retry-on-transient-disconnect reasoning as helpers.mjs's
+  // makeClient(): `wrangler dev`'s hot-reload (triggered by ANY file
+  // change anywhere in the watched tree, not just this one) can drop a
+  // request already in flight. One retry rides that out without masking
+  // a real failure -- the retried request still gets the real response.
+  let res;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      res = await fetch(`${BASE_URL}/api/stripe/webhook`, { method: "POST", headers, body: rawBody });
+      break;
+    } catch (err) {
+      if (attempt === 1) throw err;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
   let data = null;
   try {
     data = await res.json();

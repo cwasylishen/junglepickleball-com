@@ -330,6 +330,18 @@ function emailHint(email) {
   return `${email[0]}***@${email.slice(at + 1)}`;
 }
 
+// A booking's owning account is the booking row's own `account_id` --
+// read-only, no Stripe customer/email heuristic needed or wanted, since
+// confirmPaidBooking has already confirmed this exact booking against
+// this exact session. Same `{accountId, isNewAccount, linkedByEmail}`
+// shape as resolveAccountForSession so handleCheckoutCompleted's
+// downstream code (the payments_mirror write, the linked-by-email
+// audit) does not need to branch on which path it came from.
+async function resolveAccountForBooking(db, bookingId) {
+  const booking = await db.prepare(`SELECT account_id FROM bookings WHERE id = ?`).bind(bookingId).first();
+  return booking ? { accountId: booking.account_id, isNewAccount: false, linkedByEmail: false } : { accountId: null, isNewAccount: false, linkedByEmail: false };
+}
+
 // Reads-only: decides which account a Checkout session belongs to
 // without writing anything, so the caller can fold the CREATE statement
 // (if any) into the SAME batch as the payment/grant effect it is for.
@@ -337,6 +349,8 @@ function emailHint(email) {
 // when that is absent does it fall back to `customer_details.email`
 // (A7/S-10, "linked by lower(email), flagged linked_by_email"). In
 // `preview`, the email fallback runs only for `@jp-demo.test` addresses.
+// Used only for membership/pack checkouts -- a booking checkout resolves
+// its account via resolveAccountForBooking above instead.
 async function resolveAccountForSession(session, env, db) {
   if (session.customer) {
     const byCustomer = await db.prepare(`SELECT id FROM accounts WHERE stripe_customer_id = ?`).bind(session.customer).first();
@@ -443,7 +457,17 @@ async function handleCheckoutCompleted(session, env, db) {
     await confirmPaidBooking(env, bookingId, { paymentIntentId: session.payment_intent, sessionId: session.id });
   }
 
-  const resolved = await resolveAccountForSession(session, env, db);
+  // A booking payment already has a definite owner -- the booking row
+  // itself -- so the account comes from there, never from Stripe
+  // customer/email matching, which a booking Checkout session may carry
+  // none of at all (WH-006/WH-007 caught this: resolveAccountForSession
+  // found no match on a booking-only fixture and the paid-and-confirmed
+  // booking's payment landed in the unlinked-purchase trail instead of
+  // payments_mirror).
+  const resolved =
+    kind === "booking" && bookingId
+      ? await resolveAccountForBooking(db, bookingId)
+      : await resolveAccountForSession(session, env, db);
 
   if (resolved.isNewAccount) {
     // M15: this INSERT must be committed (not merely queued into the
