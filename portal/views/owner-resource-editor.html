@@ -48,7 +48,7 @@
 
         <template x-if="(resource.offerings || []).length">
           <div class="mt-2">
-            <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Offerings</h2>
+            <h2 class="font-heading text-xs uppercase tracking-widest text-slate-500">Bookable lengths</h2>
             <template x-for="o in resource.offerings" :key="o.id">
               <div class="flex justify-between text-sm py-1">
                 <span x-text="o.name + ' · ' + o.duration_minutes + ' min'"></span>

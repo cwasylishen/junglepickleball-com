@@ -43,11 +43,11 @@ window.PortalApp.mergeStrings({
   "staff.top": "{n} bookings on {date}",
   "staff.free": "Free {start}–{end}",
   "staff.empty_day": "No bookings on {date}.",
-  "staff.no_resource": "You're not assigned to a calendar yet. Ask the owner to assign you.",
+  "staff.no_resource": "You're not assigned to a calendar yet. Ask Roger to assign you.",
   "staff.awaiting": "Awaiting payment",
   "slot.blocked": "Closed",
   "chip.held": "Held",
-  "chip.paid_conflict": "Paid, no slot",
+  "chip.paid_conflict": "Paid, time taken",
   "act.retry": "Try again",
 });
 
