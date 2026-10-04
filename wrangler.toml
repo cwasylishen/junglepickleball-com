@@ -48,3 +48,13 @@ service = "ward-mail"
 #                        an error) with a reason in the response until this is set.
 #   GLOW_LIST_KEY     - secret; a random string. Required to view /api/glow/list?key=...
 #                        (and the page at /glow/list?key=...). The route 503s until set.
+#   STRIPE_SECRET_KEY       - secret; Roger's own Stripe restricted/secret key. Until this
+#                              is set, paid signups (players, spectator meals) are stored
+#                              as 'pay_at_event' instead of going to Stripe Checkout —
+#                              /api/glow/signup never dead-ends.
+#   STRIPE_WEBHOOK_SECRET   - secret; the signing secret for the Checkout webhook endpoint
+#                              below. /api/stripe/webhook 503s until this is set.
+#
+# Stripe dashboard config (Roger's account) once payments go live:
+#   Webhook endpoint URL: https://junglepickleball.com/api/stripe/webhook
+#   Event to send: checkout.session.completed

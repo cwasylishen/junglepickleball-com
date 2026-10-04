@@ -45,11 +45,21 @@
                 <p><strong>Medals</strong> for 1st, 2nd &amp; 3rd.</p>
                 <p><strong>Format:</strong> Mixed teams, round robin, all classes. Fun play under the black light.</p>
                 <p><strong>Dates:</strong> October 28, 2026, with November 4 and November 11 added if signups run high.</p>
-                <p class="text-slate-500 pt-2 border-t border-slate-100">Price is paid at the event — this form does not take payment online.</p>
+                <p class="text-slate-500 pt-2 border-t border-slate-100">If online payment is open, this form takes you to a secure Stripe checkout after you sign up. Otherwise you'll pay at the event.</p>
             </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8" x-show="!result || result.error">
+        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8 text-center" x-show="paidQuery" x-cloak>
+            <h2 class="text-xl font-bold text-green-700 mb-2" style="font-family:'Oswald',sans-serif">Payment received!</h2>
+            <p class="text-slate-700">You're all set for the Glow in the Dark Fun Tournament. See you there!</p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8 text-center" x-show="cancelledQuery" x-cloak>
+            <h2 class="text-xl font-bold text-jungle mb-2" style="font-family:'Oswald',sans-serif">Checkout cancelled</h2>
+            <p class="text-slate-700">No charge was made. You can sign up again below whenever you're ready.</p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8" x-show="!paidQuery && !cancelledQuery && (!result || result.error)">
             <h2 class="text-xl font-bold text-jungle mb-4" style="font-family:'Oswald',sans-serif">Sign up</h2>
 
             <template x-if="result && result.error">
@@ -130,7 +140,7 @@
             </form>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8 text-center" x-show="result && result.ok" x-cloak>
+        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8 text-center" x-show="!paidQuery && !cancelledQuery && result && result.ok" x-cloak>
             <h2 class="text-xl font-bold text-green-700 mb-2" style="font-family:'Oswald',sans-serif">You're on the list!</h2>
             <p class="text-slate-700" x-text="result && result.message"></p>
         </div>
@@ -154,9 +164,12 @@
 
     <script>
       function glowSignup() {
+        const params = new URLSearchParams(location.search);
         return {
           submitting: false,
           result: null,
+          paidQuery: params.get("paid") === "1",
+          cancelledQuery: params.get("cancelled") === "1",
           form: { name: "", phone: "", email: "", member: "no", role: "", spectatorMeal: false, partnerName: "", people: 1, notes: "", website: "" },
           async submit() {
             if (!this.form.role) { this.result = { error: "Please choose player or spectator." }; return; }
@@ -170,6 +183,7 @@
               });
               const data = await res.json();
               if (!res.ok) { this.result = { error: data.error || "Something went wrong. Please try again." }; return; }
+              if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
               this.result = data;
             } catch (e) {
               this.result = { error: "Network error. Please check your connection and try again." };

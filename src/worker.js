@@ -170,7 +170,122 @@ function isPast(dateStr) {
 // KV data in this file, not two.
 
 const GLOW_SIGNUPS_KEY = "glow_signups";
-const GLOW_PRICE_NOTE = "$15 per person (member or nonmember), food included. Pay at the event — no online payment.";
+const GLOW_PRICE_NOTE = "$15 per player (member or nonmember, food included); spectator meal $10; spectator without a meal is free.";
+
+// ---------- Glow tournament payment (Stripe Checkout) ----------
+// Prices come from the owner's order (Clinton, 2026-10-03), not from a
+// Stripe product — there is nothing to look up by lookup_key here, so the
+// Checkout Session line item is built inline with price_data. Currency is
+// USD: every existing Stripe reference in this repo (membership-page
+// branch's scripts/stripe-setup.mjs and src/worker.js) uses "usd" and
+// Roger's posted pricing is in USD, so no other currency is in play.
+const GLOW_CURRENCY = "usd";
+const GLOW_PLAYER_PRICE_CENTS = 1500;
+const GLOW_SPECTATOR_MEAL_PRICE_CENTS = 1000;
+const STRIPE_API = "https://api.stripe.com/v1";
+
+// One pure function computes the amount for a signup; both the checkout
+// path and the free/pay-at-event paths call this same function so the
+// price is never computed two different ways.
+function computeGlowAmountCents(input) {
+  const people = Number.isInteger(+input.people) && +input.people > 0 ? +input.people : 1;
+  if (input.role === "player") return people * GLOW_PLAYER_PRICE_CENTS;
+  if (input.role === "spectator" && input.spectatorMeal) return people * GLOW_SPECTATOR_MEAL_PRICE_CENTS;
+  return 0;
+}
+
+// Same bracket-nested form encoding the membership-page branch's checkout
+// handler uses for every Stripe API call (Stripe's API takes
+// application/x-www-form-urlencoded, not JSON).
+function stripeForm(obj, prefix = "") {
+  const parts = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v == null) continue;
+    const key = prefix ? `${prefix}[${k}]` : k;
+    if (Array.isArray(v)) {
+      v.forEach((item, i) => {
+        const arrKey = `${key}[${i}]`;
+        if (item && typeof item === "object") parts.push(stripeForm(item, arrKey));
+        else parts.push(`${encodeURIComponent(arrKey)}=${encodeURIComponent(item)}`);
+      });
+    } else if (typeof v === "object") {
+      parts.push(stripeForm(v, key));
+    } else {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`);
+    }
+  }
+  return parts.filter(Boolean).join("&");
+}
+
+async function stripeRequest(env, method, path, body) {
+  const res = await fetch(`${STRIPE_API}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body ? stripeForm(body) : undefined,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data.error && data.error.message) || `Stripe error ${res.status}`);
+  return data;
+}
+
+async function createGlowCheckoutSession(env, url, signup) {
+  const name = signup.role === "player"
+    ? "Glow in the Dark Fun Tournament — Player (incl. catered food)"
+    : "Glow in the Dark Fun Tournament — Spectator meal";
+  return stripeRequest(env, "POST", "/checkout/sessions", {
+    mode: "payment",
+    line_items: [{
+      quantity: signup.people,
+      price_data: {
+        currency: GLOW_CURRENCY,
+        unit_amount: signup.role === "player" ? GLOW_PLAYER_PRICE_CENTS : GLOW_SPECTATOR_MEAL_PRICE_CENTS,
+        product_data: { name },
+      },
+    }],
+    metadata: { signup_id: signup.id },
+    success_url: `${url.origin}/glow?paid=1&id=${encodeURIComponent(signup.id)}`,
+    cancel_url: `${url.origin}/glow?cancelled=1`,
+  });
+}
+
+// Stripe's documented webhook signing scheme: header is
+// "t=<timestamp>,v1=<hex hmac>[,v1=<hex hmac>...]"; the signed payload is
+// "<timestamp>.<raw body>", HMAC-SHA256 with the endpoint secret. Rejects
+// anything that doesn't match rather than trusting an unsigned or
+// mis-signed body — this is the only door that can mark a signup paid.
+async function verifyStripeSignature(rawBody, header, secret) {
+  if (!header) return false;
+  const parts = Object.fromEntries(
+    header.split(",").map((kv) => kv.split("=")).filter((kv) => kv.length === 2)
+  );
+  const timestamp = parts.t;
+  const candidates = header.split(",").filter((kv) => kv.startsWith("v1=")).map((kv) => kv.slice(3));
+  if (!timestamp || candidates.length === 0) return false;
+  const key = await hmacKey(secret, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${rawBody}`));
+  const expected = toHex(sig);
+  return candidates.some((c) => timingSafeEqual(c, expected));
+}
+
+// The one place a signup's payment status is ever changed after creation.
+// Read-modify-write over the same list key as createGlowSignup, so there
+// is exactly one write path for this record, not a second one living next
+// to the webhook. Repeatable: marking an already-paid signup paid again
+// with the same session id leaves the list unchanged (the run-it-twice
+// case the webhook itself can trigger if Stripe retries delivery).
+async function markGlowSignupPaid(env, signupId, amountCents, stripeSessionId) {
+  const list = await getGlowSignups(env);
+  const idx = list.findIndex((s) => s.id === signupId);
+  if (idx === -1) return false;
+  const current = list[idx];
+  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) return true;
+  list[idx] = { ...current, status: "paid", amountCents, currency: GLOW_CURRENCY, stripeSessionId };
+  await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
+  return true;
+}
 
 async function getGlowSignups(env) {
   const raw = await env.EVENTS.get(GLOW_SIGNUPS_KEY);
@@ -196,22 +311,47 @@ function validGlowInput(b) {
 // sheet, same risk the events-admin list already carries today.
 async function createGlowSignup(env, input) {
   const list = await getGlowSignups(env);
+  const people = Number.isInteger(+input.people) && +input.people > 0 ? +input.people : 1;
+  const role = input.role;
+  const spectatorMeal = role === "spectator" ? Boolean(input.spectatorMeal) : false;
+  const amountCents = computeGlowAmountCents({ role, spectatorMeal, people });
+  // Status at creation reflects only what's known before any Stripe call:
+  // nothing owed, or owed-but-unconfigured, or owed-and-about-to-checkout.
+  // handleGlowSignup is the only caller and decides which; the webhook
+  // (markGlowSignupPaid) is the only place status ever becomes 'paid'.
+  const status = amountCents === 0 ? "free" : (env.STRIPE_SECRET_KEY ? "pending_payment" : "pay_at_event");
   const signup = {
     id: newId(),
     name: String(input.name).trim().slice(0, 200),
     phone: String(input.phone).trim().slice(0, 60),
     email: String(input.email ?? "").trim().slice(0, 200),
     member: Boolean(input.member),
-    role: input.role,
-    spectatorMeal: input.role === "spectator" ? Boolean(input.spectatorMeal) : false,
+    role,
+    spectatorMeal,
     partnerName: String(input.partnerName ?? "").trim().slice(0, 200),
-    people: Number.isInteger(+input.people) && +input.people > 0 ? +input.people : 1,
+    people,
     notes: String(input.notes ?? "").trim().slice(0, 1000),
+    amountCents,
+    currency: GLOW_CURRENCY,
+    status,
+    stripeSessionId: null,
     createdAt: nowIso(),
   };
   list.push(signup);
   await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
   return signup;
+}
+
+// The one place a signup's Stripe Checkout Session id is recorded right
+// after creation (needed so the success/cancel redirect and the webhook
+// can both find the row by session id if metadata is ever missing it).
+async function setGlowSignupStripeSession(env, signupId, stripeSessionId) {
+  const list = await getGlowSignups(env);
+  const idx = list.findIndex((s) => s.id === signupId);
+  if (idx === -1) return false;
+  list[idx] = { ...list[idx], stripeSessionId };
+  await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
+  return true;
 }
 
 async function notifyGlowSignup(env, signup) {
@@ -238,6 +378,8 @@ async function notifyGlowSignup(env, signup) {
           `Partner: ${signup.partnerName || "(none)"}`,
           `People: ${signup.people}`,
           `Notes: ${signup.notes || "(none)"}`,
+          `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
+          `Payment status: ${signup.status}`,
           ``,
           GLOW_PRICE_NOTE,
         ].filter(Boolean).join("\n"),
@@ -273,13 +415,29 @@ async function handleGlowSignup(request, env) {
   if (err) return json({ error: err }, 400);
 
   const signup = await createGlowSignup(env, body);
+
+  if (signup.status === "pending_payment") {
+    try {
+      const url = new URL(request.url);
+      const session = await createGlowCheckoutSession(env, url, signup);
+      await setGlowSignupStripeSession(env, signup.id, session.id);
+      const mail = await notifyGlowSignup(env, { ...signup, stripeSessionId: session.id });
+      return json({ ok: true, signup, checkoutUrl: session.url, mail }, 201);
+    } catch (checkoutErr) {
+      // The signup row already exists (status pending_payment) so Clinton
+      // can still see and follow up on it; the visitor gets a clear error
+      // instead of a dead end, not a silent downgrade to pay-at-event.
+      return json({
+        error: `Could not start payment: ${String((checkoutErr && checkoutErr.message) || checkoutErr).slice(0, 200)}. Message Roger on WhatsApp and he'll get you sorted at the event.`,
+      }, 502);
+    }
+  }
+
   const mail = await notifyGlowSignup(env, signup);
-  return json({
-    ok: true,
-    signup,
-    message: `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament. ${GLOW_PRICE_NOTE}`,
-    mail,
-  }, 201);
+  const message = signup.status === "free"
+    ? `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament.`
+    : `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament. Pay at the event — $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}.`;
+  return json({ ok: true, signup, message, mail }, 201);
 }
 
 // The one place a signup is ever removed (test rows, spam, a cancellation
@@ -311,6 +469,9 @@ async function handleGlowList(request, env, url) {
   const players = list.filter((s) => s.role === "player");
   const spectators = list.filter((s) => s.role === "spectator");
   const meals = spectators.filter((s) => s.spectatorMeal).length;
+  const paid = list.filter((s) => s.status === "paid");
+  const pending = list.filter((s) => s.status === "pending_payment");
+  const payAtEvent = list.filter((s) => s.status === "pay_at_event");
   return json({
     counts: {
       players: players.length,
@@ -318,9 +479,41 @@ async function handleGlowList(request, env, url) {
       spectatorMeals: meals,
       totalPeople: list.reduce((sum, s) => sum + (s.people || 1), 0),
       rows: list.length,
+      paid: paid.length,
+      paidCents: paid.reduce((sum, s) => sum + (s.amountCents || 0), 0),
+      pendingPayment: pending.length,
+      payAtEvent: payAtEvent.length,
     },
     signups: list.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
   });
+}
+
+// ---------- Glow tournament Stripe webhook ----------
+//
+// Stripe signs the raw request body, so this reads request.text() (never
+// request.json()) and verifies before parsing. checkout.session.completed
+// is the only event type this handler acts on; every other event type is
+// acknowledged 200 so Stripe doesn't retry it forever, but changes nothing.
+async function handleGlowStripeWebhook(request, env) {
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    return json({ error: "Webhook not configured. Set STRIPE_WEBHOOK_SECRET on the Worker." }, 503);
+  }
+  const rawBody = await request.text();
+  const sigHeader = request.headers.get("Stripe-Signature");
+  const valid = await verifyStripeSignature(rawBody, sigHeader, env.STRIPE_WEBHOOK_SECRET);
+  if (!valid) return json({ error: "Invalid signature." }, 400);
+
+  let event;
+  try { event = JSON.parse(rawBody); } catch { return json({ error: "Invalid payload." }, 400); }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data && event.data.object;
+    const signupId = session && session.metadata && session.metadata.signup_id;
+    if (!signupId) return json({ error: "Missing signup_id metadata on session." }, 400);
+    const ok = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
+    if (!ok) return json({ error: `No signup found for id ${signupId}.` }, 404);
+  }
+  return json({ received: true });
 }
 
 // ---------- D1 schema (self-provisioning) ----------
@@ -670,7 +863,10 @@ const REDIRECTS = { "/index.php": "/", "/home": "/", "/wp-login.php": "/", "/wp-
 
 // Exported for tests/foundation/glow-signup.test.mjs (pure-logic probes;
 // CTL-ENT-01/02 style — no network, no wrangler dev needed for these).
-export { validGlowInput, createGlowSignup, getGlowSignups, deleteGlowSignup, handleGlowSignup, handleGlowList };
+export {
+  validGlowInput, createGlowSignup, getGlowSignups, deleteGlowSignup, handleGlowSignup, handleGlowList,
+  computeGlowAmountCents, verifyStripeSignature, markGlowSignupPaid, handleGlowStripeWebhook,
+};
 
 export default {
   async fetch(request, env) {
@@ -685,6 +881,7 @@ export default {
         if (p === "/api/glow/list" && (request.method === "GET" || request.method === "DELETE")) {
           return handleGlowList(request, env, url);
         }
+        if (p === "/api/stripe/webhook" && request.method === "POST") return handleGlowStripeWebhook(request, env);
         if (p === "/api/config" && request.method === "GET") {
           return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
         }

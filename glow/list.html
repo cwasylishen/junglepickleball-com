@@ -18,12 +18,17 @@
 
         <template x-if="data">
             <div>
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
                     <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.players"></div><div class="text-xs uppercase text-slate-500">Players</div></div>
                     <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.spectators"></div><div class="text-xs uppercase text-slate-500">Spectators</div></div>
                     <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.spectatorMeals"></div><div class="text-xs uppercase text-slate-500">Spectator meals</div></div>
                     <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.totalPeople"></div><div class="text-xs uppercase text-slate-500">Total people</div></div>
                     <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.rows"></div><div class="text-xs uppercase text-slate-500">Signup rows</div></div>
+                </div>
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-green-700" x-text="'$' + (data.counts.paidCents / 100).toFixed(2)"></div><div class="text-xs uppercase text-slate-500" x-text="'Paid online (' + data.counts.paid + ')'"></div></div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-yellow-600" x-text="data.counts.pendingPayment"></div><div class="text-xs uppercase text-slate-500">Pending payment</div></div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-slate-600" x-text="data.counts.payAtEvent"></div><div class="text-xs uppercase text-slate-500">Pay at event</div></div>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
@@ -32,7 +37,8 @@
                             <tr>
                                 <th class="px-3 py-2">Name</th><th class="px-3 py-2">Phone</th><th class="px-3 py-2">Email</th>
                                 <th class="px-3 py-2">Member</th><th class="px-3 py-2">Role</th><th class="px-3 py-2">Meal</th>
-                                <th class="px-3 py-2">Partner</th><th class="px-3 py-2">People</th><th class="px-3 py-2">Notes</th>
+                                <th class="px-3 py-2">Partner</th><th class="px-3 py-2">People</th><th class="px-3 py-2">Amount</th>
+                                <th class="px-3 py-2">Status</th><th class="px-3 py-2">Notes</th>
                                 <th class="px-3 py-2">Signed up</th><th class="px-3 py-2"></th>
                             </tr>
                         </thead>
@@ -47,6 +53,8 @@
                                     <td class="px-3 py-2" x-text="s.role === 'spectator' ? (s.spectatorMeal ? 'Yes' : 'No') : '—'"></td>
                                     <td class="px-3 py-2" x-text="s.partnerName || '—'"></td>
                                     <td class="px-3 py-2" x-text="s.people"></td>
+                                    <td class="px-3 py-2" x-text="'$' + ((s.amountCents || 0) / 100).toFixed(2)"></td>
+                                    <td class="px-3 py-2" x-text="s.status || '—'"></td>
                                     <td class="px-3 py-2" x-text="s.notes || '—'"></td>
                                     <td class="px-3 py-2" x-text="new Date(s.createdAt).toLocaleString()"></td>
                                     <td class="px-3 py-2"><button @click="remove(s.id)" class="text-red-600 hover:underline text-xs">Delete</button></td>
