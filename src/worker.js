@@ -152,7 +152,7 @@ const DEFAULT_EVENTS = [
   { id: "alternating-opens", title: "Alternating Opens", when: "Mon & Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 40, status: "active" },
   { id: "marlapalooza-2026", title: "Marlapalooza 2026", when: "Tuesday, July 28, 2026", date: "2026-07-28", time: "11:00 AM to 3:00 PM", description: "Pickleball, cornhole, great friends, and lots of fun. Bring your favorite appetizer to share and your own drinks. Hotdogs and beverages available for purchase. Please no gifts. Instead consider donating to Shauna's animal rescue efforts. Puppies will be on site to snuggle with, looking for their forever family. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20Marlapalooza%202026", order: 6, status: "active", images: ["assets/events/marlapalooza-2026.jpg"] },
   { id: "bring-a-friend-opens", title: "Bring a Friend to Opens", when: "Now through November 22", time: "Any Open Play session", description: "New friends, and anyone who hasn't played here in the last 6 months, play free, twice, at any Open. Bring them along and the drinks are on us: members who bring a friend get a free drink of their choice, or a float.", category: "special", featured: true, ctaLabel: "BRING A FRIEND", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20bring%20a%20friend%20to%20Jungle%20Pickleball%20Opens", order: 8, status: "active", badge: "Promo" },
-  { id: "glow-open-tournament", title: "Glow in the Dark Fun Tournament", when: "Wednesday, October 28, 2026", date: "2026-10-28", time: "Opens 5:00 PM for food and practice. Games start about 6:00 PM.", description: "Mixed teams, round robin, all classes welcome. This one is just for fun, played under the black light. $10 per person (member or nonmember), price includes catered food. Wear a white top to glow and stand out! Spectators are free; if a spectator wants the meal, it's $10. Beautiful medals for 1st, 2nd & 3rd. If signups run high we'll add dates November 4 and November 11. Sign up online at junglepickleball.com.", category: "special", featured: true, ctaLabel: "SIGN UP", ctaUrl: "/glow", order: 1, status: "active", images: ["assets/events/glow-tournament-2026-v2.jpg"] },
+  { id: "glow-open-tournament", title: "Glow in the Dark Fun Tournament", when: "Wednesday, October 28, 2026", date: "2026-10-28", time: "Food and practice at 5:00 PM. Game starts at 6:00 PM.", description: "Mixed teams, round robin, all classes welcome. This one is just for fun, played under the black light. $20 per person (member or nonmember), price includes catered food. Players need a white t-shirt. Spectators are free; if a spectator wants the meal, it's $10. Beautiful medals for 1st, 2nd & 3rd. Dates: Wednesday, October 28 and November 4, plus November 11 if needed, depending on signups. Food and practice at 5:00 PM, game starts at 6:00 PM. Sign up online at junglepickleball.com.", category: "special", featured: true, ctaLabel: "SIGN UP", ctaUrl: "/glow", order: 1, status: "active", images: ["assets/events/glow-tournament-2026-v3.jpg"] },
 ];
 
 function isPast(dateStr) {
@@ -170,7 +170,7 @@ function isPast(dateStr) {
 // KV data in this file, not two.
 
 const GLOW_SIGNUPS_KEY = "glow_signups";
-const GLOW_PRICE_NOTE = "$10 per player (member or nonmember, food included); spectator meal $10; spectator without a meal is free.";
+const GLOW_PRICE_NOTE = "$20 per player (member or nonmember, food included); spectator meal $10; spectator without a meal is free.";
 
 // ---------- Glow tournament payment (Stripe Checkout) ----------
 // Prices come from the owner's order (Clinton, 2026-10-03), not from a
@@ -180,7 +180,7 @@ const GLOW_PRICE_NOTE = "$10 per player (member or nonmember, food included); sp
 // branch's scripts/stripe-setup.mjs and src/worker.js) uses "usd" and
 // Roger's posted pricing is in USD, so no other currency is in play.
 const GLOW_CURRENCY = "usd";
-const GLOW_PLAYER_PRICE_CENTS = 1000;
+const GLOW_PLAYER_PRICE_CENTS = 2000;
 const GLOW_SPECTATOR_MEAL_PRICE_CENTS = 1000;
 // Team pricing (owner's 2026-10-04 flyer): team size is not yet confirmed by
 // Clinton, so this constant exists for the form and amount calc to switch to

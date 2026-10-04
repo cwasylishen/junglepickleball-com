@@ -142,8 +142,8 @@ test("handleGlowList 503s when GLOW_LIST_KEY is not configured yet", async () =>
 // ---------- Payment: amount calculation ----------
 
 test("computeGlowAmountCents: $10 per player, $10 per spectator meal, free spectator", () => {
-  assert.equal(computeGlowAmountCents({ role: "player", people: 1 }), 1000);
-  assert.equal(computeGlowAmountCents({ role: "player", people: 3 }), 3000);
+  assert.equal(computeGlowAmountCents({ role: "player", people: 1 }), 2000);
+  assert.equal(computeGlowAmountCents({ role: "player", people: 3 }), 6000);
   assert.equal(computeGlowAmountCents({ role: "spectator", spectatorMeal: true, people: 1 }), 1000);
   assert.equal(computeGlowAmountCents({ role: "spectator", spectatorMeal: true, people: 2 }), 2000);
   assert.equal(computeGlowAmountCents({ role: "spectator", spectatorMeal: false, people: 1 }), 0);
@@ -155,7 +155,7 @@ test("createGlowSignup: owed amount with no STRIPE_SECRET_KEY stores pay_at_even
   const env = { EVENTS: makeKv() };
   const s = await createGlowSignup(env, { name: "A", phone: "1", role: "player", people: 1 });
   assert.equal(s.status, "pay_at_event");
-  assert.equal(s.amountCents, 1000);
+  assert.equal(s.amountCents, 2000);
 });
 
 test("createGlowSignup: owed amount with STRIPE_SECRET_KEY set stores pending_payment", async () => {
@@ -211,7 +211,7 @@ test("handleGlowStripeWebhook rejects a bad signature and never marks anything p
   const signup = await createGlowSignup(env, { name: "A", phone: "1", role: "player", people: 1 });
   const payload = JSON.stringify({
     type: "checkout.session.completed",
-    data: { object: { id: "cs_test_1", amount_total: 1000, metadata: { signup_id: signup.id } } },
+    data: { object: { id: "cs_test_1", amount_total: 2000, metadata: { signup_id: signup.id } } },
   });
   const req = new Request("https://x/api/stripe/webhook", {
     method: "POST",
@@ -231,7 +231,7 @@ test("handleGlowStripeWebhook accepts a correctly signed checkout.session.comple
 
   const payload = JSON.stringify({
     type: "checkout.session.completed",
-    data: { object: { id: "cs_test_1", amount_total: 1000, metadata: { signup_id: signup.id } } },
+    data: { object: { id: "cs_test_1", amount_total: 2000, metadata: { signup_id: signup.id } } },
   });
   const { header } = signStripePayload(WEBHOOK_SECRET, payload);
   const req = () => new Request("https://x/api/stripe/webhook", {
@@ -244,7 +244,7 @@ test("handleGlowStripeWebhook accepts a correctly signed checkout.session.comple
   assert.equal(res1.status, 200);
   let list = await getGlowSignups(env);
   assert.equal(list.find((s) => s.id === signup.id).status, "paid");
-  assert.equal(list.find((s) => s.id === signup.id).amountCents, 1000);
+  assert.equal(list.find((s) => s.id === signup.id).amountCents, 2000);
 
   // Run-it-twice: a Stripe retry delivery of the same event changes nothing.
   const res2 = await handleGlowStripeWebhook(req(), env);
@@ -298,7 +298,7 @@ test("handleGlowSignup: Stripe configured creates a Checkout Session and returns
 test("handleGlowList totals paid count/$, pending payment and pay-at-event counts", async () => {
   const env = { EVENTS: makeKv(), GLOW_LIST_KEY: "sekret", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET };
   const paidSignup = await createGlowSignup(env, { name: "Paid", phone: "1", role: "player", people: 1 });
-  await markGlowSignupPaid(env, paidSignup.id, 1000, "cs_test_paid");
+  await markGlowSignupPaid(env, paidSignup.id, 2000, "cs_test_paid");
   await createGlowSignup(env, { name: "AtEvent", phone: "2", role: "player", people: 1 }); // no STRIPE_SECRET_KEY -> pay_at_event
   await createGlowSignup(env, { ...{ name: "Free", phone: "3", role: "spectator", spectatorMeal: false, people: 1 } });
 
@@ -306,7 +306,7 @@ test("handleGlowList totals paid count/$, pending payment and pay-at-event count
   const res = await handleGlowList(new Request(url), env, url);
   const body = await res.json();
   assert.equal(body.counts.paid, 1);
-  assert.equal(body.counts.paidCents, 1000);
+  assert.equal(body.counts.paidCents, 2000);
   assert.equal(body.counts.payAtEvent, 1);
   assert.equal(body.counts.pendingPayment, 0);
 });
