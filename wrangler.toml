@@ -27,9 +27,24 @@ database_id = "69028e1f-c781-4501-b0a8-5404801366f4"
 # database_name = "junglepickleball-db"
 # database_id = "PENDING"
 
+# Glow in the Dark tournament signup notification mail, sent through the
+# account's existing ward-mail worker (same pattern as sitegetsbetter.com).
+# No new vendor: this calls a Worker already live on this account.
+[[services]]
+binding = "WARD_MAIL"
+service = "ward-mail"
+
 # Required Worker secrets (Settings -> Variables and Secrets in the dashboard):
 #   ADMIN_USERNAME        - Roger's admin username (plaintext var is fine)
 #   ADMIN_PASSWORD        - secret
 #   SESSION_SECRET        - long random string, secret
 #   TURNSTILE_SITE_KEY    - optional until the Turnstile widget exists
 #   TURNSTILE_SECRET_KEY  - optional; login enforces Turnstile only when set
+#
+# Glow in the Dark tournament signup (2026-10-03):
+#   WARD_SEND_SECRET  - secret; same value as .secrets/ward-mail.env's WARD_SEND_SECRET,
+#                        sent as the x-ward-secret header to the WARD_MAIL service binding.
+#                        Signup notification mail to cwasylishen@gmail.com is skipped (not
+#                        an error) with a reason in the response until this is set.
+#   GLOW_LIST_KEY     - secret; a random string. Required to view /api/glow/list?key=...
+#                        (and the page at /glow/list?key=...). The route 503s until set.

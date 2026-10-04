@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glow in the Dark Fun Tournament | Jungle Pickleball, Ojochal, Costa Rica</title>
+    <meta name="description" content="Sign up for the Glow in the Dark Fun Tournament at Jungle Pickleball, Ojochal, Costa Rica. Wednesday October 28, 2026. $15 per person, catered food included.">
+    <link rel="canonical" href="https://junglepickleball.com/glow" />
+    <meta name="theme-color" content="#0f393b" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Glow in the Dark Fun Tournament — Jungle Pickleball" />
+    <meta property="og:description" content="Wednesday October 28, 2026. Mixed teams, round robin, all classes. $15/person, catered food included. Sign up online.">
+    <meta property="og:image" content="https://junglepickleball.com/assets/events/glow-tournament-2026.jpg" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-jungle text-white">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <a href="/" class="text-2xl md:text-3xl font-bold uppercase tracking-tighter" style="font-family:'Oswald',sans-serif" aria-label="Jungle Pickleball home">
+                Jungle<span class="text-yellow-400">Pickleball</span>
+            </a>
+            <a href="/" class="text-white/80 hover:text-yellow-400 text-sm font-bold">&larr; Back to site</a>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-4xl w-full mx-auto px-4 py-10" x-data="glowSignup()">
+        <div class="text-center mb-8">
+            <span class="text-green-700 font-bold tracking-widest uppercase text-sm">Fun Tournament</span>
+            <h1 class="text-3xl md:text-4xl font-bold text-jungle mt-2" style="font-family:'Oswald',sans-serif">Glow in the Dark Fun Tournament</h1>
+            <p class="text-slate-500 mt-2 max-w-xl mx-auto">Wednesday, October 28, 2026 &middot; Opens 5:00 PM for food and practice &middot; Games start about 6:00 PM</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-6 mb-10">
+            <img src="/assets/events/glow-tournament-2026.webp" alt="Glow in the Dark Fun Tournament flyer: Wednesday October 28, 2026, mixed teams round robin under the black light, $15 per person with catered food included"
+                 class="w-full rounded-2xl shadow-sm object-cover" loading="eager" decoding="async">
+            <div class="bg-white rounded-2xl shadow-sm p-5 text-sm space-y-2">
+                <p><strong>$15 per person</strong>, member or nonmember — includes catered food.</p>
+                <p><strong>Spectators:</strong> no charge. If a spectator wants the meal, it's $10.</p>
+                <p><strong>Medals</strong> for 1st, 2nd &amp; 3rd.</p>
+                <p><strong>Format:</strong> Mixed teams, round robin, all classes. Fun play under the black light.</p>
+                <p><strong>Dates:</strong> October 28, 2026, with November 4 and November 11 added if signups run high.</p>
+                <p class="text-slate-500 pt-2 border-t border-slate-100">Price is paid at the event — this form does not take payment online.</p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8" x-show="!result || result.error">
+            <h2 class="text-xl font-bold text-jungle mb-4" style="font-family:'Oswald',sans-serif">Sign up</h2>
+
+            <template x-if="result && result.error">
+                <p class="bg-red-50 text-red-700 border border-red-200 rounded px-4 py-3 mb-4 text-sm" x-text="result.error"></p>
+            </template>
+
+            <form @submit.prevent="submit()" class="space-y-4">
+                <div class="grid md:grid-cols-2 gap-4">
+                    <label class="block">
+                        <span class="text-sm font-bold text-slate-700">Name *</span>
+                        <input type="text" x-model="form.name" required maxlength="200"
+                               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-bold text-slate-700">Phone / WhatsApp *</span>
+                        <input type="tel" x-model="form.phone" required maxlength="60"
+                               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+                    </label>
+                </div>
+
+                <label class="block">
+                    <span class="text-sm font-bold text-slate-700">Email (optional)</span>
+                    <input type="email" x-model="form.email" maxlength="200"
+                           class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+                </label>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <fieldset>
+                        <legend class="text-sm font-bold text-slate-700">Are you a member?</legend>
+                        <div class="flex gap-4 mt-1">
+                            <label class="flex items-center gap-2"><input type="radio" x-model="form.member" value="yes"> Yes</label>
+                            <label class="flex items-center gap-2"><input type="radio" x-model="form.member" value="no" checked> No</label>
+                        </div>
+                    </fieldset>
+                    <fieldset>
+                        <legend class="text-sm font-bold text-slate-700">I'm signing up as a *</legend>
+                        <div class="flex gap-4 mt-1">
+                            <label class="flex items-center gap-2"><input type="radio" x-model="form.role" value="player" required> Player</label>
+                            <label class="flex items-center gap-2"><input type="radio" x-model="form.role" value="spectator"> Spectator</label>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <label class="flex items-center gap-2" x-show="form.role === 'spectator'" x-cloak>
+                    <input type="checkbox" x-model="form.spectatorMeal">
+                    <span class="text-sm">I'd like the catered meal too ($10)</span>
+                </label>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                    <label class="block">
+                        <span class="text-sm font-bold text-slate-700">Partner name (optional)</span>
+                        <input type="text" x-model="form.partnerName" maxlength="200"
+                               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+                    </label>
+                    <label class="block">
+                        <span class="text-sm font-bold text-slate-700">Number of people</span>
+                        <input type="number" x-model.number="form.people" min="1" max="20"
+                               class="mt-1 w-full border border-slate-300 rounded px-3 py-2">
+                    </label>
+                </div>
+
+                <label class="block">
+                    <span class="text-sm font-bold text-slate-700">Notes (optional)</span>
+                    <textarea x-model="form.notes" maxlength="1000" rows="3"
+                              class="mt-1 w-full border border-slate-300 rounded px-3 py-2"></textarea>
+                </label>
+
+                <!-- Honeypot: hidden from real visitors with CSS, never shown; left empty by a human. -->
+                <div style="position:absolute; left:-9999px;" aria-hidden="true">
+                    <label>Website<input type="text" x-model="form.website" name="website" tabindex="-1" autocomplete="off"></label>
+                </div>
+
+                <button type="submit" :disabled="submitting"
+                        class="w-full bg-yellow-500 text-black font-bold text-lg px-6 py-3 rounded hover:bg-yellow-400 transition disabled:opacity-50">
+                    <span x-show="!submitting">Sign up</span>
+                    <span x-show="submitting" x-cloak>Submitting&hellip;</span>
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm p-5 md:p-8 text-center" x-show="result && result.ok" x-cloak>
+            <h2 class="text-xl font-bold text-green-700 mb-2" style="font-family:'Oswald',sans-serif">You're on the list!</h2>
+            <p class="text-slate-700" x-text="result && result.message"></p>
+        </div>
+
+        <p class="text-center text-slate-400 text-xs mt-6">
+            Trouble signing up? Message Roger on
+            <a href="https://wa.me/50689893111" class="text-jungle font-bold hover:underline">WhatsApp +506 8989 3111</a>.
+        </p>
+    </main>
+
+    <footer class="bg-[#0c3637] text-gray-400 text-xs uppercase tracking-widest py-6">
+        <div class="max-w-5xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <p>&copy; 2026 Jungle Pickleball.</p>
+            <p class="text-yellow-400 font-bold normal-case tracking-normal">Smoke-free facility — no smoking or vaping anywhere on the property.</p>
+            <div class="flex items-center gap-2">
+                <span class="text-[10px] opacity-50">Built and hosted by</span>
+                <a href="https://wizardweb.ca" target="_blank" rel="noopener" class="text-white font-bold border border-white/20 px-3 py-1 rounded hover:bg-white hover:text-black transition">wizardweb.ca</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+      function glowSignup() {
+        return {
+          submitting: false,
+          result: null,
+          form: { name: "", phone: "", email: "", member: "no", role: "", spectatorMeal: false, partnerName: "", people: 1, notes: "", website: "" },
+          async submit() {
+            if (!this.form.role) { this.result = { error: "Please choose player or spectator." }; return; }
+            this.submitting = true;
+            this.result = null;
+            try {
+              const res = await fetch("/api/glow/signup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...this.form, member: this.form.member === "yes" }),
+              });
+              const data = await res.json();
+              if (!res.ok) { this.result = { error: data.error || "Something went wrong. Please try again." }; return; }
+              this.result = data;
+            } catch (e) {
+              this.result = { error: "Network error. Please check your connection and try again." };
+            } finally {
+              this.submitting = false;
+            }
+          },
+        };
+      }
+    </script>
+<script>(function(){var S="junglepickleball";function vid(){try{var k="wzv",x=localStorage.getItem(k);if(!x){x=Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(k,x)}return x}catch(e){return""}}
+function send(t){try{var r=document.referrer;try{if(r&&new URL(r).hostname===location.hostname)r=""}catch(e){}navigator.sendBeacon("https://app.wizardweb.ca/api/ingest",JSON.stringify({site_id:S,type:t,path:location.pathname,referrer:r,visitor:vid()}))}catch(e){}}
+send("pageview");document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"],a[href*="api.whatsapp.com"],a[href*="whatsapp.com/send"]');if(a)send("whatsapp");},true);})();</script>
+</body>
+</html>

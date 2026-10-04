@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glow Tournament Signups</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+    <main class="max-w-5xl mx-auto px-4 py-10" x-data="glowList()" x-init="load()">
+        <h1 class="text-2xl font-bold text-jungle mb-4" style="font-family:'Oswald',sans-serif">Glow Tournament Signups</h1>
+
+        <template x-if="error">
+            <p class="bg-red-50 text-red-700 border border-red-200 rounded px-4 py-3 mb-4" x-text="error"></p>
+        </template>
+
+        <template x-if="data">
+            <div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.players"></div><div class="text-xs uppercase text-slate-500">Players</div></div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.spectators"></div><div class="text-xs uppercase text-slate-500">Spectators</div></div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.spectatorMeals"></div><div class="text-xs uppercase text-slate-500">Spectator meals</div></div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.totalPeople"></div><div class="text-xs uppercase text-slate-500">Total people</div></div>
+                    <div class="bg-white rounded-xl shadow-sm p-4 text-center"><div class="text-2xl font-bold text-jungle" x-text="data.counts.rows"></div><div class="text-xs uppercase text-slate-500">Signup rows</div></div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                            <tr>
+                                <th class="px-3 py-2">Name</th><th class="px-3 py-2">Phone</th><th class="px-3 py-2">Email</th>
+                                <th class="px-3 py-2">Member</th><th class="px-3 py-2">Role</th><th class="px-3 py-2">Meal</th>
+                                <th class="px-3 py-2">Partner</th><th class="px-3 py-2">People</th><th class="px-3 py-2">Notes</th>
+                                <th class="px-3 py-2">Signed up</th><th class="px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="s in data.signups" :key="s.id">
+                                <tr class="border-t border-slate-100">
+                                    <td class="px-3 py-2" x-text="s.name"></td>
+                                    <td class="px-3 py-2" x-text="s.phone"></td>
+                                    <td class="px-3 py-2" x-text="s.email || '—'"></td>
+                                    <td class="px-3 py-2" x-text="s.member ? 'Yes' : 'No'"></td>
+                                    <td class="px-3 py-2" x-text="s.role"></td>
+                                    <td class="px-3 py-2" x-text="s.role === 'spectator' ? (s.spectatorMeal ? 'Yes' : 'No') : '—'"></td>
+                                    <td class="px-3 py-2" x-text="s.partnerName || '—'"></td>
+                                    <td class="px-3 py-2" x-text="s.people"></td>
+                                    <td class="px-3 py-2" x-text="s.notes || '—'"></td>
+                                    <td class="px-3 py-2" x-text="new Date(s.createdAt).toLocaleString()"></td>
+                                    <td class="px-3 py-2"><button @click="remove(s.id)" class="text-red-600 hover:underline text-xs">Delete</button></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </template>
+    </main>
+
+    <script>
+      function glowList() {
+        return {
+          data: null,
+          error: "",
+          key() { return new URLSearchParams(location.search).get("key") || ""; },
+          async load() {
+            this.error = "";
+            try {
+              const res = await fetch(`/api/glow/list?key=${encodeURIComponent(this.key())}`);
+              const body = await res.json();
+              if (!res.ok) { this.error = body.error || `Error ${res.status}`; return; }
+              this.data = body;
+            } catch (e) { this.error = "Network error."; }
+          },
+          async remove(id) {
+            if (!confirm("Delete this signup?")) return;
+            const res = await fetch(`/api/glow/list?key=${encodeURIComponent(this.key())}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+            if (res.ok) this.load();
+            else alert("Could not delete.");
+          },
+        };
+      }
+    </script>
+</body>
+</html>

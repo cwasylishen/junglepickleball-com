@@ -152,7 +152,7 @@ const DEFAULT_EVENTS = [
   { id: "alternating-opens", title: "Alternating Opens", when: "Mon & Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 40, status: "active" },
   { id: "marlapalooza-2026", title: "Marlapalooza 2026", when: "Tuesday, July 28, 2026", date: "2026-07-28", time: "11:00 AM to 3:00 PM", description: "Pickleball, cornhole, great friends, and lots of fun. Bring your favorite appetizer to share and your own drinks. Hotdogs and beverages available for purchase. Please no gifts. Instead consider donating to Shauna's animal rescue efforts. Puppies will be on site to snuggle with, looking for their forever family. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20Marlapalooza%202026", order: 6, status: "active", images: ["assets/events/marlapalooza-2026.jpg"] },
   { id: "bring-a-friend-opens", title: "Bring a Friend to Opens", when: "Now through November 22", time: "Any Open Play session", description: "New friends, and anyone who hasn't played here in the last 6 months, play free — twice — at any Open. Bring them along and the drinks are on us: members who bring a friend get a free drink of their choice, or a float.", category: "special", featured: true, ctaLabel: "BRING A FRIEND", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20bring%20a%20friend%20to%20Jungle%20Pickleball%20Opens", order: 8, status: "active", badge: "Promo" },
-  { id: "glow-open-tournament", title: "Glow-in-the-Dark Open Tournament", when: "Coming Soon", time: "Date to be announced", description: "Lights down, paddles up. We're planning a Glow-in-the-Dark Open Tournament soon — details and date coming.", category: "special", featured: true, ctaLabel: "", ctaUrl: "", order: 9, status: "active" },
+  { id: "glow-open-tournament", title: "Glow in the Dark Fun Tournament", when: "Wednesday, October 28, 2026", date: "2026-10-28", time: "Opens 5:00 PM for food and practice. Games start about 6:00 PM.", description: "Mixed teams, round robin, all classes welcome — this one is just for fun, played under the black light. $15 per person (member or nonmember), price includes catered food. Spectators are free; if a spectator wants the meal, it's $10. Beautiful medals for 1st, 2nd & 3rd. If signups run high we'll add dates November 4 and November 11. Sign up online at junglepickleball.com.", category: "special", featured: true, ctaLabel: "SIGN UP", ctaUrl: "/glow", order: 1, status: "active", images: ["assets/events/glow-tournament-2026.jpg"] },
 ];
 
 function isPast(dateStr) {
@@ -161,6 +161,166 @@ function isPast(dateStr) {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   return new Date(Date.UTC(y, m - 1, d)) < today;
+}
+
+// ---------- Glow in the Dark tournament signups (KV) ----------
+// One named activity, one read-modify-write function: "sign up for the
+// glow tournament." Mirrors the events array's own KV shape (list stored
+// whole, under one key) so there is exactly one pattern for list-shaped
+// KV data in this file, not two.
+
+const GLOW_SIGNUPS_KEY = "glow_signups";
+const GLOW_PRICE_NOTE = "$15 per person (member or nonmember), food included. Pay at the event — no online payment.";
+
+async function getGlowSignups(env) {
+  const raw = await env.EVENTS.get(GLOW_SIGNUPS_KEY);
+  if (!raw) return [];
+  try {
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+function validGlowInput(b) {
+  if (!b || typeof b !== "object") return "Invalid request.";
+  if (!b.name || !String(b.name).trim()) return "Name is required.";
+  if (!b.phone || !String(b.phone).trim()) return "A phone or WhatsApp number is required.";
+  if (b.role !== "player" && b.role !== "spectator") return "Role must be player or spectator.";
+  return null;
+}
+
+// The one place a signup is ever written. Read-modify-write under one KV
+// put, so a second hand-written insert path can never diverge from this
+// one. Not safe against two truly simultaneous writers racing the same
+// millisecond (KV has no transaction); acceptable for a club-sized signup
+// sheet, same risk the events-admin list already carries today.
+async function createGlowSignup(env, input) {
+  const list = await getGlowSignups(env);
+  const signup = {
+    id: newId(),
+    name: String(input.name).trim().slice(0, 200),
+    phone: String(input.phone).trim().slice(0, 60),
+    email: String(input.email ?? "").trim().slice(0, 200),
+    member: Boolean(input.member),
+    role: input.role,
+    spectatorMeal: input.role === "spectator" ? Boolean(input.spectatorMeal) : false,
+    partnerName: String(input.partnerName ?? "").trim().slice(0, 200),
+    people: Number.isInteger(+input.people) && +input.people > 0 ? +input.people : 1,
+    notes: String(input.notes ?? "").trim().slice(0, 1000),
+    createdAt: nowIso(),
+  };
+  list.push(signup);
+  await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
+  return signup;
+}
+
+async function notifyGlowSignup(env, signup) {
+  if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
+    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set)." };
+  }
+  try {
+    const res = await env.WARD_MAIL.fetch("https://ward-mail/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
+      body: JSON.stringify({
+        to: "cwasylishen@gmail.com",
+        from: "ward@wizardweb.ca",
+        subject: `Glow Tournament signup: ${signup.name}`,
+        text: [
+          `New Glow in the Dark Fun Tournament signup.`,
+          ``,
+          `Name: ${signup.name}`,
+          `Phone/WhatsApp: ${signup.phone}`,
+          `Email: ${signup.email || "(none)"}`,
+          `Member: ${signup.member ? "Yes" : "No"}`,
+          `Role: ${signup.role}`,
+          signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
+          `Partner: ${signup.partnerName || "(none)"}`,
+          `People: ${signup.people}`,
+          `Notes: ${signup.notes || "(none)"}`,
+          ``,
+          GLOW_PRICE_NOTE,
+        ].filter(Boolean).join("\n"),
+      }),
+    });
+    if (!res.ok) return { sent: false, reason: `ward-mail returned ${res.status}` };
+    return { sent: true };
+  } catch (err) {
+    return { sent: false, reason: String((err && err.message) || err).slice(0, 200) };
+  }
+}
+
+async function handleGlowSignup(request, env) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const rlKey = `rl:glow:${ip}`;
+  const attempts = parseInt((await env.EVENTS.get(rlKey)) || "0", 10);
+  if (attempts >= 5) {
+    return json({ error: "Too many signups from this connection. Please wait a few minutes and try again, or message Roger on WhatsApp." }, 429);
+  }
+  await env.EVENTS.put(rlKey, String(attempts + 1), { expirationTtl: 900 });
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid request." }, 400); }
+
+  // Honeypot: a real visitor never fills this hidden field. Any value in
+  // it answers the request with a fake success instead of an error, so a
+  // bot's script sees nothing to retry against.
+  if (body && String(body.website || "").trim()) {
+    return json({ ok: true, signup: { id: newId() }, mail: { sent: false, reason: "skipped" } }, 201);
+  }
+
+  const err = validGlowInput(body);
+  if (err) return json({ error: err }, 400);
+
+  const signup = await createGlowSignup(env, body);
+  const mail = await notifyGlowSignup(env, signup);
+  return json({
+    ok: true,
+    signup,
+    message: `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament. ${GLOW_PRICE_NOTE}`,
+    mail,
+  }, 201);
+}
+
+// The one place a signup is ever removed (test rows, spam, a cancellation
+// Clinton reads to him over the phone). Same read-modify-write shape as
+// createGlowSignup; no second deletion path exists.
+async function deleteGlowSignup(env, id) {
+  const list = await getGlowSignups(env);
+  const next = list.filter((s) => s.id !== id);
+  const removed = next.length !== list.length;
+  if (removed) await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(next));
+  return removed;
+}
+
+async function handleGlowList(request, env, url) {
+  if (!env.GLOW_LIST_KEY) {
+    return json({ error: "The list view is not configured yet. Set GLOW_LIST_KEY on the Worker." }, 503);
+  }
+  const key = url.searchParams.get("key") || "";
+  if (!timingSafeEqual(key, env.GLOW_LIST_KEY)) {
+    return json({ error: "Not authorized." }, 401);
+  }
+  if (request.method === "DELETE") {
+    const id = url.searchParams.get("id") || "";
+    if (!id) return json({ error: "id is required." }, 400);
+    const removed = await deleteGlowSignup(env, id);
+    return removed ? json({ ok: true }) : json({ error: "Signup not found." }, 404);
+  }
+  const list = await getGlowSignups(env);
+  const players = list.filter((s) => s.role === "player");
+  const spectators = list.filter((s) => s.role === "spectator");
+  const meals = spectators.filter((s) => s.spectatorMeal).length;
+  return json({
+    counts: {
+      players: players.length,
+      spectators: spectators.length,
+      spectatorMeals: meals,
+      totalPeople: list.reduce((sum, s) => sum + (s.people || 1), 0),
+      rows: list.length,
+    },
+    signups: list.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+  });
 }
 
 // ---------- D1 schema (self-provisioning) ----------
@@ -508,6 +668,10 @@ const REDIRECTS = { "/index.php": "/", "/home": "/", "/wp-login.php": "/", "/wp-
 
 // ---------- entry ----------
 
+// Exported for tests/foundation/glow-signup.test.mjs (pure-logic probes;
+// CTL-ENT-01/02 style — no network, no wrangler dev needed for these).
+export { validGlowInput, createGlowSignup, getGlowSignups, deleteGlowSignup, handleGlowSignup, handleGlowList };
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -517,6 +681,10 @@ export default {
       if (p.startsWith("/api/")) {
         // public endpoints
         if (p === "/api/events" && request.method === "GET") return publicEvents(env);
+        if (p === "/api/glow/signup" && request.method === "POST") return handleGlowSignup(request, env);
+        if (p === "/api/glow/list" && (request.method === "GET" || request.method === "DELETE")) {
+          return handleGlowList(request, env, url);
+        }
         if (p === "/api/config" && request.method === "GET") {
           return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
         }

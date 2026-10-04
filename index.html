@@ -38,11 +38,11 @@
         return {
           lightbox: "",
           all: [
+            { id: "glow-open-tournament", title: "Glow in the Dark Fun Tournament", when: "Wednesday, October 28, 2026", date: "2026-10-28", time: "Opens 5:00 PM for food and practice. Games start about 6:00 PM.", description: "Mixed teams, round robin, all classes welcome — this one is just for fun, played under the black light. $15 per person (member or nonmember), price includes catered food. Spectators are free; if a spectator wants the meal, it's $10. Beautiful medals for 1st, 2nd & 3rd. If signups run high we'll add dates November 4 and November 11. Sign up online at junglepickleball.com.", category: "special", featured: true, ctaLabel: "SIGN UP", ctaUrl: "/glow", images: ["assets/events/glow-tournament-2026.jpg"] },
             { id: "redcross-firstaid-2026", title: "Community Training — Lifesaving First Aid", when: "Sunday, September 27, 2026", date: "2026-09-27", time: "1:00 PM to 5:00 PM, in English, at Jungle Pickleball Ojochal", description: "FREE community training in Lifesaving First Aid, taught by Oscar Aguilar Fonseca, National Coordinator of Lifeguards of the Costa Rican Red Cross. Topics include safety aspects, initial patient assessment, 9-1-1 activation, basic CPR, ventilation, and safe AED use. In collaboration with Ama Más / LoveMoreLiveMore and Jungle Pickleball. This session is in English at Jungle Pickleball Ojochal. A Spanish-language session runs Saturday, September 26, 1:00 to 5:00 PM at Salón Comunal Ojochal. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20the%20Red%20Cross%20First%20Aid%20Training", order: 7, status: "active", images: ["assets/events/redcross-firstaid.jpg"] },
             { id: "gauntlet-throw-down", title: "The Gauntlet Throw Down", when: "Sunday, July 12, 2026", date: "2026-07-12", time: "Practice 8:00 AM | Games 9:00 AM", description: "A memorial tournament in honor of Cecile Argy. Intermediate and Advanced Mixed Doubles, with a Gauntlet Throw Down medal for every player. All proceeds support the Ventanas Beach Red Cross Lifeguards in acquiring new equipment in Cecile's name. Non-members $35, Members $25. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "REGISTER NOW", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20register%20for%20The%20Gauntlet%20Throw%20Down", images: ["assets/events/gauntlet-throw-down.jpg"] },
             { id: "marlapalooza-2026", title: "Marlapalooza 2026", when: "Tuesday, July 28, 2026", date: "2026-07-28", time: "11:00 AM to 3:00 PM", description: "Pickleball, cornhole, great friends, and lots of fun. Bring your favorite appetizer to share and your own drinks. Hotdogs and beverages available for purchase. Please no gifts. Instead consider donating to Shauna's animal rescue efforts. Puppies will be on site to snuggle with, looking for their forever family. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20Marlapalooza%202026", images: ["assets/events/marlapalooza-2026.jpg"] },
             { id: "bring-a-friend-opens", title: "Bring a Friend to Opens", when: "Now through November 22", time: "Any Open Play session", description: "New friends, and anyone who hasn't played here in the last 6 months, play free — twice — at any Open. Bring them along and the drinks are on us: members who bring a friend get a free drink of their choice, or a float.", category: "special", featured: true, ctaLabel: "BRING A FRIEND", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20bring%20a%20friend%20to%20Jungle%20Pickleball%20Opens", badge: "Promo" },
-            { id: "glow-open-tournament", title: "Glow-in-the-Dark Open Tournament", when: "Coming Soon", time: "Date to be announced", description: "Lights down, paddles up. We're planning a Glow-in-the-Dark Open Tournament soon — details and date coming.", category: "special", featured: true, ctaLabel: "", ctaUrl: "" },
             { id: "open-play", title: "Open Play", when: "Tuesdays & Thursdays", time: "10:00 AM Start", description: "Our most popular session. All skill levels welcome, so just rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "wed-open-play", title: "Open Play", when: "Wednesdays", time: "8:30 AM Start", description: "Mid-week open play for all levels. Rotate in and enjoy the game.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
             { id: "womens-open", title: "Women's Open", when: "Fridays", time: "8:30 AM Start", description: "A supportive and competitive session dedicated to our women players.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "" },
@@ -189,6 +189,34 @@
             </div>
         </div>
     </nav>
+
+    <section class="relative pt-24 pb-10 md:pt-28 md:pb-14 bg-[#0f393b] text-white" aria-label="Glow in the Dark Fun Tournament">
+        <div class="max-w-6xl mx-auto px-4 grid md:grid-cols-2 gap-8 items-center">
+            <div>
+                <div class="inline-block bg-yellow-400 text-black px-4 py-1 rounded-full text-sm font-bold tracking-widest mb-4 uppercase">
+                    Glow in the Dark Fun Tournament
+                </div>
+                <h2 class="text-3xl md:text-5xl font-bold uppercase leading-tight mb-4">
+                    Wednesday, <span class="text-yellow-400">October 28, 2026</span>
+                </h2>
+                <p class="text-lg text-gray-200 mb-4">Opens 5:00 PM for food and practice. Games start about 6:00 PM. Mixed teams, round robin, all classes — just for fun, under the black light.</p>
+                <ul class="text-gray-200 mb-6 space-y-1 text-sm md:text-base">
+                    <li>&bull; $15 per person, member or nonmember — catered food included</li>
+                    <li>&bull; Spectators are free; the meal is $10 if they want it</li>
+                    <li>&bull; Beautiful medals for 1st, 2nd &amp; 3rd</li>
+                    <li>&bull; If signups run high, we'll add November 4 and November 11</li>
+                </ul>
+                <a href="/glow" class="inline-block bg-yellow-500 text-black font-bold text-lg px-8 py-3 rounded hover:bg-yellow-400 transition shadow-lg">
+                    Sign Up Online
+                </a>
+            </div>
+            <a href="/glow" class="block">
+                <img src="assets/events/glow-tournament-2026.webp"
+                     alt="Glow in the Dark Fun Tournament flyer: Wednesday October 28, 2026, mixed teams round robin under the black light, $15 per person with catered food included"
+                     class="w-full rounded-2xl shadow-2xl object-cover" loading="eager" decoding="async">
+            </a>
+        </div>
+    </section>
 
     <header class="relative h-screen flex items-center justify-center overflow-hidden clip-slant">
         <div class="absolute inset-0 z-0 bg-black">
