@@ -152,7 +152,7 @@ const DEFAULT_EVENTS = [
   { id: "alternating-opens", title: "Alternating Opens", when: "Mon & Sat", time: "Check Availability", description: "Flex days with times that vary by demand. Text Roger on WhatsApp to confirm open slots.", category: "weekly", featured: false, ctaLabel: "", ctaUrl: "", order: 40, status: "active" },
   { id: "marlapalooza-2026", title: "Marlapalooza 2026", when: "Tuesday, July 28, 2026", date: "2026-07-28", time: "11:00 AM to 3:00 PM", description: "Pickleball, cornhole, great friends, and lots of fun. Bring your favorite appetizer to share and your own drinks. Hotdogs and beverages available for purchase. Please no gifts. Instead consider donating to Shauna's animal rescue efforts. Puppies will be on site to snuggle with, looking for their forever family. Tap the flyer for full details.", category: "special", featured: true, ctaLabel: "JOIN US", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20join%20Marlapalooza%202026", order: 6, status: "active", images: ["assets/events/marlapalooza-2026.jpg"] },
   { id: "bring-a-friend-opens", title: "Bring a Friend to Opens", when: "Now through November 22", time: "Any Open Play session", description: "New friends, and anyone who hasn't played here in the last 6 months, play free — twice — at any Open. Bring them along and the drinks are on us: members who bring a friend get a free drink of their choice, or a float.", category: "special", featured: true, ctaLabel: "BRING A FRIEND", ctaUrl: "https://wa.me/50689893111?text=I%20want%20to%20bring%20a%20friend%20to%20Jungle%20Pickleball%20Opens", order: 8, status: "active", badge: "Promo" },
-  { id: "glow-open-tournament", title: "Glow in the Dark Fun Tournament", when: "Wednesday, October 28, 2026", date: "2026-10-28", time: "Opens 5:00 PM for food and practice. Games start about 6:00 PM.", description: "Mixed teams, round robin, all classes welcome — this one is just for fun, played under the black light. $15 per person (member or nonmember), price includes catered food. Spectators are free; if a spectator wants the meal, it's $10. Beautiful medals for 1st, 2nd & 3rd. If signups run high we'll add dates November 4 and November 11. Sign up online at junglepickleball.com.", category: "special", featured: true, ctaLabel: "SIGN UP", ctaUrl: "/glow", order: 1, status: "active", images: ["assets/events/glow-tournament-2026.jpg"] },
+  { id: "glow-open-tournament", title: "Glow in the Dark Fun Tournament", when: "Wednesday, October 28, 2026", date: "2026-10-28", time: "Opens 5:00 PM for food and practice. Games start about 6:00 PM.", description: "Mixed teams, round robin, all classes welcome. This one is just for fun, played under the black light. $15 per person (member or nonmember), price includes catered food. Spectators are free; if a spectator wants the meal, it's $10. Beautiful medals for 1st, 2nd & 3rd. If signups run high we'll add dates November 4 and November 11. Sign up online at junglepickleball.com.", category: "special", featured: true, ctaLabel: "SIGN UP", ctaUrl: "/glow", order: 1, status: "active", images: ["assets/events/glow-tournament-2026.jpg"] },
 ];
 
 function isPast(dateStr) {
@@ -233,8 +233,8 @@ async function stripeRequest(env, method, path, body) {
 
 async function createGlowCheckoutSession(env, url, signup) {
   const name = signup.role === "player"
-    ? "Glow in the Dark Fun Tournament — Player (incl. catered food)"
-    : "Glow in the Dark Fun Tournament — Spectator meal";
+    ? "Glow in the Dark Fun Tournament, Player (incl. catered food)"
+    : "Glow in the Dark Fun Tournament, Spectator meal";
   return stripeRequest(env, "POST", "/checkout/sessions", {
     mode: "payment",
     line_items: [{
@@ -436,7 +436,7 @@ async function handleGlowSignup(request, env) {
   const mail = await notifyGlowSignup(env, signup);
   const message = signup.status === "free"
     ? `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament.`
-    : `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament. Pay at the event — $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}.`;
+    : `Thanks, ${signup.name}! You're on the list for the Glow in the Dark Fun Tournament. Pay at the event, $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}.`;
   return json({ ok: true, signup, message, mail }, 201);
 }
 
