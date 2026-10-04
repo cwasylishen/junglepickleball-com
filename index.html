@@ -154,7 +154,7 @@
 </head>
 <body x-data="{ mobileMenu: false, scrolled: false }" @scroll.window="scrolled = (window.pageYOffset > 50)">
 
-    <nav :class="scrolled ? 'bg-white/95 backdrop-blur shadow-md py-3' : 'bg-[#0f393b]/90 backdrop-blur py-4'" class="fixed w-full z-50 transition-all duration-300 border-b border-white/10">
+    <nav :class="scrolled ? 'bg-white/95 backdrop-blur shadow-md py-3' : 'bg-[#0f393b]/90 backdrop-blur py-4'" class="sticky top-0 w-full z-50 transition-all duration-300 border-b border-white/10">
         <div class="max-w-7xl mx-auto px-4 flex justify-between items-center">
             <a href="/" class="flex items-center gap-2 group" aria-label="Jungle Pickleball home">
                 <span class="text-2xl md:text-3xl font-bold font-heading uppercase tracking-tighter" :class="scrolled ? 'text-jungle' : 'text-white'">
@@ -190,28 +190,38 @@
         </div>
     </nav>
 
-    <section class="bg-black pt-20 sm:pt-24" aria-label="Glow in the Dark Fun Tournament">
+    <section class="bg-black" aria-label="Glow in the Dark Fun Tournament">
         <div class="h-1 bg-gradient-to-r from-lime-400 via-pink-500 to-cyan-400"></div>
-        <div class="max-w-6xl mx-auto px-4 py-4">
-            <a href="/glow" class="flex items-center gap-4">
-                <img src="assets/events/glow-tournament-2026.webp"
-                     alt="Glow in the Dark Fun Tournament poster art"
-                     class="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover object-top shrink-0 ring-1 ring-white/10"
-                     loading="eager" decoding="async" width="160" height="160">
-                <div class="min-w-0">
-                    <div class="bg-gradient-to-r from-lime-400 via-lime-300 to-pink-400 bg-clip-text text-transparent font-bold uppercase text-xs sm:text-sm tracking-wide">
+        <div class="max-w-6xl mx-auto px-4 py-3 sm:py-4">
+            <div class="flex items-center gap-4 sm:gap-5">
+                <a href="/glow" class="shrink-0" aria-label="Glow in the Dark Fun Tournament details">
+                    <img src="assets/events/glow-tournament-2026.webp"
+                         alt="Glow in the Dark Fun Tournament title art"
+                         class="w-[72px] h-[72px] sm:w-24 sm:h-24 rounded-lg object-cover object-top aspect-square ring-1 ring-white/10"
+                         loading="eager" decoding="async" width="200" height="200">
+                </a>
+                <div class="min-w-0 flex-1">
+                    <a href="/glow" class="block font-heading font-bold uppercase text-base sm:text-xl tracking-wide text-lime-300" style="text-shadow: 0 0 10px rgba(163,230,53,0.55), 0 0 2px rgba(255,255,255,0.4);">
                         Glow in the Dark Fun Tournament
-                    </div>
-                    <div class="text-slate-200 text-sm sm:text-base mt-0.5">
+                    </a>
+                    <div class="text-slate-200 text-xs sm:text-sm mt-1">
                         Wed, Oct 28 &middot; 5 PM food &amp; practice, ~6 PM games &middot; $15 incl. food
                     </div>
                 </div>
-            </a>
-            <div class="flex items-center justify-between gap-3 mt-3">
-                <a href="/glow" class="text-cyan-300 text-xs sm:text-sm underline underline-offset-2 hover:text-cyan-200">
+                <div class="hidden sm:flex items-center gap-5 shrink-0 ml-auto">
+                    <a href="/glow" class="text-cyan-300 text-sm underline underline-offset-2 hover:text-cyan-200 whitespace-nowrap">
+                        Tournament details
+                    </a>
+                    <a href="/glow" class="bg-lime-400 text-black font-extrabold text-base px-6 py-2.5 rounded-full shadow-[0_0_16px_rgba(163,230,53,0.4)] hover:bg-lime-300 transition whitespace-nowrap">
+                        Sign Up
+                    </a>
+                </div>
+            </div>
+            <div class="flex sm:hidden items-center justify-between gap-3 mt-3">
+                <a href="/glow" class="text-cyan-300 text-xs underline underline-offset-2 hover:text-cyan-200">
                     Tournament details
                 </a>
-                <a href="/glow" class="shrink-0 bg-lime-400 text-black font-extrabold text-sm sm:text-base px-6 py-2.5 rounded-full shadow-[0_0_16px_rgba(163,230,53,0.4)] hover:bg-lime-300 transition">
+                <a href="/glow" class="shrink-0 bg-lime-400 text-black font-extrabold text-sm px-6 py-2.5 rounded-full shadow-[0_0_16px_rgba(163,230,53,0.4)] hover:bg-lime-300 transition">
                     Sign Up
                 </a>
             </div>
