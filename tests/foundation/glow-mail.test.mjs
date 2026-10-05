@@ -20,6 +20,16 @@ import worker, {
 
 const CLINTON = "cwasylishen@gmail.com";
 const ROGER = "rogerworsham.cr@gmail.com";
+// PIN-NOADDR: the browser and the logs see "recipient 1" / "recipient 2".
+const LABEL = { [CLINTON]: "recipient 1", [ROGER]: "recipient 2" };
+
+function assertNoAddress(text, where) {
+  for (const address of [CLINTON, ROGER]) {
+    assert.ok(!text.toLowerCase().includes(address), `${where} must not contain ${address}: ${text}`);
+  }
+  assert.ok(!text.includes("gmail.com"), `${where} must not contain any gmail address: ${text}`);
+}
+
 const WEBHOOK_SECRET = "whsec_test_secret";
 const SEND_SECRET = "send-secret-for-tests";
 
@@ -117,6 +127,39 @@ test("a signup sends one ward-mail /send POST to each of the two recipients, eac
   assert.equal(body.mail.sent, true);
 });
 
+// ---------- 1b. PIN-NOADDR: no address in the public reply (inspection D1) ----------
+
+test("PIN-NOADDR: /api/glow/signup JSON carries no recipient address, mail ok or mail failed; the shape is labels only", async () => {
+  const cases = {
+    "mail ok": makeWardMail(),
+    "500 for recipient 1": makeWardMail((to) => (to === CLINTON ? "500" : "ok")),
+    "throw for recipient 2 (error text echoes the address)": makeWardMail((to) => (to === ROGER ? "throw" : "ok")),
+    "both throw": makeWardMail(() => "throw"),
+  };
+  let n = 0;
+  for (const [name, wm] of Object.entries(cases)) {
+    for (const status of [{ role: "player", people: 1 }, { role: "spectator", people: 1 }]) {
+      const callsBefore = wm.calls.length;
+      const res = await handleGlowSignup(signupRequest({ name: "Pat", phone: "1", ...status }, `4.4.4.${++n}`), mailEnv(wm));
+      assert.equal(res.status, 201, name);
+      assert.equal(wm.calls.length - callsBefore, 2, `${name}: both addresses still reached by /send`);
+      const text = await res.text();
+      assertNoAddress(text, `signup reply (${name})`);
+      const { mail } = JSON.parse(text);
+      assert.deepEqual(mail.recipients.map((r) => r.recipient), ["recipient 1", "recipient 2"], name);
+      for (const r of mail.recipients) assert.deepEqual(Object.keys(r).filter((k) => k === "to"), [], `${name}: no \`to\` key`);
+    }
+  }
+  // The addresses still go out in the /send requests themselves.
+  assert.deepEqual(cases["mail ok"].calls.map((c) => c.body.to), [CLINTON, ROGER, CLINTON, ROGER]);
+});
+
+test("PIN-NOADDR: a ward-mail that is not configured answers with no address either", async () => {
+  const res = await handleGlowSignup(signupRequest({ name: "Pat", phone: "1", role: "player", people: 1 }, "4.4.9.9"), mailEnv(undefined, { WARD_MAIL: undefined }));
+  assert.equal(res.status, 201);
+  assertNoAddress(await res.text(), "unconfigured signup reply");
+});
+
 test("one recipient's failure (500 or a throw) does not stop the other's send, and the signup result says who failed", async () => {
   for (const failure of ["500", "throw"]) {
     for (const failing of [CLINTON, ROGER]) {
@@ -127,11 +170,13 @@ test("one recipient's failure (500 or a throw) does not stop the other's send, a
       assert.equal(wm.calls.length, 2, `both attempted when ${failing} gets ${failure}`);
       const { mail } = await res.json();
       assert.equal(mail.sent, false);
-      const byTo = Object.fromEntries(mail.recipients.map((r) => [r.to, r]));
-      assert.equal(byTo[failing].sent, false);
-      assert.match(byTo[failing].reason, failure === "500" ? /500/ : /unreachable/);
+      const byLabel = Object.fromEntries(mail.recipients.map((r) => [r.recipient, r]));
+      const failingLabel = LABEL[failing];
+      assert.equal(byLabel[failingLabel].sent, false);
+      assert.match(byLabel[failingLabel].reason, failure === "500" ? /500/ : /unreachable/);
       const other = failing === CLINTON ? ROGER : CLINTON;
-      assert.equal(byTo[other].sent, true);
+      assert.equal(byLabel[LABEL[other]].sent, true);
+      assertNoAddress(JSON.stringify(mail), `public mail result (${failure} for ${failing})`);
     }
   }
 });
@@ -377,11 +422,11 @@ test("a timed-out send is reported like any failed send: that address, sent fals
     assert.equal(res.status, 201);
     const { mail } = await res.json();
     assert.equal(mail.sent, false);
-    const byTo = Object.fromEntries(mail.recipients.map((r) => [r.to, r]));
-    assert.equal(byTo[hanging].sent, false);
-    assert.match(byTo[hanging].reason, new RegExp(`within ${SHORT_BOUND_MS} ms`));
+    const byLabel = Object.fromEntries(mail.recipients.map((r) => [r.recipient, r]));
+    assert.equal(byLabel[LABEL[hanging]].sent, false);
+    assert.match(byLabel[LABEL[hanging]].reason, new RegExp(`within ${SHORT_BOUND_MS} ms`));
     const other = hanging === CLINTON ? ROGER : CLINTON;
-    assert.equal(byTo[other].sent, true);
+    assert.equal(byLabel[LABEL[other]].sent, true);
     assert.equal(wm.calls.length, 2);
   }
 });
@@ -416,4 +461,74 @@ test("a quick mail answer clears its timer: every timer the mail path starts is 
   assert.equal(res.status, 201);
   assert.equal(wm.calls.length, 2);
   assert.equal(live.size, 0, "no timer left running after the sends answered");
+});
+
+// ---------- 6. inspection fixes D2, D3, D4 ----------
+
+test("D2 / PIN-NOADDR: a paid-mail failure writes no address to the console, and the line still names the signup", async (t) => {
+  for (const failure of ["500", "throw"]) {
+    const lines = [];
+    t.mock.method(console, "log", (...args) => { lines.push(args.map(String).join(" ")); });
+    t.mock.method(console, "error", (...args) => { lines.push(args.map(String).join(" ")); });
+    t.mock.method(console, "warn", (...args) => { lines.push(args.map(String).join(" ")); });
+    const wm = makeWardMail(() => failure);
+    const env = mailEnv(wm);
+    seedPendingRow(env);
+    const res = await dispatch(completedEvent("signup_fixed_1"), env);
+    assert.equal(res.status, 200);
+    assert.equal(wm.calls.length, 2);
+    const failedLines = lines.filter((l) => l.includes("glow_paid_mail_failed"));
+    assert.equal(failedLines.length, 1, `${failure}: one failure line`);
+    assert.match(failedLines[0], /signup=signup_fixed_1/);
+    assert.match(failedLines[0], /recipient 1/);
+    assert.match(failedLines[0], /recipient 2/);
+    assertNoAddress(lines.join("\n"), `console output (${failure})`);
+    t.mock.restoreAll();
+  }
+});
+
+test("D3: GLOW_MAIL_TIMEOUT_MS is capped at 5000: 5000 and below are honoured, anything larger falls back to 5000", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  async function settlesAt(override) {
+    const wm = makeHangingWardMail([CLINTON, ROGER]);
+    const env = mailEnv(wm, { GLOW_MAIL_TIMEOUT_MS: override });
+    let settled = false;
+    const pending = handleGlowSignup(signupRequest({ name: "Pat", phone: "1", role: "player", people: 1 }, "3.3.3.3"), env).then((r) => { settled = true; return r; });
+    const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+    await flush();
+    let elapsed = 0;
+    while (!settled && elapsed < 60000) {
+      t.mock.timers.tick(1);
+      elapsed += 1;
+      if (elapsed % 50 === 0 || elapsed >= 4990) await flush(); else await Promise.resolve();
+    }
+    await flush();
+    assert.equal((await pending).status, 201);
+    return elapsed;
+  }
+  assert.equal(await settlesAt("3000"), 3000, "a shorter override is honoured");
+  assert.equal(await settlesAt("5000"), 5000, "5000 itself is allowed");
+  for (const tooBig of ["5001", "30000", "1e9"]) {
+    assert.equal(await settlesAt(tooBig), 5000, `override ${tooBig} falls back to 5000`);
+  }
+});
+
+test("D4: the paid email is attempted after the KV write: the ward-mail fetch already sees the row as paid", async () => {
+  const seenAtSend = [];
+  const env = mailEnv(undefined);
+  env.WARD_MAIL = {
+    calls: [],
+    async fetch(url, init) {
+      const row = JSON.parse(env.EVENTS.store.get("glow_signups"))[0];
+      seenAtSend.push({ to: JSON.parse(init.body).to, status: row.status, stripeSessionId: row.stripeSessionId });
+      return { ok: true, status: 200 };
+    },
+  };
+  seedPendingRow(env);
+  const res = await dispatch(completedEvent("signup_fixed_1"), env);
+  assert.equal(res.status, 200);
+  assert.deepEqual(seenAtSend, [
+    { to: CLINTON, status: "paid", stripeSessionId: "cs_test_paid_1" },
+    { to: ROGER, status: "paid", stripeSessionId: "cs_test_paid_1" },
+  ]);
 });
