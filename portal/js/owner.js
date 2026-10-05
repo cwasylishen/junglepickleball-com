@@ -163,6 +163,19 @@
     "manage.prices": "Prices",
     "manage.blocks": "Blocks",
     "manage.sync": "Calendar sync",
+    "manage.late": "Late hours",
+
+    "late.intro": "Courts normally close at 19:00. Extend one day to 21:00, for an event or a tournament. It applies to courts only and to that day only.",
+    "late.day": "Day",
+    "late.extend": "Extend to 21:00",
+    "late.until": "Courts open until {time}",
+    "late.clear": "Back to normal hours",
+    "late.empty": "No extended days coming up.",
+    "late.err_bad_date": "Choose a day first.",
+    "late.err_date_in_past": "That day has already passed.",
+    "late.err_not_an_extension": "That is not later than the normal closing time.",
+    "late.err_close_too_late": "The latest a day can be extended to is 21:00.",
+    "late.running_late": "{n} bookings already run past the closing time. They stay as they are.",
 
     "res.top": "{n} courts and services · {d} with defaults to check",
     "res.n_defaults": "{n} to check",
@@ -1023,6 +1036,63 @@
   };
 
   // ---------------------------------------------------------------
+  // Late hours: the owner extends one day's court closing time (PIN L3)
+  // ---------------------------------------------------------------
+  window.ownerLateHours = function () {
+    return {
+      state: "loading",
+      days: [],
+      date: "",
+      message: "",
+      h: window.ownerHelpers,
+      async init() {
+        await this.load();
+      },
+      async load() {
+        this.state = "loading";
+        const res = await PortalApi.get("/api/portal/owner/day-extensions");
+        if (!res.ok) {
+          this.state = classify(res);
+          return;
+        }
+        this.days = res.data || [];
+        this.state = "ok";
+      },
+      // Said in the owner's words; a code with no sentence falls back to
+      // the generic one rather than showing the code.
+      sentence(code) {
+        const key = "late.err_" + code;
+        const text = window.t(key);
+        return text === key ? window.t("state.error_body") : text;
+      },
+      note(res) {
+        const n = res.data && res.data.late_bookings;
+        return n > 0 ? window.t("late.running_late", { n }) : "";
+      },
+      async extend() {
+        this.message = "";
+        const res = await PortalApi.post("/api/portal/owner/day-extensions", { date: this.date, close_time: "21:00" });
+        if (!res.ok) {
+          this.message = this.sentence(res.error);
+          return;
+        }
+        this.date = "";
+        await this.load();
+      },
+      async clear(day) {
+        this.message = "";
+        const res = await PortalApi.del("/api/portal/owner/day-extensions/" + day.date);
+        if (!res.ok) {
+          this.message = this.sentence(res.error);
+          return;
+        }
+        this.message = this.note(res);
+        await this.load();
+      },
+    };
+  };
+
+  // ---------------------------------------------------------------
   // O8 Calendar sync
   // ---------------------------------------------------------------
   window.ownerSync = function () {
@@ -1063,6 +1133,7 @@
     [/^#\/manage\/resources$/, "owner-resources"],
     [/^#\/manage\/prices$/, "owner-prices"],
     [/^#\/manage\/blocks$/, "owner-blocks"],
+    [/^#\/manage\/late-hours$/, "owner-late-hours"],
     [/^#\/manage\/sync$/, "owner-sync"],
     [/^#\/manage$/, "owner-manage"],
   ];

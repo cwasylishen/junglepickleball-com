@@ -1,0 +1,40 @@
+<div x-data="ownerLateHours()" x-init="init()">
+  <a href="#/manage" class="text-sm text-jpteal underline" x-text="t('act.back')"></a>
+  <h1 class="text-2xl font-heading uppercase text-jpteal mt-1" x-text="t('manage.late')"></h1>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 h-40 bg-slate-100 rounded" aria-label="loading"></div>
+  </template>
+
+  <template x-if="state === 'offline' || state === 'not_found' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="state === 'not_found' ? t('state.not_wired') : t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'ok'">
+    <div>
+      <p class="text-sm text-slate-600 mt-1" x-text="t('late.intro')"></p>
+
+      <form class="mt-4 flex gap-2" @submit.prevent="extend()">
+        <input id="late-day" type="date" x-model="date" :min="h.todayCR()" :aria-label="t('late.day')" required class="flex-1 border border-slate-300 rounded-lg px-2 py-2" />
+        <button type="submit" class="px-3 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" x-text="t('late.extend')"></button>
+      </form>
+      <p x-show="message" class="mt-2 text-sm text-slate-700" x-text="message"></p>
+
+      <p x-show="days.length === 0" class="mt-4 text-sm text-slate-600" x-text="t('late.empty')"></p>
+      <div class="mt-4 space-y-2">
+        <template x-for="d in days" :key="d.date">
+          <div class="p-3 rounded-xl border border-slate-200 bg-white flex justify-between items-center">
+            <div class="text-sm">
+              <div x-text="h.fmtDate(d.date + 'T12:00:00Z')"></div>
+              <div class="text-slate-500" x-text="t('late.until', {time: d.close_time})"></div>
+            </div>
+            <button class="text-xs underline text-red-700" @click="clear(d)" x-text="t('late.clear')"></button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+</div>
