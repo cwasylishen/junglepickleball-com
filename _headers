@@ -25,8 +25,13 @@
 # and already carry their own headers from src/portal/http.js; this
 # block covers the static /portal/* HTML and assets, which the assets
 # layer serves directly and _headers is the only way to set CSP on them.
+# The two cloudflareinsights.com origins are Cloudflare Web Analytics, which
+# the zone adds to HTML on the production host (D-R2). Never add
+# 'unsafe-inline' to script-src: the edge's other injection is an inline
+# script that changes on every request and cannot be allowed by hash.
+# Kept the same as PORTAL_HTML_HEADERS in src/portal/http.js (tests/portal-csp.test.mjs).
 /portal/*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'
   Referrer-Policy: no-referrer
   Cross-Origin-Opener-Policy: same-origin
   ! X-Frame-Options

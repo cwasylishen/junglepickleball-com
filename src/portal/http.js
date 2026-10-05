@@ -33,12 +33,13 @@ export function environmentMismatch() {
 // fix round): 'unsafe-eval' is required by the standard (non-CSP-build)
 // Alpine v3 bundle this portal vendors at portal/vendor/, and no CDN
 // origin is listed because Alpine is self-hosted (security-posture.md
-// line 207).
+// line 207). The two cloudflareinsights.com origins are Cloudflare Web
+// Analytics, which the zone adds to HTML on the production host (D-R2).
 export const PORTAL_HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
   "Cache-Control": "no-store",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+    "default-src 'self'; script-src 'self' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
   "Referrer-Policy": "no-referrer",
   "Cross-Origin-Opener-Policy": "same-origin",
   "X-Frame-Options": "DENY",
