@@ -13,7 +13,7 @@
 // previous build and claims open clients -- a device that already has
 // the service worker installed picks up the new one on next load
 // instead of serving stale assets forever.
-const BUILD_ID = "2026-09-30.1";
+const BUILD_ID = "2026-10-05.1";
 const CACHE_NAME = `portal-static-${BUILD_ID}`;
 
 // Deliberately small and named, not a crawl of the portal: everything

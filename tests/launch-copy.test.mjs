@@ -245,3 +245,33 @@ test("D-R3: Home issues its three reads together, before any of them has answere
   await ctx.__memberHome().load();
   assert.equal(peak, 3, "me, bookings and resources must be requested together");
 });
+
+// D-R4: the Home MASSAGE button went to a picker with no massage in it while
+// massage is switched off. It is shown only when a massage resource is open
+// for booking (the API marks a resource `active` when it has an active offering).
+const massage = (active) => ({ id: "massage-samy", name: "Massage Therapy by Samy", ...COURT, kind: "massage", active });
+const homeWith = (resources) => async (url) =>
+  url === "/api/portal/resources" ? { ok: true, data: [{ id: "court-1", name: "Court 1", ...COURT }, ...resources] } : guestApi()(url);
+
+test("D-R4: Home hides MASSAGE while massage is not bookable, and shows it once it is", async () => {
+  const off = loadPortalScripts(homeWith([massage(false)])).__memberHome();
+  await off.load();
+  assert.equal(off.massageOpen, false);
+  const on = loadPortalScripts(homeWith([massage(true)])).__memberHome();
+  await on.load();
+  assert.equal(on.massageOpen, true);
+});
+
+test("D-R4: with the resources unreadable Home does not offer MASSAGE", async () => {
+  const api = guestApi();
+  const home = loadPortalScripts(async (url) => (url === "/api/portal/resources" ? { ok: false } : api(url))).__memberHome();
+  await home.load();
+  assert.equal(home.massageOpen, false);
+});
+
+test("D-R4: the MASSAGE link on Home is gated on massageOpen, and the plunge link fills the row without it", () => {
+  const view = read("portal/views/member-home.html");
+  assert.match(view, /<a href="#\/book\?want=massage"[^>]*x-show="massageOpen"/);
+  assert.match(view, /<a href="#\/book\?want=plunge"[^>]*:class="massageOpen \? '' : 'col-span-2'"/);
+  assert.match(read("portal/portal.css"), /\.col-span-2\{/, "portal.css must carry col-span-2 (npm run build:portal)");
+});

@@ -53,8 +53,8 @@
       <div>
         <a href="#/book" class="block text-center rounded-lg bg-jpyellow py-3 font-heading uppercase text-black" x-text="t('home.book_court')"></a>
         <div class="mt-2 grid grid-cols-2 gap-2">
-          <a href="#/book?want=massage" class="rounded-lg border border-jpteal py-3 text-center font-heading uppercase text-sm text-jpteal" x-text="t('home.book_massage')"></a>
-          <a href="#/book?want=plunge" class="rounded-lg border border-jpteal py-3 text-center font-heading uppercase text-sm text-jpteal" x-text="t('home.book_plunge')"></a>
+          <a href="#/book?want=massage" x-show="massageOpen" class="rounded-lg border border-jpteal py-3 text-center font-heading uppercase text-sm text-jpteal" x-text="t('home.book_massage')"></a>
+          <a href="#/book?want=plunge" :class="massageOpen ? '' : 'col-span-2'" class="rounded-lg border border-jpteal py-3 text-center font-heading uppercase text-sm text-jpteal" x-text="t('home.book_plunge')"></a>
         </div>
       </div>
 

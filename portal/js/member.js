@@ -260,6 +260,7 @@ function memberHome() {
     statusLine: "",
     creditsLine: "",
     courtHours: null, // {open, close} from the courts the API returns; null until known
+    massageOpen: false, // true only when a massage resource is open for booking
     t: window.t,
     crDate: window.crDate,
     crTime: window.crTime,
@@ -296,6 +297,9 @@ function memberHome() {
       // be read, the sentence that needs them is left out, not guessed.
       var rules = resourcesRes.ok ? window.PortalApp.courtRules(resourcesRes.data) : null;
       this.courtHours = rules ? { open: rules.open, close: rules.close } : null;
+      // The MASSAGE button leads to a picker; with massage switched off (or
+      // the list unreadable) that is a dead end, so it is not offered.
+      this.massageOpen = resourcesRes.ok && (resourcesRes.data || []).some(function (r) { return r.kind === "massage" && r.active === true; });
       var ent = me.data.entitlement || { entitled: false };
       if (ent.entitled) {
         this.statusTint = "ok";
