@@ -2,6 +2,23 @@ name = "junglepickleball-com"
 compatibility_date = "2026-01-01"
 main = "src/worker.js"
 
+# Declared, never inherited (an omitted key means whatever the installed
+# wrangler does with it). Compared with the live Worker by read-only API
+# calls on 2026-10-05 (files/junglepickleball-portal/prod-baseline-check.sh):
+#   workers_dev     live: enabled   -> true, the same
+#   preview_urls    live: enabled   -> false: a deploy turns Worker preview
+#                   URLs off, on purpose. They would serve this Worker's
+#                   code, bindings and secrets at an unlisted hostname.
+#   custom domains  live: junglepickleball.com and www.junglepickleball.com,
+#                   both on this Worker, no zone routes -> declared below
+#   crons           live: none -> the [triggers] block below adds one (ruling PF-5)
+workers_dev = true
+preview_urls = false
+routes = [
+  { pattern = "junglepickleball.com", custom_domain = true },
+  { pattern = "www.junglepickleball.com", custom_domain = true },
+]
+
 # Static site served as assets; the Worker only receives /api/* and 404s.
 [assets]
 directory = "./"
