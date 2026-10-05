@@ -37,6 +37,7 @@ import {
   listRefundsDue,
   markRefunded,
 } from "../owner.js";
+import { listDayExtensions, setDayExtension, clearDayExtension } from "../day-hours.js";
 import { staffCalendar } from "../staff.js";
 
 // Maps a handler's { error } result to its documented HTTP status. Most
@@ -223,6 +224,27 @@ async function deleteBlockRoute(ctx) {
   return json({ ok: true });
 }
 
+// ---------- day extensions (PIN L3, ruling PF-3) ----------
+
+async function getDayExtensions(ctx) {
+  return json(await listDayExtensions(ctx.db));
+}
+
+// Setting is repeatable (the same date and close again changes nothing),
+// so it is a POST of the whole fact rather than a create.
+async function postDayExtension(ctx) {
+  const body = await readJson(ctx.request);
+  const result = await setDayExtension(ctx.db, ctx.account.id, body.date, body.close_time);
+  if (result.error) return errorResponse(result);
+  return json({ override: result.override, changed: result.changed, late_bookings: result.late_bookings });
+}
+
+async function deleteDayExtension(ctx) {
+  const result = await clearDayExtension(ctx.db, ctx.account.id, ctx.params.date);
+  if (result.error) return errorResponse(result);
+  return json({ ok: true, changed: result.changed, late_bookings: result.late_bookings });
+}
+
 // ---------- owner booking override ----------
 
 async function postOwnerBooking(ctx) {
@@ -293,6 +315,10 @@ export const ROUTES = [
   { method: "GET", path: "/api/portal/owner/blocks", class: "owner", handler: getBlocks },
   { method: "POST", path: "/api/portal/owner/blocks", class: "owner", handler: postBlock },
   { method: "DELETE", path: "/api/portal/owner/blocks/:id", class: "owner", handler: deleteBlockRoute },
+
+  { method: "GET", path: "/api/portal/owner/day-extensions", class: "owner", handler: getDayExtensions },
+  { method: "POST", path: "/api/portal/owner/day-extensions", class: "owner", handler: postDayExtension },
+  { method: "DELETE", path: "/api/portal/owner/day-extensions/:date", class: "owner", handler: deleteDayExtension },
 
   { method: "POST", path: "/api/portal/owner/bookings", class: "owner", handler: postOwnerBooking },
 
