@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loginDemo, d1, poolEmail, BASE_URL, signStripeBody, postRaw } from "./qa-helpers.mjs";
+import { loginDemo, d1, poolEmail, BASE_URL, signStripeBody, postRaw, crDateAt } from "./qa-helpers.mjs";
 
 const STRIPE_CALLING_ROUTES = [
   ["POST", "/api/portal/billing/checkout", { lookup_key: "jp_1m_single" }],
@@ -27,22 +27,31 @@ test("CFG-002: missing STRIPE_WEBHOOK_SECRET alone also triggers the same 503 sh
   t.skip("requires a dedicated wrangler dev --local run with STRIPE_SECRET_KEY set and STRIPE_WEBHOOK_SECRET unset -- not constructible against the single running harness instance (scripts/test.sh fixes both vars for the whole suite). Logged as NOT-TESTED, not silently passed.");
 });
 
-test("CFG-003: a paid booking on an offering with price NULL is rejected with price_not_set, not a 503", async () => {
-  const guest = await loginDemo(poolEmail());
-  const resp = await guest.client.post(
-    "/api/portal/bookings",
-    { resource_id: "demo-plng-00000-0000-000000000006", offering_id: "demo-off-00000-0000-000000000007", start: new Date(Date.now() + 86400000).toISOString(), party_size: 1 },
-    { "X-CSRF-Token": guest.csrfToken, Origin: BASE_URL }
-  );
-  assert.equal(resp.status, 409, `expected 409 price_not_set, got ${resp.status} -- waiting on B2a1`);
-  assert.equal(resp.data && resp.data.error, "price_not_set");
+test("CFG-003: a paid booking on an offering with no price set is rejected with price_not_set, not a 503", async () => {
+  // The guest Cold Plunge offering is priced in the seed. Take its price key
+  // away for this case (the state "price not set" names) and put it back.
+  const guestPlunge = "demo-off-00000-0000-000000000009";
+  const before = d1(`SELECT lookup_key FROM offerings WHERE id = '${guestPlunge}'`)[0].lookup_key;
+  d1(`UPDATE offerings SET lookup_key = NULL WHERE id = '${guestPlunge}'`);
+  try {
+    const guest = await loginDemo(poolEmail());
+    const resp = await guest.client.post(
+      "/api/portal/bookings",
+      { resource_id: "demo-plng-00000-0000-000000000006", offering_id: guestPlunge, start: crDateAt(2, 10, 20), party_size: 1 },
+      { "X-CSRF-Token": guest.csrfToken, Origin: BASE_URL }
+    );
+    assert.equal(resp.status, 409, `expected 409 price_not_set, got ${resp.status} ${JSON.stringify(resp.data)}`);
+    assert.equal(resp.data && resp.data.error, "price_not_set");
+  } finally {
+    d1(`UPDATE offerings SET lookup_key = '${before}' WHERE id = '${guestPlunge}'`);
+  }
 });
 
 test("CFG-004: calendar outbox stays pending with attempt_count 0 when GOOGLE_SERVICE_ACCOUNT_JSON is unset", async () => {
   const member = await loginDemo("member.demo@jp-demo.test");
   const resp = await member.client.post(
     "/api/portal/bookings",
-    { resource_id: "demo-court-0000-0000-000000000003", start: new Date(Date.now() + 7200000).toISOString(), party_size: 1 },
+    { resource_id: "demo-court-0000-0000-000000000003", start: crDateAt(3, 10, 0), party_size: 1 },
     { "X-CSRF-Token": member.csrfToken, Origin: BASE_URL }
   );
   assert.equal(resp.status, 201, `expected 201 booking created, got ${resp.status} -- waiting on B2a1`);

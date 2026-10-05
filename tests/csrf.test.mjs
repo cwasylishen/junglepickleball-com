@@ -2,7 +2,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loginDemo, BASE_URL, poolEmail } from "./qa-helpers.mjs";
+import { loginDemo, BASE_URL } from "./qa-helpers.mjs";
+
+// POST /api/portal/owner/sessions/revoke-others is an owner-only route, and the
+// owner check runs before the CSRF check, so these cases sign in as the seeded
+// demo owner. A guest would be refused owner_only and never reach the CSRF layer.
+const OWNER = "owner.demo@jp-demo.test";
 
 const PROTECTED_GETS = [
   "/api/portal/me",
@@ -19,21 +24,21 @@ test("AUTH-028: every non-public /api/portal/* GET returns 401 with no cookie", 
 });
 
 test("AUTH-029: a state-changing route with no X-CSRF-Token header is rejected (403)", async () => {
-  const { client } = await loginDemo(poolEmail());
+  const { client } = await loginDemo(OWNER);
   const resp = await client.post("/api/portal/owner/sessions/revoke-others", {}, { Origin: BASE_URL });
   assert.equal(resp.status, 403);
   assert.equal(resp.data.error, "csrf_required");
 });
 
 test("AUTH-030: a state-changing route with the WRONG CSRF token (another session's) is rejected", async () => {
-  const a = await loginDemo(poolEmail());
-  const b = await loginDemo(poolEmail());
+  const a = await loginDemo(OWNER);
+  const b = await loginDemo(OWNER);
   const resp = await a.client.post("/api/portal/owner/sessions/revoke-others", {}, { "X-CSRF-Token": b.csrfToken, Origin: BASE_URL });
   assert.equal(resp.status, 403);
 });
 
 test("AUTH-031: the control case -- correct token + correct Origin succeeds (proves CSRF isn't just always-403)", async () => {
-  const a = await loginDemo(poolEmail());
+  const a = await loginDemo(OWNER);
   const me = await a.client.get("/api/portal/me");
   assert.equal(me.data.csrf_token, a.csrfToken);
   const resp = await a.client.post("/api/portal/owner/sessions/revoke-others", {}, { "X-CSRF-Token": me.data.csrf_token, Origin: BASE_URL });
@@ -41,13 +46,13 @@ test("AUTH-031: the control case -- correct token + correct Origin succeeds (pro
 });
 
 test("AUTH-032: correct CSRF token but a foreign Origin is still rejected (Origin checked independently)", async () => {
-  const a = await loginDemo(poolEmail());
+  const a = await loginDemo(OWNER);
   const resp = await a.client.post("/api/portal/owner/sessions/revoke-others", {}, { "X-CSRF-Token": a.csrfToken, Origin: "https://not-this-host.example" });
   assert.equal(resp.status, 403);
 });
 
 test("AUTH-033: GET /api/portal/me includes a non-empty csrf_token matching what AUTH-031 accepts", async () => {
-  const a = await loginDemo(poolEmail());
+  const a = await loginDemo(OWNER);
   const me = await a.client.get("/api/portal/me");
   assert.ok(me.data.csrf_token && me.data.csrf_token.length > 0);
   assert.equal(me.data.csrf_token, a.csrfToken);

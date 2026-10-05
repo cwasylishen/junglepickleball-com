@@ -53,7 +53,10 @@ test("AUTH-003: a token 14:59 old still verifies (boundary, under -- 'more than 
   const email = poolEmail(); // QA3 fix: see AUTH-002's comment
   const devLink = await startAndGetDevLink(client, email, ORIGIN);
   const token = new URL(devLink).hash.replace(/^#login=/, "");
-  d1(`UPDATE login_tokens SET expires_at = datetime('now', '+1 seconds') WHERE email = '${email}'`);
+  // The server compares expires_at with an ISO string (`...T...Z`). SQLite's
+  // datetime() writes `... ...` with a space, which sorts before `T`, so a
+  // datetime() expiry always reads as already expired. Write ISO.
+  d1(`UPDATE login_tokens SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-14 minutes', '-30 seconds'), expires_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds') WHERE email = '${email}'`);
   const verify = await client.post("/api/portal/auth/verify", { token, age_16_plus: true }, ORIGIN);
   assert.equal(verify.status, 200);
 });
@@ -206,7 +209,8 @@ test("AUTH-015/016: session age -- 30 days + 1 minute is 401, 29d23h is still 20
   }
 
   const under = await loginDemo(poolEmail()); // QA3 fix: see AUTH-002's comment
-  d1(`UPDATE sessions SET created_at = datetime('now', '-29 days', '-23 hours'), expires_at = datetime('now', '+1 hours') WHERE account_id = '${under.account.id}'`);
+  // ISO, not datetime(): see AUTH-003's comment (the server compares strings).
+  d1(`UPDATE sessions SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-29 days', '-23 hours'), expires_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 hours') WHERE account_id = '${under.account.id}'`);
   const underResp = await under.client.get("/api/portal/me");
   assert.equal(underResp.status, 200);
   assert.equal(underResp.data.authenticated, true, "AUTH-016: 29d23h must still be a live session");

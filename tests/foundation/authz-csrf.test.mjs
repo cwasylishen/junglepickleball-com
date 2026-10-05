@@ -35,7 +35,7 @@ test("CTL-CSRF-01: every non-GET /api/portal/* route, swept from the live table,
     const key = `${route.method} ${route.path}`;
     checked++;
     // Call with a session but NO X-CSRF-Token and no Origin.
-    const res = await client.post(route.path, {});
+    const res = await client.request(route.method, route.path, {});
     if (CSRF_EXEMPT_ROUTES.has(key)) {
       // Exempt routes are Origin-checked instead; with no Origin at all
       // they must still be refused, just with a different reason.

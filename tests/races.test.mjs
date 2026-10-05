@@ -50,7 +50,7 @@
 // (src/portal/entitlement.js resolveAudience, src/portal/booking.js
 // resolveDuration) before relying on it.
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { d1, loginFreshAccounts, BASE_URL, poolEmail, loginDemo, patchWithClient, signStripeBody, postRaw, resetRateLimits, crDateAt, grantEntitlement, grantEntitlements } from "./qa-helpers.mjs";
@@ -60,6 +60,18 @@ import { d1, loginFreshAccounts, BASE_URL, poolEmail, loginDemo, patchWithClient
 // do not -- reset once at load for the same H-1 reason as the other
 // files.
 resetRateLimits();
+
+// The fixtures below book 10 to 17 days ahead, past the seeded booking
+// windows (7 days for a member, 2 for a guest), so every booking was
+// refused outside_window before the race under test began. Widen the
+// windows for this file and put the seeded values back after.
+const SEEDED_WINDOWS = d1(`SELECT id, member_window_days AS member, non_member_window_days AS guest FROM resources`);
+d1(`UPDATE resources SET member_window_days = 60, non_member_window_days = 60`);
+after(() => {
+  for (const r of SEEDED_WINDOWS) {
+    d1(`UPDATE resources SET member_window_days = ${r.member}, non_member_window_days = ${r.guest} WHERE id = '${r.id}'`);
+  }
+});
 
 async function bookOnce(client, csrfToken, resourceId, start, extra = {}) {
   return client.post(
@@ -123,10 +135,13 @@ test("RACE-005/006 (expired-hold control pair): an expired hold never blocks, an
   const resourceId = "demo-court-0000-0000-000000000001";
   const expiredStart = crDateAt(12, 10, 0); // CR 10:00, on-grid (07:00 + 2*90min)
   const liveStart = crDateAt(13, 10, 0); // CR 10:00 a different day, on-grid
+  // hold_expires_at is compared with an ISO string (`...T...Z`) by the booking
+  // guard. SQLite's datetime() writes a space instead of the T, which sorts
+  // before it, so a datetime() hold always read as expired; write ISO.
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, hold_expires_at, created_by, created_at, updated_at)
-      VALUES ('qa-race005-hold', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${expiredStart}', '${new Date(new Date(expiredStart).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', datetime('now','-1 minutes'), 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
+      VALUES ('qa-race005-hold', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${expiredStart}', '${new Date(new Date(expiredStart).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minutes'), 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   d1(`INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, hold_expires_at, created_by, created_at, updated_at)
-      VALUES ('qa-race006-hold', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${liveStart}', '${new Date(new Date(liveStart).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', datetime('now','+30 minutes'), 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
+      VALUES ('qa-race006-hold', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${liveStart}', '${new Date(new Date(liveStart).getTime() + 90 * 60000).toISOString()}', 1, 0, 'pending_payment', 'pay', strftime('%Y-%m-%dT%H:%M:%fZ','now','+30 minutes'), 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`);
   const actor = await loginDemo(poolEmail());
   grantEntitlement(actor.account.id); // QA3 fix: see file header
   const expiredResp = await bookOnce(actor.client, actor.csrfToken, resourceId, expiredStart);

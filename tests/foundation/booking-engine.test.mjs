@@ -14,7 +14,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { d1, loginDemo, BASE_URL } from "./helpers.mjs";
+import { d1, loginDemo, BASE_URL, utcOnCrDay } from "./helpers.mjs";
 
 function resetRateLimits() {
   d1(`DELETE FROM rate_limits`);
@@ -24,10 +24,7 @@ async function loginSeeded(email) {
   return loginDemo(email);
 }
 function freshStartIso(daysAhead, hour, minute = 0) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + daysAhead);
-  d.setUTCHours(hour, minute, 0, 0);
-  return d.toISOString();
+  return utcOnCrDay(daysAhead, hour, minute).toISOString();
 }
 
 test("L4 (replaces S-11's 503): a guest court booking (pay mode) with Stripe unconfigured is confirmed and unpaid, pay at the club, with no hold", async () => {
@@ -72,11 +69,21 @@ test("CTL-MSG-01: massage is always a paid booking, never included/credits, even
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('demo-memb1-0000-0000-000000000003', 10, datetime('now'))`);
   const resourceId = "demo-msg-00000-0000-000000000005";
   const start = freshStartIso(6, 16); // 10:00 CR -- on the Massage's hourly grid (portal(FR2-B)/M10)
-  const resp = await annual.client.post(
-    "/api/portal/bookings",
-    { resource_id: resourceId, offering_id: "demo-off-00000-0000-000000000005", start, party_size: 1 },
-    { "X-CSRF-Token": annual.csrfToken, Origin: BASE_URL }
-  );
+  // The seed gives member.demo two future massage bookings and the resource a
+  // cap of one active booking per account, so the cap would answer first.
+  // Lift it for this case (L3: members have no cap) and put it back after.
+  const capBefore = d1(`SELECT max_active_per_account AS cap FROM resources WHERE id = '${resourceId}'`)[0].cap;
+  d1(`UPDATE resources SET max_active_per_account = NULL WHERE id = '${resourceId}'`);
+  let resp;
+  try {
+    resp = await annual.client.post(
+      "/api/portal/bookings",
+      { resource_id: resourceId, offering_id: "demo-off-00000-0000-000000000005", start, party_size: 1 },
+      { "X-CSRF-Token": annual.csrfToken, Origin: BASE_URL }
+    );
+  } finally {
+    d1(`UPDATE resources SET max_active_per_account = ${capBefore === null ? "NULL" : capBefore} WHERE id = '${resourceId}'`);
+  }
   // Stripe is unconfigured on this harness (D-A23), so under L4 a massage is
   // recorded confirmed and unpaid, pay at the club. CTL-MSG-01's point
   // stands: it must NEVER be paid for by entitlement or credits, even for an

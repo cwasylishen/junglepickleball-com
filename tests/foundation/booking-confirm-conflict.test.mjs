@@ -23,7 +23,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { d1, loginDemo, BASE_URL } from "./helpers.mjs";
+import { d1, loginDemo, BASE_URL, utcOnCrDay } from "./helpers.mjs";
 
 const WEBHOOK_SECRET = "whsec_local_test_only";
 const RESOURCE_ID = "demo-court-0000-0000-000000000001";
@@ -52,10 +52,7 @@ async function postWebhook(rawBody) {
 }
 
 function freshStartIso(daysAhead, hour) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + daysAhead);
-  d.setUTCHours(hour, 0, 0, 0);
-  return d.toISOString();
+  return utcOnCrDay(daysAhead, hour).toISOString();
 }
 
 test("M12: a late paid-confirm on an expired hold, raced by another member's booking, becomes paid_conflict with exactly one live booking", async () => {

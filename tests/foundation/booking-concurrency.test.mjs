@@ -28,7 +28,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { d1, loginDemo, BASE_URL } from "./helpers.mjs";
+import { d1, loginDemo, BASE_URL, utcOnCrDay } from "./helpers.mjs";
 
 function resetRateLimits() {
   d1(`DELETE FROM rate_limits`);
@@ -40,10 +40,7 @@ async function loginSeeded(email) {
 }
 
 function freshStartIso(daysAhead, hour, minute = 0) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + daysAhead);
-  d.setUTCHours(hour, minute, 0, 0);
-  return d.toISOString();
+  return utcOnCrDay(daysAhead, hour, minute).toISOString();
 }
 
 async function create(client, csrfToken, resourceId, start, extra = {}) {
