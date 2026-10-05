@@ -40,6 +40,19 @@ const HOLD_EXTRA_MINUTES = 2; // amendment 5 F-4: hold_expires_at = checkout exp
 const CHECKOUT_MINUTES = 31; // amendment 5 F-4: checkout expires_at = now + 31 min
 const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
 
+// The ONE definition of a "live" booking: one that occupies its court right
+// now. It is confirmed, or it is a payment hold that has not run out (a hold
+// with no expiry is still a hold). Every query in this file that asks "is
+// this slot taken?" or "how many bookings does this account hold?" builds
+// its WHERE from this function, and so does the reader day-hours.js calls
+// (countLiveBookingsEndingAfter), so the rule cannot drift between them.
+// The returned text holds one `?`: bind the current time there. `alias`
+// names the table when the query joins bookings to itself.
+function liveBookingSql(alias = "") {
+  const col = (name) => (alias ? `${alias}.${name}` : name);
+  return `(${col("status")} = 'confirmed' OR (${col("status")} = 'pending_payment' AND (${col("hold_expires_at")} IS NULL OR ${col("hold_expires_at")} > ?)))`;
+}
+
 function weekdayOfCrDate(dateStr) {
   return new Date(`${dateStr}T00:00:00Z`).getUTCDay(); // 0=Sunday, matches blocks.weekday
 }
@@ -176,7 +189,7 @@ export function insertBookingAtomic(
        WHERE NOT EXISTS (
          SELECT 1 FROM bookings
          WHERE resource_id = ? AND start_at < ? AND end_at > ?
-           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))
+           AND ${liveBookingSql()}
        )
        AND COALESCE((SELECT balance FROM credits WHERE account_id = ?), 0) >= ?
        RETURNING *`
@@ -221,6 +234,19 @@ async function isBlockedSlot(db, resourceId, crDateStr, startHHMM, endHHMM) {
         .all()
     ).results || [];
   return rows.find((b) => hhmmToMinutes(startHHMM) < hhmmToMinutes(b.end_time) && hhmmToMinutes(b.start_time) < hhmmToMinutes(endHHMM)) || null;
+}
+
+// READER: how many live bookings on one resource start in
+// [startFromIso, startBeforeIso) and end after endAfterIso. The owner's
+// late-hours count (day-hours.js) is this question, asked for one Costa
+// Rica day against that day's closing time. It lives here, next to the
+// engine's own live rule, because bookings belong to this module.
+export async function countLiveBookingsEndingAfter(db, resourceId, startFromIso, startBeforeIso, endAfterIso, nowIsoVal = nowIso()) {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM bookings WHERE resource_id = ? AND start_at >= ? AND start_at < ? AND end_at > ? AND ${liveBookingSql()}`)
+    .bind(resourceId, startFromIso, startBeforeIso, endAfterIso, nowIsoVal)
+    .first();
+  return row ? row.n : 0;
 }
 
 // ---------------------------------------------------------------------
@@ -279,7 +305,7 @@ export async function availability(request, env, db, url, session, account, para
       await db
         .prepare(
           `SELECT * FROM bookings WHERE resource_id = ? AND start_at < ? AND end_at > ?
-             AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
+             AND ${liveBookingSql()}`
         )
         .bind(resourceId, dayEndUtc, dayStartUtc, nowIsoVal)
         .all()
@@ -446,7 +472,7 @@ export async function createBooking(request, env, db, url, session, account) {
     const countRow = await db
       .prepare(
         `SELECT COUNT(*) AS n FROM bookings WHERE account_id = ? AND resource_id = ?
-           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
+           AND ${liveBookingSql()}`
       )
       .bind(account.id, resourceId, nowIsoVal)
       .first();
@@ -717,7 +743,7 @@ export async function confirmPaidBooking(env, bookingId, { paymentIntentId, sess
            AND NOT EXISTS (
              SELECT 1 FROM bookings AS other
              WHERE other.resource_id = ? AND other.id != ? AND other.start_at < ? AND other.end_at > ?
-               AND (other.status = 'confirmed' OR (other.status = 'pending_payment' AND (other.hold_expires_at IS NULL OR other.hold_expires_at > ?)))
+               AND ${liveBookingSql("other")}
            )
          RETURNING *`
       )

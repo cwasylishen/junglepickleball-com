@@ -11,6 +11,7 @@
 import { nowIso } from "./db.js";
 import { auditStatement } from "./audit.js";
 import { crDateStringFromUtc, crDateTimeToUtcIso, addDaysToDateString, isValidDateString, hhmmToMinutes } from "./cr-time.js";
+import { countLiveBookingsEndingAfter } from "./booking.js";
 
 // PIN L3: the latest an owner can extend a day to. The table's own CHECK
 // repeats it, so no other code path can store a later close.
@@ -63,15 +64,7 @@ async function countLateBookings(db, crDate) {
   let late = 0;
   for (const court of courts) {
     const closeIso = crDateTimeToUtcIso(crDate, applyDayOverride(court, override).close_time);
-    const row = await db
-      // "Live" is the engine's own rule: confirmed, or an unexpired payment hold.
-      .prepare(
-        `SELECT COUNT(*) AS n FROM bookings WHERE resource_id = ? AND start_at >= ? AND start_at < ? AND end_at > ?
-           AND (status = 'confirmed' OR (status = 'pending_payment' AND (hold_expires_at IS NULL OR hold_expires_at > ?)))`
-      )
-      .bind(court.id, dayStart, dayEnd, closeIso, nowIso())
-      .first();
-    late += row ? row.n : 0;
+    late += await countLiveBookingsEndingAfter(db, court.id, dayStart, dayEnd, closeIso);
   }
   return late;
 }
