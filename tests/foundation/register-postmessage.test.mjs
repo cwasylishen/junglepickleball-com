@@ -93,6 +93,8 @@ test("F7: /register and /register.html allow the Web Analytics beacon script and
     const connectSrc = directive("connect-src").split(/\s+/);
     assert.ok(scriptSrc.includes("https://static.cloudflareinsights.com"), `${urlPath} script-src: ${scriptSrc.join(" ")}`);
     assert.ok(connectSrc.includes("https://cloudflareinsights.com"), `${urlPath} connect-src: ${connectSrc.join(" ")}`);
+    // The beacon posts to the SAME origin (/cdn-cgi/rum), so connect-src needs 'self' (D3).
+    assert.ok(connectSrc.includes("'self'"), `${urlPath} connect-src lacks 'self': ${connectSrc.join(" ")}`);
     assert.ok(!scriptSrc.includes("'unsafe-inline'"), `${urlPath} script-src allows unsafe-inline: ${scriptSrc.join(" ")}`);
   }
 });
