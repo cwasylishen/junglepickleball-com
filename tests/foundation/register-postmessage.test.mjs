@@ -82,6 +82,21 @@ test("F-01: /register and /register.html both carry COOP and a CSP with no scrip
   }
 });
 
+// F7: the Cloudflare Web Analytics beacon loads from static.cloudflareinsights.com
+// and reports to cloudflareinsights.com. Those two sources, and nothing wider,
+// are added; script-src still has no 'unsafe-inline' (the existing test above).
+test("F7: /register and /register.html allow the Web Analytics beacon script and its report endpoint", () => {
+  for (const urlPath of ["/register", "/register.html"]) {
+    const csp = headersForPath(headersFile, urlPath)["Content-Security-Policy"];
+    const directive = (name) => csp.split(";").map((d) => d.trim()).find((d) => d.startsWith(`${name} `));
+    const scriptSrc = directive("script-src").split(/\s+/);
+    const connectSrc = directive("connect-src").split(/\s+/);
+    assert.ok(scriptSrc.includes("https://static.cloudflareinsights.com"), `${urlPath} script-src: ${scriptSrc.join(" ")}`);
+    assert.ok(connectSrc.includes("https://cloudflareinsights.com"), `${urlPath} connect-src: ${connectSrc.join(" ")}`);
+    assert.ok(!scriptSrc.includes("'unsafe-inline'"), `${urlPath} script-src allows unsafe-inline: ${scriptSrc.join(" ")}`);
+  }
+});
+
 test("F-01: every inline script on the page is allowed by hash, and only those", () => {
   const scripts = inlineScripts(registerHtml);
   assert.ok(scripts.length >= 1, "no inline scripts found; the extractor is broken");

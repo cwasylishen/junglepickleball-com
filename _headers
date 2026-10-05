@@ -13,11 +13,11 @@
 # The site serves clean URLs, so both paths carry the same headers.
 /register
   Cross-Origin-Opener-Policy: same-origin-allow-popups
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-pJsW5aO8eLKTFn7dhitUfsmZqYIkBsRikdG6RUV3bFs=' 'sha256-1rviiqAURP0bC/o9CQ11ERwyQMdC3CU1JKb0eq9Yh5M='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://app.wizardweb.ca; frame-src https://widgets.courtreserve.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-pJsW5aO8eLKTFn7dhitUfsmZqYIkBsRikdG6RUV3bFs=' 'sha256-1rviiqAURP0bC/o9CQ11ERwyQMdC3CU1JKb0eq9Yh5M=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://app.wizardweb.ca https://cloudflareinsights.com; frame-src https://widgets.courtreserve.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
 
 /register.html
   Cross-Origin-Opener-Policy: same-origin-allow-popups
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-pJsW5aO8eLKTFn7dhitUfsmZqYIkBsRikdG6RUV3bFs=' 'sha256-1rviiqAURP0bC/o9CQ11ERwyQMdC3CU1JKb0eq9Yh5M='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://app.wizardweb.ca; frame-src https://widgets.courtreserve.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-pJsW5aO8eLKTFn7dhitUfsmZqYIkBsRikdG6RUV3bFs=' 'sha256-1rviiqAURP0bC/o9CQ11ERwyQMdC3CU1JKb0eq9Yh5M=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://app.wizardweb.ca https://cloudflareinsights.com; frame-src https://widgets.courtreserve.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
