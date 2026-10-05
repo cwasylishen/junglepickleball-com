@@ -8,7 +8,14 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# styles.css is the one /assets file that keeps its name when it changes, so
+# it must NOT inherit the immutable rule above. Cloudflare applies every
+# matching rule and joins the values, which sent two Cache-Control values
+# (immutable for a year, then revalidate) and let phones pin an old copy.
+# `!` detaches the inherited value; pages also link it as ?v=<hash>
+# (scripts/stamp-css.mjs). Proof: tests/foundation/styles-cache.test.mjs.
 /assets/styles.css
+  ! Cache-Control
   Cache-Control: public, max-age=0, must-revalidate
 
 /*.html

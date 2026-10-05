@@ -4,6 +4,7 @@
   "private": true,
   "description": "Static one-page site for Jungle Pickleball, Ojochal, Costa Rica.",
   "scripts": {
+    "postbuild": "node ./scripts/stamp-css.mjs",
     "build": "tailwindcss -i ./src/input.css -o ./assets/styles.css --minify",
     "watch": "tailwindcss -i ./src/input.css -o ./assets/styles.css --watch",
     "build:portal": "tailwindcss -c ./tailwind.portal.config.js -i ./portal/src/input.css -o ./portal/portal.css --minify",
