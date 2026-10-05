@@ -137,7 +137,10 @@ async function handleMe(request, env, db, url, session, account) {
     passkeys: true,
     preview: env.envClass === "preview",
   };
-  if (!session || !account) return json({ authenticated: false, features });
+  // PF-4: signed out is a normal answer, not an error. 200 `{user:null}`
+  // (no 401, so the browser console stays clean); `authenticated` and
+  // `features` stay because the shell reads them before login.
+  if (!session || !account) return json({ user: null, authenticated: false, features });
   const entitlement = await resolveEntitlement(db, account.id);
   // portal(FR1), docs/portal/api.md §2 appendix: `credits` was a named
   // UI finding (screens.md §0.2's boot sequence, M1's credits line) --

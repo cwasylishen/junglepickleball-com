@@ -63,8 +63,11 @@ function navForRole(role) {
 
 async function bootstrapSession() {
   const res = await PortalApi.get("/api/portal/me");
-  if (!res.ok) return { authenticated: false, features: {}, account: null };
-  if (res.data && res.data.csrf_token) PortalApi.setCsrfToken(res.data.csrf_token);
+  if (!res.ok || !res.data) return { authenticated: false, features: {}, account: null };
+  // PF-4: signed out is 200 {user:null, authenticated:false, features}.
+  // Keep the features (the shell reads them before login), drop the user.
+  if (res.data.user === null) return { authenticated: false, features: res.data.features || {}, account: null };
+  if (res.data.csrf_token) PortalApi.setCsrfToken(res.data.csrf_token);
   return res.data;
 }
 

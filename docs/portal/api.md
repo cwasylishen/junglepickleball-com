@@ -40,7 +40,7 @@ becomes `500 {"error":"server_error"}` (CTL-ERR-01).
 
 | Method & path | Class | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /api/portal/me` | own | — | Signed out: `200 {authenticated:false, features:{stripe,push,gcal,passkeys,preview}}`. Signed in: `200 {authenticated:true, features, csrf_token, account:{id,email,role,display_name}, entitlement:{entitled,tier,overlap}, credits}` (`credits` added portal(FR1)) | — |
+| `GET /api/portal/me` | own | — | Signed out: `200 {user:null, authenticated:false, features:{stripe,push,gcal,passkeys,preview}}` (PF-4: never a 401). Signed in: `200 {authenticated:true, features, csrf_token, account:{id,email,role,display_name}, entitlement:{entitled,tier,overlap}, credits}` (`credits` added portal(FR1)) | — |
 | `GET /api/portal/owner/sessions` | owner | — | `[{id,method,user_agent_family,created_at,last_used_at,current}]` (CTL-AUTH-01) | |
 | `POST /api/portal/owner/sessions/revoke-others` | owner | — | `200 {ok:true}` -- deletes every other session row of the caller's own account | |
 | `GET /api/portal/owner/health` | owner | — | `{owners, email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured}` (CTL-AUTH-06, CTL-OWN-01; §4 adds `outbox`) | |

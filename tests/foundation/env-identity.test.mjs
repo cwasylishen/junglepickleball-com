@@ -12,13 +12,16 @@ import assert from "node:assert/strict";
 import { makeClient, d1 } from "./helpers.mjs";
 
 test("CTL-ENV-01: agreeing signals (preview host + preview marker) serve normally", async () => {
-  // GET /api/portal/me has route class "own", which requires a session
-  // (the acceptance test fixes this: "no session gives 401") -- 401 here
-  // IS "serving normally", distinguished from the 503 environment_mismatch
-  // the next tests prove for a genuine signal disagreement.
+  // PF-4: GET /api/portal/me is public and answers a signed-out caller with
+  // 200 {user:null} (no 401, so no browser console error). That 200 IS
+  // "serving normally", distinguished from the 503 environment_mismatch the
+  // next tests prove for a genuine signal disagreement.
   const client = makeClient();
   const res = await client.get("/api/portal/me");
-  assert.equal(res.status, 401);
+  assert.equal(res.status, 200);
+  assert.equal(res.data.user, null);
+  assert.equal(res.data.authenticated, false);
+  assert.ok(res.data.features, "features stay in the signed-out answer: the shell reads them before login");
 });
 
 test("CTL-ENV-01 (a): deleting the portal_meta marker -> every portal route is 503 environment_mismatch, nothing else", async () => {

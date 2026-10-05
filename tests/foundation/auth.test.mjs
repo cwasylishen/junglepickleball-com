@@ -82,6 +82,9 @@ test("CTL-AUTH-01/CTL-OWN-01: owner session list, revoke-others, and the audit/h
 
   // RED, by construction: without revoke-others deleting the other row,
   // this call would still return 200 here.
+  // PF-4: a revoked session is signed out, answered 200 {user:null}.
   const firstNowRevoked = await first.client.get("/api/portal/me");
-  assert.equal(firstNowRevoked.status, 401);
+  assert.equal(firstNowRevoked.status, 200);
+  assert.equal(firstNowRevoked.data.user, null);
+  assert.equal(firstNowRevoked.data.authenticated, false);
 });
