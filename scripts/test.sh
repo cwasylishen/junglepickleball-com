@@ -63,10 +63,14 @@ echo "== Local D1: QA-only fixture (tests/fixtures/seed-test.sql) =="
 npx wrangler d1 execute PORTAL_DB --local --persist-to "$PERSIST_DIR" --file=tests/fixtures/seed-test.sql
 
 echo "== Starting wrangler dev --local on :$PORT (inspector :$INSPECTOR_PORT) =="
+# --local-upstream: wrangler.toml declares custom-domain routes, and wrangler dev
+# then presents the request as that production hostname, which the portal's
+# environment gate (CTL-ENV-01) refuses next to the preview marker. The server
+# is reached at 127.0.0.1, so say so.
 # GLOW_LIST_KEY is a throwaway value for the local server only; the webhook
 # dispatcher test reads Glow's list view with it to see a signup turn paid.
 PORTAL_DEV_LOGIN=1 STRIPE_WEBHOOK_SECRET=whsec_local_test_only \
-  setsid npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
+  setsid npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" --local-upstream "127.0.0.1:$PORT" \
   --var PORTAL_DEV_LOGIN:1 --var STRIPE_WEBHOOK_SECRET:whsec_local_test_only --var GLOW_LIST_KEY:glow-list-key-local-test \
   > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
