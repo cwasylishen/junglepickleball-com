@@ -25,52 +25,19 @@ import { json, notConfigured } from "./http.js";
 import { newId, nowIso, runBatch } from "./db.js";
 import { resolveAudience, resolveEntitlement } from "./entitlement.js";
 import { isStripeConfigured, createBookingCheckout } from "./stripe.js";
+import {
+  crDateStringFromUtc,
+  crTimeStringFromUtcIso,
+  crDateTimeToUtcIso,
+  addDaysToDateString,
+  isValidDateString,
+  hhmmToMinutes,
+  minutesToHHMM,
+} from "./cr-time.js";
 
-// Costa Rica is UTC-6 year-round, no DST (A8). All CR-local math below
-// goes through these two conversions so the -6h offset is applied in
-// exactly one place.
-const CR_OFFSET_HOURS = 6;
 const HOLD_EXTRA_MINUTES = 2; // amendment 5 F-4: hold_expires_at = checkout expires_at + 2 min
 const CHECKOUT_MINUTES = 31; // amendment 5 F-4: checkout expires_at = now + 31 min
 const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
-
-function crDateStringFromUtc(utcDate) {
-  const shifted = new Date(utcDate.getTime() - CR_OFFSET_HOURS * 3600000);
-  return shifted.toISOString().slice(0, 10);
-}
-
-function crTimeStringFromUtcIso(utcIso) {
-  const shifted = new Date(new Date(utcIso).getTime() - CR_OFFSET_HOURS * 3600000);
-  const h = String(shifted.getUTCHours()).padStart(2, "0");
-  const m = String(shifted.getUTCMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-function crDateTimeToUtcIso(crDateStr, hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
-  const utcMs = Date.parse(`${crDateStr}T00:00:00.000Z`) + (h * 60 + m) * 60000 + CR_OFFSET_HOURS * 3600000;
-  return new Date(utcMs).toISOString();
-}
-
-function addDaysToDateString(dateStr, days) {
-  const ms = Date.parse(`${dateStr}T00:00:00.000Z`) + days * 86400000;
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-function isValidDateString(s) {
-  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
-}
-
-function hhmmToMinutes(hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function minutesToHHMM(mins) {
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
-  return `${h}:${m}`;
-}
 
 function weekdayOfCrDate(dateStr) {
   return new Date(`${dateStr}T00:00:00Z`).getUTCDay(); // 0=Sunday, matches blocks.weekday
