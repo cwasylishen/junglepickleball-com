@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BASE_URL } from "./helpers.mjs";
-import { loadPuppeteer, withBrowser } from "./portal-nav-probe.mjs";
+import { requirePuppeteer, withBrowser } from "./portal-nav-probe.mjs";
 
 const MIN_RATIO = 4.5;
 
@@ -80,8 +80,7 @@ function readFooterContrast() {
 
 for (const width of [390, 1280]) {
   test(`F13 footer contrast at ${width}: every footer line on every public page is at least ${MIN_RATIO}:1`, { timeout: 120000 }, async (t) => {
-    const puppeteer = await loadPuppeteer();
-    if (!puppeteer) return t.skip("puppeteer-core not on NODE_PATH -- run with NODE_PATH=/home/mike/wzq/node_modules");
+    const puppeteer = await requirePuppeteer();
     await withBrowser(puppeteer, async (browser) => {
       const problems = [];
       const report = [];

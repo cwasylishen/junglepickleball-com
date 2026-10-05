@@ -18,20 +18,22 @@
 //
 // Tooling: puppeteer-core from NODE_PATH (NODE_PATH=/home/mike/wzq/node_modules)
 // and axe-core. axe-core is NOT in the project tree or in the wzq tree; it is
-// loaded from, in order: $AXE_CORE_PATH (a path to axe.min.js), an
-// axe-core/axe.min.js under any NODE_PATH root, then the global Lighthouse
-// install (/home/mike/.npm-global/lib/node_modules/lighthouse/node_modules).
-// The test skips, not red, if puppeteer or axe is missing -- the same rule the
-// other headless tests follow. axe is injected with Runtime.evaluate, so the
-// page's own Content-Security-Policy is NOT bypassed.
+// loaded from, in order: $AXE_CORE_PATH (a path to axe.min.js; if set it is the
+// only candidate), require.resolve("axe-core/axe.min.js") (which searches
+// NODE_PATH), then the global Lighthouse install (/home/mike/.npm-global/lib/node_modules/lighthouse/node_modules).
+// The test FAILS, never skips, if puppeteer or axe cannot be found (F15): a guard
+// that silently skips is no guard. A set-but-missing $AXE_CORE_PATH is also a
+// failure; it is not quietly replaced by another copy. axe is injected with
+// Runtime.evaluate, so the page's own Content-Security-Policy is NOT bypassed.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_URL } from "./helpers.mjs";
-import { loadPuppeteer, withBrowser } from "./portal-nav-probe.mjs";
+import { requirePuppeteer, withBrowser } from "./portal-nav-probe.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const WIDTHS = [390, 1280];
@@ -134,13 +136,46 @@ test("F14 page list: the derived list is the public site, the 404 probe included
 
 // ---- the measurement --------------------------------------------------------
 
-function findAxeSource() {
-  const candidates = [process.env.AXE_CORE_PATH, ...(process.env.NODE_PATH || "").split(":").filter(Boolean).map((r) => `${r}/axe-core/axe.min.js`), LIGHTHOUSE_AXE];
-  for (const file of candidates) {
-    if (file && fs.existsSync(file)) return { file, source: fs.readFileSync(file, "utf8") };
+// Finds axe.min.js or THROWS a message naming every place tried and the fix.
+// `options` exist so the rule has its own test without touching the real env.
+function resolveAxe({ env = process.env, resolveModule = (id) => createRequire(import.meta.url).resolve(id), lighthousePath = LIGHTHOUSE_AXE } = {}) {
+  const fix = "Fix: set AXE_CORE_PATH to a real axe.min.js, or put axe-core on NODE_PATH, or install lighthouse globally (it carries axe-core).";
+  if (env.AXE_CORE_PATH) {
+    if (fs.existsSync(env.AXE_CORE_PATH)) return { file: env.AXE_CORE_PATH, source: fs.readFileSync(env.AXE_CORE_PATH, "utf8") };
+    throw new Error(`axe-core not found: AXE_CORE_PATH is set to "${env.AXE_CORE_PATH}" but no file exists there (no other copy is tried while it is set). This contrast guard FAILS rather than skips. Unset AXE_CORE_PATH to use the default search, or point it at a real axe.min.js.`);
   }
-  return null;
+  const tried = [];
+  try {
+    const file = resolveModule("axe-core/axe.min.js");
+    return { file, source: fs.readFileSync(file, "utf8") };
+  } catch (err) {
+    tried.push(`require.resolve("axe-core/axe.min.js") with NODE_PATH="${env.NODE_PATH || ""}" (${err.code || err.message})`);
+  }
+  if (fs.existsSync(lighthousePath)) return { file: lighthousePath, source: fs.readFileSync(lighthousePath, "utf8") };
+  tried.push(`global Lighthouse copy ${lighthousePath} (no such file)`);
+  throw new Error(`axe-core not found. Tried: ${tried.join("; ")}. This contrast guard FAILS rather than skips. ${fix}`);
 }
+
+test("F15 resolveAxe: a set but missing AXE_CORE_PATH fails and names the path; nothing else is tried", () => {
+  assert.throws(() => resolveAxe({ env: { AXE_CORE_PATH: "/nonexistent/axe.min.js" }, resolveModule: () => { throw new Error("must not be consulted"); } }), /AXE_CORE_PATH is set to "\/nonexistent\/axe\.min\.js" but no file exists there/);
+});
+
+test("F15 resolveAxe: nothing resolvable fails, naming every path tried and the fix", () => {
+  const notFound = () => { throw Object.assign(new Error("Cannot find module"), { code: "MODULE_NOT_FOUND" }); };
+  assert.throws(
+    () => resolveAxe({ env: { NODE_PATH: "/some/root" }, resolveModule: notFound, lighthousePath: "/nowhere/lighthouse/axe.min.js" }),
+    (err) => /NODE_PATH="\/some\/root"/.test(err.message) && /\/nowhere\/lighthouse\/axe\.min\.js/.test(err.message) && /FAILS rather than skips/.test(err.message) && /Fix:/.test(err.message)
+  );
+});
+
+test("F15 resolveAxe: AXE_CORE_PATH wins when it exists; the default search finds a real axe on this machine", () => {
+  const here = fileURLToPath(import.meta.url);
+  assert.equal(resolveAxe({ env: { AXE_CORE_PATH: here } }).file, here);
+  // Without any AXE_CORE_PATH of the caller's, so this assertion is about the default search alone.
+  const found = resolveAxe({ env: { ...process.env, AXE_CORE_PATH: "" } });
+  assert.match(found.source, /axe/);
+  assert.match(found.file, /axe-core\/axe\.min\.js$/);
+});
 
 // Runs in the page: axe's colour-contrast rule, reduced to plain data.
 async function runContrast() {
@@ -165,10 +200,8 @@ async function runContrast() {
 
 for (const width of WIDTHS) {
   test(`F14 whole-page contrast at ${width}: axe color-contrast finds 0 violations on every public page`, { timeout: 170000 }, async (t) => {
-    const puppeteer = await loadPuppeteer();
-    if (!puppeteer) return t.skip("puppeteer-core not on NODE_PATH -- run with NODE_PATH=/home/mike/wzq/node_modules");
-    const axeLib = findAxeSource();
-    if (!axeLib) return t.skip("axe-core not found: set AXE_CORE_PATH to an axe.min.js, or put axe-core on NODE_PATH");
+    const puppeteer = await requirePuppeteer();
+    const axeLib = resolveAxe();
     await withBrowser(puppeteer, async (browser) => {
       const problems = [];
       const report = [`axe-core from ${axeLib.file}`];

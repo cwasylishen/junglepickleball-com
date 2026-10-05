@@ -62,6 +62,20 @@ export async function loadPuppeteer() {
   return null;
 }
 
+// For the guards that must not pass silently: puppeteer missing is a RED test,
+// not a skip. A guard that skips when its tool is absent is no guard.
+export async function requirePuppeteer() {
+  const puppeteer = await loadPuppeteer();
+  if (!puppeteer) {
+    throw new Error(
+      `puppeteer-core not found under NODE_PATH ("${process.env.NODE_PATH || ""}"). `
+      + "This guard cannot run without it, so it FAILS rather than skips. "
+      + "Fix: run with NODE_PATH=/home/mike/wzq/node_modules"
+    );
+  }
+  return puppeteer;
+}
+
 export async function withBrowser(puppeteer, fn) {
   const browser = await puppeteer.launch({ executablePath: CHROMIUM_PATH, headless: "new", args: ["--no-sandbox"] });
   try {

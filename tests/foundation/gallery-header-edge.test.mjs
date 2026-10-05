@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BASE_URL } from "./helpers.mjs";
-import { EDGE_PX, loadPuppeteer, withBrowser } from "./portal-nav-probe.mjs";
+import { EDGE_PX, requirePuppeteer, withBrowser } from "./portal-nav-probe.mjs";
 
 const MIN_GAP_PX = 8; // clear space between neighbouring header items
 
@@ -40,8 +40,7 @@ function readHeader() {
 
 for (const width of [360, 390, 768, 1280]) {
   test(`F13 /gallery header at ${width}: BOOK COURT keeps ${EDGE_PX} px from the right edge, one line, nothing overlapping`, { timeout: 60000 }, async (t) => {
-    const puppeteer = await loadPuppeteer();
-    if (!puppeteer) return t.skip("puppeteer-core not on NODE_PATH -- run with NODE_PATH=/home/mike/wzq/node_modules");
+    const puppeteer = await requirePuppeteer();
     await withBrowser(puppeteer, async (browser) => {
       const page = await browser.newPage();
       try {
