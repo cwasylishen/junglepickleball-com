@@ -34,6 +34,7 @@ import {
   hhmmToMinutes,
   minutesToHHMM,
 } from "./cr-time.js";
+import { resourceForDate } from "./day-hours.js";
 
 const HOLD_EXTRA_MINUTES = 2; // amendment 5 F-4: hold_expires_at = checkout expires_at + 2 min
 const CHECKOUT_MINUTES = 31; // amendment 5 F-4: checkout expires_at = now + 31 min
@@ -89,6 +90,22 @@ export function withinWindow(resource, crDateStr, entitled) {
   const windowDays = entitled ? resource.member_window_days : resource.non_member_window_days;
   const today = crDateStringFromUtc(new Date());
   return crDateStr <= addDaysToDateString(today, windowDays);
+}
+
+// PIN L3: Cold Plunge may only be booked at least `min_advance_minutes`
+// ahead (24 h). Exactly 24 h ahead is allowed ("at least"). Owner and
+// staff are exempt, as they are from the window (D-A11); the caller
+// decides who is exempt.
+export function tooSoon(resource, startMs, nowMs) {
+  return resource.min_advance_minutes > 0 && startMs - nowMs < resource.min_advance_minutes * 60000;
+}
+
+// The 409 error code when the audience resolver says an offering cannot
+// be sold. A missing price is "price_not_set" (the owner can fix it); an
+// offering that is switched off or does not exist is not bookable online
+// at all (PIN L3: massage stays off until Roger gives Samy's hours).
+function notBookableCode(audience) {
+  return audience.reason === "price_not_set" ? "price_not_set" : "not_bookable_online";
 }
 
 function clampPartySize(value) {
@@ -222,6 +239,14 @@ export async function listResources(request, env, db) {
       slot_minutes: r.slot_minutes,
       buffer_minutes: r.buffer_minutes,
       member_included: Boolean(r.member_included),
+      // PIN L3: how far ahead each kind of booker may book, the minimum
+      // notice, and whether anything on this resource can be booked online
+      // at all (a resource with no active offering is shown to nobody).
+      member_window_days: r.member_window_days,
+      non_member_window_days: r.non_member_window_days,
+      min_advance_minutes: r.min_advance_minutes,
+      cancel_cutoff_minutes: r.cancel_cutoff_minutes,
+      active: offeringRows.some((o) => o.resource_id === r.id),
       offerings: offeringRows
         .filter((o) => o.resource_id === r.id)
         .map((o) => ({ id: o.id, name: o.name, duration_minutes: o.duration_minutes, audience: o.audience, display_price_cents: o.display_price_cents })),
@@ -240,10 +265,13 @@ export async function availability(request, env, db, url, session, account, para
   const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(resourceId).first();
   if (!resource) return json({ error: "not_found" }, 404);
 
-  const grid = generateGridForDate(resource, dateStr);
+  // The owner may have extended this day's close (PIN L3); the grid is
+  // built from the day's real hours.
+  const grid = generateGridForDate(await resourceForDate(db, resource, dateStr), dateStr);
   if (grid.length === 0) return json({ slots: [] });
 
   const nowIsoVal = nowIso();
+  const mustGiveNotice = account.role !== "owner" && account.role !== "staff";
   const dayStartUtc = grid[0].start;
   const dayEndUtc = grid[grid.length - 1].end;
   const liveBookings =
@@ -281,6 +309,7 @@ export async function availability(request, env, db, url, session, account, para
     if (overlapping.find((b) => b.account_id === account.id && b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held_mine" };
     if (overlapping.find((b) => b.status === "confirmed")) return { start: slot.start, end: slot.end, state: "taken" };
     if (overlapping.find((b) => b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held" };
+    if (mustGiveNotice && tooSoon(resource, Date.parse(slot.start), Date.now())) return { start: slot.start, end: slot.end, state: "too_soon" };
     return { start: slot.start, end: slot.end, state: "available" };
   });
 
@@ -299,8 +328,9 @@ export async function quote(request, env, db, url, session, account, params) {
   const partySize = resource.price_mode === "per_player" ? clampPartySize(url.searchParams.get("party_size")) : 1;
 
   const offerings = (await db.prepare(`SELECT * FROM offerings WHERE resource_id = ?`).bind(resourceId).all()).results || [];
+  if (!offerings.some((o) => o.active)) return json({ error: "not_bookable_online" }, 409);
   const audience = await resolveAudience(db, account.id, resource, offerings, offeringId);
-  if (audience.mode === "not_bookable") return json({ error: "price_not_set" }, 409);
+  if (audience.mode === "not_bookable") return json({ error: notBookableCode(audience) }, 409);
 
   const unitCents = audience.unit_cents || 0;
   const totalCents = bookingTotalCents(resource, audience, partySize);
@@ -377,8 +407,11 @@ export async function createBooking(request, env, db, url, session, account) {
   if (startDate.getTime() <= nowDate.getTime()) return json({ error: "in_past" }, 409);
 
   const offerings = (await db.prepare(`SELECT * FROM offerings WHERE resource_id = ?`).bind(resourceId).all()).results || [];
+  // PIN L3: a resource none of whose offerings is active (massage, until
+  // Roger gives Samy's hours) cannot be booked online by anyone.
+  if (!offerings.some((o) => o.active)) return json({ error: "not_bookable_online" }, 409);
   const audience = await resolveAudience(db, account.id, resource, offerings, offeringId, nowIsoVal);
-  if (audience.mode === "not_bookable") return json({ error: "price_not_set" }, 409);
+  if (audience.mode === "not_bookable") return json({ error: notBookableCode(audience) }, 409);
 
   const durationMinutes = resolveDuration(resource, offerings, audience.offering_id || offeringId);
   const startIso = startDate.toISOString();
@@ -388,13 +421,20 @@ export async function createBooking(request, env, db, url, session, account) {
   // S-12/D-A14: off the grid, before/after hours, or ending past close.
   // Checked for every caller, including staff/owner self-booking --
   // D-A11's exemption (window/entitlement/payment) never covers this.
-  const gridError = gridAndHoursError(resource, startIso, endIso);
+  // The hours are the day's real hours: the owner may have extended
+  // this date to 21:00 (PIN L3), and a slot ending after the normal
+  // close is bookable only on such a day.
+  const hoursToday = await resourceForDate(db, resource, crDateStr);
+  const gridError = gridAndHoursError(hoursToday, startIso, endIso);
   if (gridError) return json({ error: gridError }, 400);
 
-  // D-A13: owner/staff have no window; member/guest do.
+  // D-A13: owner/staff have no window or minimum notice; member/guest do.
   if (account.role !== "owner" && account.role !== "staff") {
     const entitlement = await resolveEntitlement(db, account.id, nowIsoVal);
     if (!withinWindow(resource, crDateStr, entitlement.entitled)) return json({ error: "outside_window" }, 409);
+    if (tooSoon(resource, startDate.getTime(), nowDate.getTime())) {
+      return json({ error: "too_soon", min_advance_minutes: resource.min_advance_minutes }, 409);
+    }
   }
 
   const startHHMM = crTimeStringFromUtcIso(startIso);
@@ -569,7 +609,7 @@ export async function cancelBooking(request, env, db, url, session, account, par
     const resource = await db.prepare(`SELECT cancel_cutoff_minutes FROM resources WHERE id = ?`).bind(booking.resource_id).first();
     const cutoffMinutes = resource ? resource.cancel_cutoff_minutes : 0;
     const cutoffMs = new Date(booking.start_at).getTime() - cutoffMinutes * 60000;
-    if (nowDate.getTime() > cutoffMs) return json({ error: "past_cutoff" }, 409);
+    if (nowDate.getTime() > cutoffMs) return json({ error: "past_cutoff", cancel_cutoff_minutes: cutoffMinutes }, 409);
   }
 
   const cancelledAt = nowIsoVal;

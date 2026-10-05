@@ -13,6 +13,7 @@ import { resolveEntitlement, validGrants } from "./entitlement.js";
 import { outboxSummary } from "./outbox.js";
 import { crLocalMinutesOfUtcIso, timeToMinutes } from "./resources.js";
 import { insertBookingAtomic, gridAndHoursError, guardedOutboxInsertStatement } from "./booking.js";
+import { resourceForDate } from "./day-hours.js";
 
 // Mirrors the 7 tier lookup_key families entitlement.js's TIER_RANK
 // recognises (not exported there -- see the B2a2 return's findings: if
@@ -446,7 +447,9 @@ export async function ownerOverrideBooking(db, actorId, body = {}) {
   // M10/S-12: D-A11 bypasses window/entitlement/payment, never grid or
   // hours -- the override uses the SAME check createBooking does
   // (booking.js's gridAndHoursError), not a second copy of the rule.
-  const gridError = gridAndHoursError(resource, startIso, endIso);
+  // The day's real hours, so the owner can book into a day they extended
+  // (PIN L3) and, as for everyone, not past the normal close otherwise.
+  const gridError = gridAndHoursError(await resourceForDate(db, resource, crDateString(startIso)), startIso, endIso);
   if (gridError) return { error: gridError };
 
   let bookingAccountId = account_id;
