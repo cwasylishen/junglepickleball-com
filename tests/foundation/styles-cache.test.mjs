@@ -180,3 +180,20 @@ test("F4-C: every same-origin CSS/JS a public page links is content-versioned or
     }
   }
 });
+
+// Cloudflare joins every matching rule's value into one comma-separated header,
+// so two rules that both set the same header name on one path send a merged
+// value (INT2: /portal/* sent two Referrer-Policy values, /portal/*.html and /portal/sw.js two
+// Cache-Control values). No path may end up with more than one value of any header.
+test("INT2: no header name carries more than one value on any representative path", () => {
+  const paths = [
+    "/", "/index.html", "/register", "/register.html", "/glow", "/glow.html", "/gallery.html",
+    "/assets/styles.css", "/assets/hero/hero.webp",
+    "/portal/", "/portal/index.html", "/portal/views/member-home.html", "/portal/sw.js", "/portal/portal.css", "/api/portal/me",
+  ];
+  for (const path of paths) {
+    for (const [name, values] of Object.entries(headersFor(rules, path))) {
+      assert.equal(values.length, 1, `${path} would send ${name} with ${values.length} merged values: ${JSON.stringify(values)}`);
+    }
+  }
+});

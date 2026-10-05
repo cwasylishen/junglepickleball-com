@@ -46,13 +46,16 @@
 # Kept the same as PORTAL_HTML_HEADERS in src/portal/http.js (tests/portal-csp.test.mjs).
 /portal/*
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'
+  ! Referrer-Policy
   Referrer-Policy: no-referrer
   Cross-Origin-Opener-Policy: same-origin
   ! X-Frame-Options
   X-Frame-Options: DENY
+  ! Cache-Control
   Cache-Control: no-store
 
 /portal/sw.js
+  ! Cache-Control
   Cache-Control: no-cache
 
 /api/portal/*
