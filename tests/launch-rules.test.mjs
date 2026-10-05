@@ -143,9 +143,10 @@ test("Cold Plunge: the 24 h rule applies to a non-member too, before any payment
   const g = await booker("g1", "guest");
   const early = await book(g, "cold-plunge", crAt("2026-10-06", "08:40"), { party_size: 1 });
   assert.deepEqual([early.status, early.data.error], [409, "too_soon"]);
-  // At 24 h the request gets past the rule and on to payment; Stripe is not configured here.
+  // At 24 h the request gets past the rule. Stripe is not configured here, so (PIN L4)
+  // it is recorded as a booking to be paid at the club, not refused.
   const ok = await book(g, "cold-plunge", crAt("2026-10-06", "09:00"), { party_size: 1 });
-  assert.deepEqual([ok.status, ok.data.error], [503, "not_configured"]);
+  assert.deepEqual([ok.status, ok.data.error, ok.data.booking?.pay_at_club], [201, undefined, true]);
 });
 
 test("Cold Plunge: the availability grid marks slots inside 24 h as too_soon for a member, not for the owner", async () => {
@@ -161,11 +162,13 @@ test("Cold Plunge: the availability grid marks slots inside 24 h as too_soon for
 
 test("Cold Plunge: the owner is not held to the minimum notice (as with the window)", async () => {
   const o = await owner();
-  // Booking as themselves, the owner gets past the rule and on to payment (Stripe is not configured here).
+  // Booking as themselves, the owner gets past the rule. Stripe is not configured here, so (PIN L4)
+  // the booking is recorded to be paid at the club.
   const self = await book(o, "cold-plunge", crAt(TODAY, "10:00"), { party_size: 1 });
-  assert.deepEqual([self.status, self.data.error], [503, "not_configured"]);
-  // The owner's walk-in booking (D-A11) takes no notice either.
-  const walkIn = await ownerOverrideBooking(db, "owner-1", { resource_id: "cold-plunge", start: crAt(TODAY, "10:00"), walk_in_name: "Walk-in" });
+  assert.deepEqual([self.status, self.data.error, self.data.booking?.pay_at_club], [201, undefined, true]);
+  // The owner's walk-in booking (D-A11) takes no notice either. A different slot:
+  // the owner's own booking above now holds 10:00.
+  const walkIn = await ownerOverrideBooking(db, "owner-1", { resource_id: "cold-plunge", start: crAt(TODAY, "10:20"), walk_in_name: "Walk-in" });
   assert.equal(walkIn.error, undefined);
 });
 
@@ -216,9 +219,10 @@ test("massage is present but not bookable online: the booking API refuses it, an
 test("massage: the `active` column is the gate (switch an offering on and the refusal changes)", async () => {
   const s = await booker("m1");
   db.sqlite.prepare(`UPDATE offerings SET active = 1 WHERE id = 'massage-60'`).run();
-  // Now past the gate: massage is paid, Stripe is not configured here.
+  // Now past the gate: massage is paid, and Stripe is not configured here, so (PIN L4)
+  // it is recorded to be paid at the club.
   const r = await book(s, "massage-samy", crAt("2026-10-08", "10:00"), { offering_id: "massage-60", party_size: 1 });
-  assert.deepEqual([r.status, r.data.error], [503, "not_configured"]);
+  assert.deepEqual([r.status, r.data.error, r.data.booking?.pay_at_club], [201, undefined, true]);
   // The 90 minute offering is still off: refused by name, not as a missing price.
   const still = await book(s, "massage-samy", crAt("2026-10-08", "10:00"), { offering_id: "massage-90", party_size: 1 });
   assert.deepEqual([still.status, still.data.error], [409, "not_bookable_online"]);

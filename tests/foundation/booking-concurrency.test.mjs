@@ -110,8 +110,10 @@ test("B2a1 expired-hold reuse: an expired pending_payment hold never blocks a ne
 
 test("B2a1 cancel-then-rebook: cancelling a confirmed booking immediately frees the slot for a new one", async () => {
   const resourceId = "demo-court-0000-0000-000000000004";
-  const start = freshStartIso(1, 19); // 13:00 CR -- on Court 4's grid (portal(FR2-B)/M10)
-  const end = freshStartIso(1, 20, 30);
+  // Three days out: online cancellation closes 24 h before the start (PIN L3),
+  // so a booking for tomorrow could not be cancelled by its holder after 13:00 CR today.
+  const start = freshStartIso(3, 19); // 13:00 CR -- on Court 4's grid (portal(FR2-B)/M10)
+  const end = freshStartIso(3, 20, 30);
   d1(
     `INSERT INTO bookings (id, account_id, resource_id, offering_id, start_at, end_at, party_size, free_kids, status, payment_mode, created_by, created_at, updated_at)
      VALUES ('b2a1-rebook-src', 'demo-memb1-0000-0000-000000000003', '${resourceId}', NULL, '${start}', '${end}', 1, 0, 'confirmed', 'included', 'demo-memb1-0000-0000-000000000003', datetime('now'), datetime('now'))`

@@ -87,7 +87,8 @@ test("L4 /api/checkout: GET is the payments flag (off), and a POST that arrives 
 
 test("L4 booking: a paid court booking is recorded confirmed and unpaid, with the amount, and no Stripe call or hold", async () => {
   const guest = await guestSession();
-  const start = crDateAt(1, 14, 30); // tomorrow 14:30 CR, on Court 3's 90-minute grid
+  // Three days out, so the cancel at the end is outside the 24 h cutoff (PIN L3) whatever the time of day.
+  const start = crDateAt(3, 14, 30); // 14:30 CR, on Court 3's 90-minute grid
   const quote = await guest.client.get(`/api/portal/resources/${COURT_3}/quote?start=${encodeURIComponent(start)}&party_size=2`);
   assert.equal(quote.status, 200, JSON.stringify(quote.data));
   assert.equal(quote.data.pay_at_club, true);
