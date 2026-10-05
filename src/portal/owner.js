@@ -12,7 +12,7 @@ import { auditStatement } from "./audit.js";
 import { resolveEntitlement, validGrants } from "./entitlement.js";
 import { outboxSummary } from "./outbox.js";
 import { crLocalMinutesOfUtcIso, timeToMinutes } from "./resources.js";
-import { insertBookingAtomic, gridAndHoursError, guardedOutboxInsertStatement, isPayAtClub, payAtClubAmountCents } from "./booking.js";
+import { insertBookingAtomic, gridAndHoursError, parseInstantUtc, guardedOutboxInsertStatement, isPayAtClub, payAtClubAmountCents } from "./booking.js";
 import { resourceForDate } from "./day-hours.js";
 
 // Mirrors the 7 tier lookup_key families entitlement.js's TIER_RANK
@@ -447,8 +447,8 @@ export async function ownerOverrideBooking(db, actorId, body = {}) {
   const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(resource_id).first();
   if (!resource) return { error: "resource_not_found" };
 
-  const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) return { error: "bad_start" };
+  const startDate = parseInstantUtc(start);
+  if (!startDate) return { error: "bad_start" };
   const startIso = startDate.toISOString();
   const endIso = new Date(startDate.getTime() + resource.slot_minutes * 60000).toISOString();
 

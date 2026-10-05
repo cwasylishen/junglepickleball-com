@@ -87,6 +87,27 @@ export function generateGridForDate(resource, crDateStr) {
   return slots;
 }
 
+// F-03: the one place a request's start (or end) instant is read. Only the
+// exact shape the portal's own slots carry is accepted: YYYY-MM-DDTHH:MM:SS
+// with optional milliseconds, then Z. new Date() alone also takes
+// ECMAScript expanded years ("+010000-...", "-000001-..."), numeric offsets
+// and loose forms; an expanded-year string sorts before "2026-..." in the
+// string compares of the 60-day window and the guest cap, and so slipped
+// past both. Returns a Date, or null for anything else (including a date
+// that does not exist, such as 2026-02-30). The caller answers 400 with its
+// own error code. createBooking and ownerOverrideBooking both use this;
+// nothing else in src/portal may parse a request's start.
+const INSTANT_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+export function parseInstantUtc(raw) {
+  if (typeof raw !== "string" || !INSTANT_UTC.test(raw)) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  // Date rolls 2026-02-30 over to March 2 and reads 24:00 as the next day;
+  // the text must name the same date and time it parsed to.
+  if (date.toISOString().slice(0, 19) !== raw.slice(0, 19)) return null;
+  return date;
+}
+
 // D-A14/S-12: the one grid/hours check every booking writer uses --
 // createBooking below AND the owner override (owner.js's
 // ownerOverrideBooking) import this rather than keep a second copy
@@ -487,8 +508,8 @@ export async function createBooking(request, env, db, url, session, account) {
   const paymentChoice = body && body.payment_choice === "card" ? "card" : body && body.payment_choice === "credits" ? "credits" : null;
 
   if (!resourceId || typeof startRaw !== "string") return json({ error: "invalid_request" }, 400);
-  const startDate = new Date(startRaw);
-  if (Number.isNaN(startDate.getTime())) return json({ error: "invalid_request" }, 400);
+  const startDate = parseInstantUtc(startRaw);
+  if (!startDate) return json({ error: "invalid_request" }, 400);
 
   const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(resourceId).first();
   if (!resource) return json({ error: "not_found" }, 404);
