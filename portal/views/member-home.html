@@ -45,7 +45,7 @@
       <template x-if="!holdBooking && !nextUp">
         <div class="rounded-xl border border-slate-200 bg-white p-4">
           <p class="font-heading text-lg text-jpteal" x-text="t('home.empty_title')"></p>
-          <p class="text-sm text-slate-600 mt-1" x-text="t('home.empty_body', {open: '07:00', close: '19:30'})"></p>
+          <p class="text-sm text-slate-600 mt-1" x-show="courtHours" x-text="courtHours ? t('home.empty_body', {open: courtHours.open, close: courtHours.close}) : ''"></p>
         </div>
       </template>
 

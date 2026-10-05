@@ -78,7 +78,8 @@ window.PortalApp.mergeStrings({
   "home.book_plunge": "Cold plunge",
   "home.status_member": "{tier} member · active until {date}",
   "home.status_member_no_date": "{tier} member · active",
-  "home.status_guest": "Not a member yet. You can book up to 2 days ahead. Courts are paid per player.",
+  "home.status_guest": "Not a member yet. You can book up to {window} ahead. Courts are paid per player.",
+  "home.status_guest_no_window": "Not a member yet. Courts are paid per player.",
   "home.credits": "{n} court credits left",
   "home.no_credits": "No court credits",
   "home.upcoming_label": "Coming up",
@@ -258,6 +259,7 @@ function memberHome() {
     statusTint: "page",
     statusLine: "",
     creditsLine: "",
+    courtHours: null, // {open, close} from the courts the API returns; null until known
     t: window.t,
     crDate: window.crDate,
     crTime: window.crTime,
@@ -280,6 +282,12 @@ function memberHome() {
       var rest = upcoming.filter(function (b) { return b !== this.holdBooking; }, this);
       this.nextUp = rest[0] || null;
       this.comingUp = rest.slice(1, 4);
+      // The hours and the booking window in the words below come from the
+      // courts the API returns, never from text in this file. If they cannot
+      // be read, the sentence that needs them is left out, not guessed.
+      var resourcesRes = await PortalApi.get("/api/portal/resources");
+      var rules = resourcesRes.ok ? window.PortalApp.courtRules(resourcesRes.data) : null;
+      this.courtHours = rules ? { open: rules.open, close: rules.close } : null;
       var ent = me.data.entitlement || { entitled: false };
       if (ent.entitled) {
         this.statusTint = "ok";
@@ -287,7 +295,9 @@ function memberHome() {
         this.statusLine = t("home.status_member_no_date", { tier: tierName });
       } else {
         this.statusTint = "page";
-        this.statusLine = t("home.status_guest");
+        this.statusLine = rules && typeof rules.guestWindowDays === "number"
+          ? t("home.status_guest", { window: window.PortalApp.daysWords(rules.guestWindowDays) })
+          : t("home.status_guest_no_window");
       }
       var credits = me.data.credits || 0;
       this.creditsLine = credits > 0 ? t("home.credits", { n: credits }) : t("home.no_credits");
@@ -360,7 +370,7 @@ function memberBook() {
         if (want) this.pickResource(want);
       }
       if (q.offering && this.resource) {
-        var off = (this.resource.offerings || []).find(function (o) { return o.id === q.offering; });
+        var off = this.yourOfferings(this.resource).find(function (o) { return o.id === q.offering; });
         if (off) this.offering = off;
       }
       if (q.date) this.pickDate(q.date);
@@ -369,10 +379,23 @@ function memberBook() {
     amenities() { return this.resources.filter(function (r) { return r.kind !== "court"; }); },
     isMassage(r) { return r.kind === "massage"; },
     priceMode() { return this.resource && this.resource.kind === "court" ? "per_player" : "per_booking"; },
+    // What THIS person pays, as the server decides it (the same decision as
+    // the quote and the booking): "Included" only when it is included for
+    // them, never because the resource is included for members.
     priceLine(r) {
-      if (r.member_included) return t("book.included");
-      if (r.offerings && r.offerings.length === 1) return money(r.offerings[0].display_price_cents);
+      if (r.included_for_you) return t("book.included");
+      var mine = this.yourOfferings(r);
+      if (mine.length === 1) return money(mine[0].display_price_cents);
       return "";
+    },
+    // The offerings that apply to this person. A guest is shown the guest
+    // Cold Plunge and nothing else; a member's own price; every length for
+    // massage. When none is marked (a member's court is included, so no
+    // price applies) all of the resource's offerings stand, as before.
+    yourOfferings(r) {
+      var all = (r && r.offerings) || [];
+      var mine = all.filter(function (o) { return o.applies_to_you; });
+      return mine.length > 0 ? mine : all;
     },
     pickResource(r) {
       // Deliberately does not write window.location.hash: the router
@@ -386,7 +409,8 @@ function memberBook() {
       // FINDING: this means refresh/back mid-flow does not restore the
       // date/slot/offering already chosen -- only the resource.
       this.resource = r;
-      this.offering = r.offerings && r.offerings.length === 1 ? r.offerings[0] : null;
+      var mine = this.yourOfferings(r);
+      this.offering = mine.length === 1 ? mine[0] : null;
       this.date = null;
       this.slots = [];
       this.slot = null;
@@ -409,10 +433,10 @@ function memberBook() {
     buildDateOptions() {
       // D-A13/PIN L3: the booker's own window, as the server states it for
       // this resource (60 days for everyone). The day count is the last
-      // day offered after today. An older server that does not say falls
-      // back to a week.
+      // day offered after today. The server always states it; if it ever
+      // does not, offer today only rather than invent a window here.
       var windowDays = this.resource && (this.entitled ? this.resource.member_window_days : this.resource.non_member_window_days);
-      var n = (typeof windowDays === "number" ? windowDays : 6) + 1;
+      var n = (typeof windowDays === "number" ? windowDays : 0) + 1;
       this.dateOptions = [];
       for (var i = 0; i < n; i++) {
         var d = new Date();

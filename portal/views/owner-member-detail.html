@@ -168,7 +168,7 @@
             <label class="flex items-center gap-2 mt-2 text-sm"><input type="radio" value="member" x-model="roleChoice" /> Member</label>
             <p class="text-xs text-slate-500 ml-6" x-text="t('role.member_effect')"></p>
             <label class="flex items-center gap-2 mt-2 text-sm"><input type="radio" value="guest" x-model="roleChoice" /> Guest</label>
-            <p class="text-xs text-slate-500 ml-6" x-text="t('role.guest_effect')"></p>
+            <p class="text-xs text-slate-500 ml-6" x-text="guestEffect()"></p>
             <div class="mt-4 flex gap-2">
               <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="submitRole()" x-text="t('act.save')"></button>
               <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="roleSheet = false" x-text="t('cancel.keep')"></button>

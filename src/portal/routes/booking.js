@@ -7,7 +7,7 @@
 import { listResources, availability, quote, createBooking, cancelBooking, listMyBookings } from "../booking.js";
 
 export const ROUTES = [
-  { method: "GET", path: "/api/portal/resources", class: "own", handler: (ctx) => listResources(ctx.request, ctx.env, ctx.db) },
+  { method: "GET", path: "/api/portal/resources", class: "own", handler: (ctx) => listResources(ctx.request, ctx.env, ctx.db, ctx.account) },
   {
     method: "GET",
     path: "/api/portal/resources/:id/availability",

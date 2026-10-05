@@ -136,7 +136,8 @@
 
     "role.staff_effect": "Sees only their assigned calendar: times and names, no emails or payments.",
     "role.member_effect": "Books as a member. Normally set automatically by an active membership.",
-    "role.guest_effect": "Books as a guest: up to 2 days ahead, at guest prices.",
+    "role.guest_effect": "Books as a guest: up to {window} ahead, at guest prices.",
+    "role.guest_effect_no_window": "Books as a guest, at guest prices.",
     "role.owner_note": "Owner access is set in the site's setup, not here. Ask your web team to change it.",
 
     "block.title": "Block time",
@@ -166,7 +167,8 @@
     "manage.sync": "Calendar sync",
     "manage.late": "Late hours",
 
-    "late.intro": "Courts normally close at 19:00. Extend one day to 21:00, for an event or a tournament. It applies to courts only and to that day only.",
+    "late.normal_close": "Courts normally close at {close}.",
+    "late.intro": "Extend one day to 21:00, for an event or a tournament. It applies to courts only and to that day only.",
     "late.day": "Day",
     "late.extend": "Extend to 21:00",
     "late.until": "Courts open until {time}",
@@ -532,6 +534,7 @@
       partnerPickedId: null,
       roleChoice: "member",
       saveError: null,
+      courtRules: null, // read from the resources the API returns, for the words about a guest's window
       h: window.ownerHelpers,
       tiers: TIERS,
       async init() {
@@ -570,11 +573,19 @@
         this.dependants = d.dependants || [];
         const resourceNames = {};
         for (const r of resourcesRes.ok ? resourcesRes.data || [] : []) resourceNames[r.id] = r.name;
+        this.courtRules = resourcesRes.ok ? window.PortalApp.courtRules(resourcesRes.data) : null;
         this.bookings = (d.bookings || []).map((b) => ({ ...b, resource: resourceNames[b.resource_id] || b.resource_id, start: b.start_at }));
         this.payments = d.payments || [];
         const activeSources = new Set(this.grants.filter((g) => g.status === "active").map((g) => g.source));
         this.overlap = activeSources.size > 1;
         this.state = "ok";
+      },
+      // What a guest can do, in words, from the courts' own booking window.
+      guestEffect() {
+        const days = this.courtRules && this.courtRules.guestWindowDays;
+        return typeof days === "number"
+          ? window.t("role.guest_effect", { window: window.PortalApp.daysWords(days) })
+          : window.t("role.guest_effect_no_window");
       },
       granterName(id) {
         return this.accountNames[id] || id;
@@ -1045,19 +1056,29 @@
       days: [],
       date: "",
       message: "",
+      normalClose: "", // the courts' own closing time, read from the resources; "" until known
       h: window.ownerHelpers,
       async init() {
         await this.load();
       },
       async load() {
         this.state = "loading";
-        const res = await PortalApi.get("/api/portal/owner/day-extensions");
+        const [res, resourcesRes] = await Promise.all([
+          PortalApi.get("/api/portal/owner/day-extensions"),
+          PortalApi.get("/api/portal/owner/resources"),
+        ]);
         if (!res.ok) {
           this.state = classify(res);
           return;
         }
         this.days = res.data || [];
+        const rules = resourcesRes.ok ? window.PortalApp.courtRules(resourcesRes.data) : null;
+        this.normalClose = rules ? rules.close : "";
         this.state = "ok";
+      },
+      // The intro, with the normal closing time only when it could be read.
+      introLine() {
+        return (this.normalClose ? window.t("late.normal_close", { close: this.normalClose }) + " " : "") + window.t("late.intro");
       },
       // Said in the owner's words; a code with no sentence falls back to
       // the generic one rather than showing the code.

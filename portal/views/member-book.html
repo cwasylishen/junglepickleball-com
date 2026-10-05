@@ -57,11 +57,11 @@
       <h2 class="font-heading text-lg text-jpteal mt-2" x-text="resource.name"></h2>
 
       <!-- M2a2 Duration choice -->
-      <template x-if="resource.offerings && resource.offerings.length > 1">
+      <template x-if="yourOfferings(resource).length > 1">
         <div class="mt-3">
           <p class="text-sm text-slate-600" x-text="t('book.duration_top')"></p>
           <div class="mt-2 grid grid-cols-2 gap-3">
-            <template x-for="o in resource.offerings" :key="o.id">
+            <template x-for="o in yourOfferings(resource)" :key="o.id">
               <button class="rounded-xl border p-3 text-center h-[72px]"
                       :class="offering && offering.id === o.id ? 'border-2 border-jpteal' : 'border-slate-200'"
                       @click="pickOffering(o)">
@@ -75,7 +75,7 @@
       </template>
 
       <!-- M2b Date strip + M2c grid -->
-      <template x-if="offering || !(resource.offerings && resource.offerings.length > 1)">
+      <template x-if="offering || !(yourOfferings(resource).length > 1)">
         <div class="mt-4">
           <div class="flex gap-2 overflow-x-auto pb-1">
             <template x-for="d in dateOptions" :key="d">

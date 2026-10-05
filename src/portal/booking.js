@@ -23,7 +23,7 @@
 
 import { json, notConfigured } from "./http.js";
 import { newId, nowIso, runBatch } from "./db.js";
-import { resolveAudience, resolveEntitlement } from "./entitlement.js";
+import { resolveAudience, resolveEntitlement, audienceFor } from "./entitlement.js";
 import { isStripeConfigured, createBookingCheckout } from "./stripe.js";
 import {
   crDateStringFromUtc,
@@ -291,31 +291,59 @@ export async function countLiveBookingsEndingAfter(db, resourceId, startFromIso,
 // ---------------------------------------------------------------------
 // §3 GET /api/portal/resources
 // ---------------------------------------------------------------------
-export async function listResources(request, env, db) {
+// What one caller is shown for one resource, from the same decision the
+// quote and the booking make (audienceFor): whether it is included for them,
+// and which of its offerings apply to them. A guest is never shown a member
+// offering, and never an "Included" that the confirm step will not honour.
+function resourceViewForCaller(entitlement, resource, offerings) {
+  if (resource.kind === "massage") {
+    const applies = offerings.filter((o) => audienceFor(entitlement, resource, offerings, o.id).mode === "pay").map((o) => o.id);
+    return { included: false, applies };
+  }
+  const audience = audienceFor(entitlement, resource, offerings);
+  return { included: audience.mode === "included", applies: audience.offering_id ? [audience.offering_id] : [] };
+}
+
+export async function listResources(request, env, db, account) {
   const resources = (await db.prepare(`SELECT * FROM resources ORDER BY kind, name`).all()).results || [];
   const offeringRows = (await db.prepare(`SELECT * FROM offerings WHERE active = 1 ORDER BY resource_id, duration_minutes`).all()).results || [];
+  const entitlement = await resolveEntitlement(db, account.id);
   return json(
-    resources.map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      name: r.name,
-      open_time: r.open_time,
-      close_time: r.close_time,
-      slot_minutes: r.slot_minutes,
-      buffer_minutes: r.buffer_minutes,
-      member_included: Boolean(r.member_included),
-      // PIN L3: how far ahead each kind of booker may book, the minimum
-      // notice, and whether anything on this resource can be booked online
-      // at all (a resource with no active offering is shown to nobody).
-      member_window_days: r.member_window_days,
-      non_member_window_days: r.non_member_window_days,
-      min_advance_minutes: r.min_advance_minutes,
-      cancel_cutoff_minutes: r.cancel_cutoff_minutes,
-      active: offeringRows.some((o) => o.resource_id === r.id),
-      offerings: offeringRows
-        .filter((o) => o.resource_id === r.id)
-        .map((o) => ({ id: o.id, name: o.name, duration_minutes: o.duration_minutes, audience: o.audience, display_price_cents: o.display_price_cents })),
-    }))
+    resources.map((r) => {
+      const offerings = offeringRows.filter((o) => o.resource_id === r.id);
+      const forYou = resourceViewForCaller(entitlement, r, offerings);
+      return {
+        id: r.id,
+        kind: r.kind,
+        name: r.name,
+        open_time: r.open_time,
+        close_time: r.close_time,
+        slot_minutes: r.slot_minutes,
+        buffer_minutes: r.buffer_minutes,
+        member_included: Boolean(r.member_included),
+        // What THIS caller pays: true when the booking is included for them
+        // (a member's court, an annual member's plunge). member_included
+        // above is the resource's setting for members and says nothing
+        // about a guest.
+        included_for_you: forYou.included,
+        // PIN L3: how far ahead each kind of booker may book, the minimum
+        // notice, and whether anything on this resource can be booked online
+        // at all (a resource with no active offering is shown to nobody).
+        member_window_days: r.member_window_days,
+        non_member_window_days: r.non_member_window_days,
+        min_advance_minutes: r.min_advance_minutes,
+        cancel_cutoff_minutes: r.cancel_cutoff_minutes,
+        active: offerings.length > 0,
+        offerings: offerings.map((o) => ({
+          id: o.id,
+          name: o.name,
+          duration_minutes: o.duration_minutes,
+          audience: o.audience,
+          display_price_cents: o.display_price_cents,
+          applies_to_you: forYou.applies.includes(o.id),
+        })),
+      };
+    })
   );
 }
 

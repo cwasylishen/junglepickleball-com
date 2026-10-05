@@ -92,7 +92,33 @@ async function handleLoginFragment() {
   return { ...res, token };
 }
 
-window.PortalApp = { navForRole, bootstrapSession, handleLoginFragment, mergeStrings };
+// The court rules a screen may state in words (opening hours, how far ahead
+// a guest or a member may book), read from the resources the API returns and
+// never typed into a string: when Roger changes a rule, the words follow.
+// Accepts /api/portal/resources and /api/portal/owner/resources rows alike.
+// Hours are the widest across courts, windows the furthest any court allows.
+// Returns null when there is no court to read.
+function courtRules(resources) {
+  const courts = (resources || []).filter((r) => r.kind === "court" && r.active !== false);
+  if (courts.length === 0) return null;
+  const rules = { open: courts[0].open_time, close: courts[0].close_time, guestWindowDays: null, memberWindowDays: null };
+  for (const c of courts) {
+    if (c.open_time < rules.open) rules.open = c.open_time;
+    if (c.close_time > rules.close) rules.close = c.close_time;
+    const guest = c.non_member_window_days;
+    if (typeof guest === "number" && (rules.guestWindowDays === null || guest > rules.guestWindowDays)) rules.guestWindowDays = guest;
+    const member = c.member_window_days;
+    if (typeof member === "number" && (rules.memberWindowDays === null || member > rules.memberWindowDays)) rules.memberWindowDays = member;
+  }
+  return rules;
+}
+
+// 60 -> "60 days", 1 -> "1 day".
+function daysWords(n) {
+  return n + (n === 1 ? " day" : " days");
+}
+
+window.PortalApp = { navForRole, bootstrapSession, handleLoginFragment, mergeStrings, courtRules, daysWords };
 
 // portal(FR1): moved out of index.html's inline <script> tag -- CTL-HDR-01's
 // CSP (`script-src 'self'`) blocks an inline script with no hash/nonce, and

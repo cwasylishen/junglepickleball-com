@@ -15,7 +15,7 @@
 
   <template x-if="state === 'ok'">
     <div>
-      <p class="text-sm text-slate-600 mt-1" x-text="t('late.intro')"></p>
+      <p class="text-sm text-slate-600 mt-1" x-text="introLine()"></p>
 
       <form class="mt-4 flex gap-2" @submit.prevent="extend()">
         <input id="late-day" type="date" x-model="date" :min="h.todayCR()" :aria-label="t('late.day')" required class="flex-1 border border-slate-300 rounded-lg px-2 py-2" />

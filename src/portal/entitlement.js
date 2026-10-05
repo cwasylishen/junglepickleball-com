@@ -77,7 +77,14 @@ export async function resolveEntitlement(db, accountId, at = new Date().toISOStr
 // for court/plunge, which pick their own offering by audience.
 export async function resolveAudience(db, accountId, resource, offerings, offeringId = null, at = new Date().toISOString()) {
   const entitlement = await resolveEntitlement(db, accountId, at);
+  return audienceFor(entitlement, resource, offerings, offeringId);
+}
 
+// The decision itself, once the entitlement is known. The quote, the
+// booking and the resource list (what each screen shows a caller) all take
+// their answer from this one function, so a screen can never show a price
+// or an "Included" the confirm step then contradicts.
+export function audienceFor(entitlement, resource, offerings, offeringId = null) {
   if (resource.kind === "court") {
     if (entitlement.entitled) return { mode: "included", unit_cents: 0, tier: entitlement.tier };
     const offering = offerings.find((o) => o.audience === "everyone" && o.active);
