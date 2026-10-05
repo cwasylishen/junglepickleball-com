@@ -100,14 +100,20 @@ test("CTL-AUTHZ-03: PATCH /api/portal/me accepts only display_name -- every othe
 
   // RED: an Object.assign-style handler would flip role to owner here.
   // helpers.mjs's client has no patch() verb -- call PATCH directly.
-  const direct = await fetch(`${BASE_URL}/api/portal/me`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", "X-CSRF-Token": member.csrfToken, Origin: BASE_URL, Cookie: member.client.getCookie() },
-    body: JSON.stringify({ display_name: "Patched Name", role: "owner", is_demo: 1, email: "hijacked@example.com", credits: 999, stripe_customer_id: "cus_hijack" }),
-  });
-  assert.equal(direct.status, 200);
-  const body = await direct.json();
-  assert.equal(body.account.display_name, "Patched Name");
-  assert.equal(body.account.role, originalRole, "role must never change via PATCH /me");
-  assert.equal(body.account.email, originalEmail, "email must never change via PATCH /me");
+  const originalName = before.data.account.display_name;
+  try {
+    const direct = await fetch(`${BASE_URL}/api/portal/me`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": member.csrfToken, Origin: BASE_URL, Cookie: member.client.getCookie() },
+      body: JSON.stringify({ display_name: "Patched Name", role: "owner", is_demo: 1, email: "hijacked@example.com", credits: 999, stripe_customer_id: "cus_hijack" }),
+    });
+    assert.equal(direct.status, 200);
+    const body = await direct.json();
+    assert.equal(body.account.display_name, "Patched Name");
+    assert.equal(body.account.role, originalRole, "role must never change via PATCH /me");
+    assert.equal(body.account.email, originalEmail, "email must never change via PATCH /me");
+  } finally {
+    // Put the seeded name back: the staff calendar test in portal-ui-b2 reads it.
+    d1(`UPDATE accounts SET display_name = '${String(originalName).replace(/'/g, "''")}' WHERE id = '${before.data.account.id}'`);
+  }
 });
