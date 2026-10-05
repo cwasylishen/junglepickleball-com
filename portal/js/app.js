@@ -123,12 +123,22 @@ function courtRules(resources) {
   return rules;
 }
 
+// Whether massage can be booked online right now: the resource list the API
+// returns (GET /api/portal/resources) has a massage resource marked `active`,
+// which the API does only while it has an active offering. Takes that call's
+// whole result; an unreadable list is "no", so a screen never offers a control
+// that leads to a dead end. The one copy of this rule: Home's MASSAGE button
+// (D-R4) and the owner's Book chips both call it.
+function massageBookable(resourcesRes) {
+  return Boolean(resourcesRes && resourcesRes.ok) && (resourcesRes.data || []).some(function (r) { return r.kind === "massage" && r.active === true; });
+}
+
 // 60 -> "60 days", 1 -> "1 day".
 function daysWords(n) {
   return n + (n === 1 ? " day" : " days");
 }
 
-window.PortalApp = { navForRole, navIsActive, bootstrapSession, handleLoginFragment, mergeStrings, courtRules, daysWords };
+window.PortalApp = { navForRole, navIsActive, bootstrapSession, handleLoginFragment, mergeStrings, courtRules, massageBookable, daysWords };
 
 // portal(FR1): moved out of index.html's inline <script> tag -- CTL-HDR-01's
 // CSP (`script-src 'self'`) blocks an inline script with no hash/nonce, and

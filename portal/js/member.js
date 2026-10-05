@@ -299,7 +299,7 @@ function memberHome() {
       this.courtHours = rules ? { open: rules.open, close: rules.close } : null;
       // The MASSAGE button leads to a picker; with massage switched off (or
       // the list unreadable) that is a dead end, so it is not offered.
-      this.massageOpen = resourcesRes.ok && (resourcesRes.data || []).some(function (r) { return r.kind === "massage" && r.active === true; });
+      this.massageOpen = window.PortalApp.massageBookable(resourcesRes);
       var ent = me.data.entitlement || { entitled: false };
       if (ent.entitled) {
         this.statusTint = "ok";

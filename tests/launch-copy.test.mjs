@@ -275,3 +275,51 @@ test("D-R4: the MASSAGE link on Home is gated on massageOpen, and the plunge lin
   assert.match(view, /<a href="#\/book\?want=plunge"[^>]*:class="massageOpen \? '' : 'col-span-2'"/);
   assert.match(read("portal/portal.css"), /\.col-span-2\{/, "portal.css must carry col-span-2 (npm run build:portal)");
 });
+
+// F13 / owner Book chip (release inspection R2c): the owner's Book screen listed
+// "Massage Therapy by Samy" as a bookable chip while massage is not bookable
+// online (no active offering). Same rule and same data as D-R4: the resource
+// list the API marks `active` when it has an active offering. The rule is ONE
+// function (PortalApp.massageBookable); Home and the owner Book screen both call it.
+const ownerBookWith = (publicResources) => async (url) => {
+  if (url === "/api/portal/owner/resources") {
+    return { ok: true, data: [{ id: "court-1", name: "Court 1", ...COURT }, { id: "massage-samy", name: "Massage Therapy by Samy", ...COURT, kind: "massage" }, { id: "cold-plunge", name: "Cold Plunge", ...COURT, kind: "plunge" }] };
+  }
+  if (url === "/api/portal/resources") return publicResources;
+  return { ok: false };
+};
+const chips = async (publicResources) => {
+  const book = loadPortalScripts(ownerBookWith(publicResources)).ownerBook();
+  await book.loadResources();
+  return { names: book.resources.map((r) => r.name), state: book.state, resourceId: book.resourceId };
+};
+const publicList = (massageActive) => ({ ok: true, data: [{ id: "court-1", name: "Court 1", ...COURT }, massage(massageActive)] });
+
+test("F13: the owner's Book screen hides the massage chip while massage is not bookable online, and shows it once it is", async () => {
+  const off = await chips(publicList(false));
+  assert.deepEqual(off.names, ["Court 1", "Cold Plunge"]);
+  assert.equal(off.state, "ok");
+  assert.equal(off.resourceId, "court-1");
+  const on = await chips(publicList(true));
+  assert.deepEqual(on.names, ["Court 1", "Massage Therapy by Samy", "Cold Plunge"]);
+});
+
+test("F13: with the resource list unreadable the owner's Book screen does not offer massage, and still offers the courts", async () => {
+  const off = await chips({ ok: false, status: 500 });
+  assert.deepEqual(off.names, ["Court 1", "Cold Plunge"]);
+  assert.equal(off.state, "ok");
+});
+
+test("F13: the massage rule is one function; Home and the owner Book screen both call it and neither carries a copy", () => {
+  const ctx = loadPortalScripts(async () => ({ ok: false }));
+  assert.equal(typeof ctx.PortalApp.massageBookable, "function");
+  assert.equal(ctx.PortalApp.massageBookable({ ok: true, data: [massage(true)] }), true);
+  assert.equal(ctx.PortalApp.massageBookable({ ok: true, data: [massage(false)] }), false);
+  assert.equal(ctx.PortalApp.massageBookable({ ok: false }), false);
+  assert.equal(ctx.PortalApp.massageBookable({ ok: true, data: [] }), false);
+  for (const file of ["portal/js/member.js", "portal/js/owner.js"]) {
+    const source = read(file);
+    assert.match(source, /PortalApp\.massageBookable\(/, `${file} must call the shared rule`);
+    assert.doesNotMatch(source, /kind === "massage" && r\.active/, `${file} must not carry its own copy of the rule`);
+  }
+});
