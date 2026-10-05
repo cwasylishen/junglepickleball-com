@@ -24,7 +24,7 @@
 
   <template x-if="state === 'ok' || state === 'empty'">
     <div>
-      <p class="text-sm text-slate-600 mt-1" x-text="t('today.top', {date: h.fmtDate(date + 'T12:00:00Z'), n: Object.values(byResource).reduce((a,b)=>a+b.filter(x=>x.state!=='blocked').length,0), r: resources.length})"></p>
+      <p class="text-sm text-slate-600 mt-1" x-text="topLine()"></p>
 
       <template x-if="alerts.length">
         <div class="mt-3 space-y-2">
@@ -45,38 +45,47 @@
         <p class="mt-3 text-sm text-slate-600" x-text="t('today.empty', {date: h.fmtDate(date + 'T12:00:00Z')})"></p>
       </template>
 
-      <div class="mt-4 overflow-x-auto">
-        <div class="flex gap-3 min-w-max">
-          <template x-for="r in resources" :key="r.id">
-            <div class="w-40 shrink-0">
-              <div class="font-heading text-xs uppercase tracking-widest text-slate-500 pb-1" x-text="r.name"></div>
-              <div class="mt-2 space-y-1">
-                <template x-for="(b, idx) in (byResource[r.id] || [])" :key="(b.id || 'block') + '-' + idx">
-                  <button type="button" class="w-full text-left p-2 rounded-lg text-xs" :class="stateClasses(b.state)" @click="open(b)">
-                    <template x-if="b.state === 'blocked'">
-                      <div>
-                        <div class="font-semibold" x-text="b.block.start_time + '–' + b.block.end_time"></div>
-                        <div x-text="(b.block.label || t('slot.blocked')) + (b.block.weekly ? ' ↻' : '')"></div>
-                      </div>
-                    </template>
-                    <template x-if="b.state !== 'blocked'">
-                      <div>
-                        <div class="font-semibold" x-text="h.fmtTime(b.start_at) + '–' + h.fmtTime(b.end_at)"></div>
-                        <div x-text="b.walk_in_name || b.display_name || t('today.walk_in')"></div>
-                        <div x-show="b.state === 'held'" x-text="t('today.held_until', {time: h.fmtTime(b.end_at)})"></div>
-                        <div x-show="b.state === 'confirmed' && b.party_size" x-text="t('today.players', {n: b.party_size})"></div>
-                        <div x-show="b.state === 'paid_conflict'" x-text="t('chip.paid_conflict')"></div>
-                      </div>
-                    </template>
-                  </button>
-                </template>
-                <template x-if="!(byResource[r.id] || []).length">
-                  <div class="text-xs text-slate-400 p-2">&mdash;</div>
-                </template>
+      <!-- D8. The page column (main, 720 px) is too narrow for six resource
+           columns, so from md up this block breaks out of it and is centred on
+           the viewport, up to 1100 px wide; the columns then share that width.
+           Below md (or whenever the columns still do not fit) the strip scrolls
+           sideways, with a hint line and a right-edge fade as the cue. -->
+      <div class="relative mt-4 md:left-1/2 md:-translate-x-1/2 md:w-[min(1100px,calc(100vw-3rem))]">
+        <p x-show="stripOverflows" data-scroll-cue class="text-xs text-slate-500 mb-1" x-text="t('today.scroll_hint')"></p>
+        <div class="overflow-x-auto" x-ref="strip" @scroll.passive="measureStrip()" @resize.window="measureStrip()" x-init="$nextTick(() => measureStrip())">
+          <div class="flex gap-3 min-w-max md:min-w-0">
+            <template x-for="r in resources" :key="r.id">
+              <div class="w-40 shrink-0 md:w-auto md:flex-1 md:min-w-[7rem]">
+                <div class="font-heading text-xs uppercase tracking-widest text-slate-500 pb-1" x-text="r.name"></div>
+                <div class="mt-2 space-y-1">
+                  <template x-for="(b, idx) in (byResource[r.id] || [])" :key="(b.id || 'block') + '-' + idx">
+                    <button type="button" class="w-full text-left p-2 rounded-lg text-xs" :class="stateClasses(b.state)" @click="open(b)">
+                      <template x-if="b.state === 'blocked'">
+                        <div>
+                          <div class="font-semibold" x-text="b.block.start_time + '–' + b.block.end_time"></div>
+                          <div x-text="(b.block.label || t('slot.blocked')) + (b.block.weekly ? ' ↻' : '')"></div>
+                        </div>
+                      </template>
+                      <template x-if="b.state !== 'blocked'">
+                        <div>
+                          <div class="font-semibold" x-text="h.fmtTime(b.start_at) + '–' + h.fmtTime(b.end_at)"></div>
+                          <div x-text="b.walk_in_name || b.display_name || t('today.walk_in')"></div>
+                          <div x-show="b.state === 'held'" x-text="t('today.held_until', {time: h.fmtTime(b.end_at)})"></div>
+                          <div x-show="b.state === 'confirmed' && b.party_size" x-text="playersLabel(b.party_size)"></div>
+                          <div x-show="b.state === 'paid_conflict'" x-text="t('chip.paid_conflict')"></div>
+                        </div>
+                      </template>
+                    </button>
+                  </template>
+                  <template x-if="!(byResource[r.id] || []).length">
+                    <div class="text-xs text-slate-400 p-2">&mdash;</div>
+                  </template>
+                </div>
               </div>
-            </div>
-          </template>
+            </template>
+          </div>
         </div>
+        <div x-show="stripOverflows && !stripAtEnd" data-scroll-fade aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-slate-50 to-transparent"></div>
       </div>
 
       <template x-if="sheet">

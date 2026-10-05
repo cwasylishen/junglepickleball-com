@@ -38,24 +38,28 @@
       <template x-if="rows.length === 0">
         <p class="text-sm text-slate-500 py-6 text-center" x-text="t('staff.empty_day', {date: crDateLabel(date)})"></p>
       </template>
+      <!-- Alpine x-for clones only the FIRST root of its template, so the three
+           row kinds sit under ONE wrapper element (B2/D9). -->
       <template x-for="r in rows" :key="r.start + r.display_name">
-        <template x-if="r.kind === 'free'">
-          <div class="text-xs text-slate-400 py-1 px-2" x-text="t('staff.free', {start: crTime(r.start), end: crTime(r.end)})"></div>
-        </template>
-        <template x-if="r.kind === 'blocked'">
-          <div class="rounded-lg p-2 min-h-[72px] flex items-center justify-between bg-[#f1f5f9] text-slate-500">
-            <span x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
-            <span x-text="t('slot.blocked')"></span>
-          </div>
-        </template>
-        <template x-if="r.kind === 'booking'">
-          <div class="rounded-lg border border-slate-200 bg-white p-2 min-h-[72px] flex items-center justify-between">
-            <span class="font-heading text-lg text-jpteal" x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
-            <span class="text-sm font-semibold" x-text="r.display_name"></span>
-            <span x-show="r.length_label" class="text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-slate-600" x-text="r.length_label"></span>
-            <span x-show="r.state !== 'confirmed'" class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass(r.state)" x-text="r.state === 'held' ? t('staff.awaiting') : t('chip.' + r.state)"></span>
-          </div>
-        </template>
+        <div>
+          <template x-if="r.kind === 'free'">
+            <div class="text-xs text-slate-400 py-1 px-2" x-text="t('staff.free', {start: crTime(r.start), end: crTime(r.end)})"></div>
+          </template>
+          <template x-if="r.kind === 'blocked'">
+            <div class="rounded-lg p-2 min-h-[72px] flex items-center justify-between bg-[#f1f5f9] text-slate-500">
+              <span x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
+              <span x-text="t('slot.blocked')"></span>
+            </div>
+          </template>
+          <template x-if="r.kind === 'booking'">
+            <div class="rounded-lg border border-slate-200 bg-white p-2 min-h-[72px] flex items-center justify-between">
+              <span class="font-heading text-lg text-jpteal" x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
+              <span class="text-sm font-semibold" x-text="r.display_name"></span>
+              <span x-show="r.length_label" class="text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-slate-600" x-text="r.length_label"></span>
+              <span x-show="r.state !== 'confirmed'" class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass(r.state)" x-text="r.state === 'held' ? t('staff.awaiting') : t('chip.' + r.state)"></span>
+            </div>
+          </template>
+        </div>
       </template>
     </div>
   </template>

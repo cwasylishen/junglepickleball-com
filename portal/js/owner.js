@@ -67,10 +67,13 @@
     "book.no_resources": "Nothing is open for booking right now.",
 
     "today.top": "{date} · {n} bookings across {r} courts and services",
+    "today.top_one": "{date} · 1 booking across {r} courts and services",
+    "today.scroll_hint": "Scroll sideways to see every column.",
     "today.alert_conflict": "{n} paid booking has no slot. Refund in Stripe.",
     "today.alert_sync": "{n} calendar updates failed",
     "today.jump_today": "Today",
     "today.players": "{n} players",
+    "today.player_one": "1 player",
     "today.held_until": "Awaiting payment",
     "today.refund": "Refund in Stripe ↗",
     "today.open_member": "Open member",
@@ -345,11 +348,31 @@
       alerts: [],
       sheet: null,
       stripeOn: true,
+      // D8: whether the column strip is wider than its box, and whether
+      // it is already scrolled to the far end. Drive the scroll cue.
+      stripOverflows: false,
+      stripAtEnd: true,
       h: window.ownerHelpers,
       async init() {
         const me = await window.PortalApp.bootstrapSession();
         this.stripeOn = Boolean(me.features && me.features.stripe);
         await this.load();
+      },
+      bookingCount() {
+        return Object.values(this.byResource).reduce((sum, list) => sum + list.filter((x) => x.state !== "blocked").length, 0);
+      },
+      topLine() {
+        const n = this.bookingCount();
+        return window.t(n === 1 ? "today.top_one" : "today.top", { date: this.h.fmtDate(this.date + "T12:00:00Z"), n: n, r: this.resources.length });
+      },
+      playersLabel(n) {
+        return window.t(n === 1 ? "today.player_one" : "today.players", { n: n });
+      },
+      measureStrip() {
+        const strip = this.$refs.strip;
+        if (!strip) return;
+        this.stripOverflows = strip.scrollWidth > strip.clientWidth + 1;
+        this.stripAtEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
       },
       async load() {
         this.state = "loading";

@@ -41,6 +41,7 @@ if (!window.chipClass) {
 window.PortalApp.mergeStrings({
   "tab.calendar": "Calendar",
   "staff.top": "{n} bookings on {date}",
+  "staff.top_one": "1 booking on {date}",
   "staff.free": "Free {start}–{end}",
   "staff.empty_day": "No bookings on {date}.",
   "staff.no_resource": "You're not assigned to a calendar yet. Ask Roger to assign you.",
@@ -103,7 +104,10 @@ function staffCalendar() {
     crDateLabel(d) { return crDate(d + "T12:00:00Z"); },
     pickDate(d) { this.date = d; this.loadDay(); },
     resourceTitle() { return this.resourceName || t("tab.calendar"); },
-    topLine() { return t("staff.top", { n: this.bookingCount(), date: this.crDateLabel(this.date) }); },
+    topLine() {
+      var n = this.bookingCount();
+      return t(n === 1 ? "staff.top_one" : "staff.top", { n: n, date: this.crDateLabel(this.date) });
+    },
     bookingCount() { return this.rows.filter(function (r) { return r.kind === "booking"; }).length; },
     async loadDay() {
       this.loading = true;
