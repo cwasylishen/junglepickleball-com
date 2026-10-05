@@ -2,7 +2,8 @@
 // Assets are served by the assets layer first; this script only receives
 // requests that match no static file (i.e. /api/* and true 404s).
 
-import { handlePortalRequest, handlePortalShellFallback, resolveScheduledEnvironmentClass, buildPortalEnv } from "./portal/router.js";
+import { handlePortalRequest, handlePortalShellFallback, handlePortalStripeEvent, resolveScheduledEnvironmentClass, buildPortalEnv } from "./portal/router.js";
+import { verifyStripeSignature as verifyStripeSignatureWithTolerance } from "./portal/stripe.js";
 import { runScheduled } from "./portal/cron.js";
 
 const SESSION_COOKIE = "jp_admin";
@@ -514,7 +515,13 @@ async function handleGlowStripeWebhook(request, env) {
 
   let event;
   try { event = JSON.parse(rawBody); } catch { return json({ error: "Invalid payload." }, 400); }
+  return applyGlowStripeEvent(event, env);
+}
 
+// The part of the Glow webhook that runs after the signature is verified.
+// Split out so the one-endpoint dispatcher (handleStripeWebhook below) can
+// verify once and then hand a Glow event here. Behaviour is unchanged.
+async function applyGlowStripeEvent(event, env) {
   if (event.type === "checkout.session.completed") {
     const session = event.data && event.data.object;
     const signupId = session && session.metadata && session.metadata.signup_id;
@@ -523,6 +530,61 @@ async function handleGlowStripeWebhook(request, env) {
     if (!ok) return json({ error: `No signup found for id ${signupId}.` }, 404);
   }
   return json({ received: true });
+}
+
+// ---------- one Stripe webhook for Glow and the portal (pin L6, ruling E1-11) ----------
+//
+// Glow and the portal share one Stripe account and one endpoint URL, so
+// POST /api/stripe/webhook verifies the signature once and then decides who
+// owns the event:
+//   glow    a checkout.session.* event whose metadata has `signup_id`, which
+//           is what createGlowCheckoutSession sets (and nothing else does)
+//   portal  every non-checkout event (subscriptions, refunds, disputes), a
+//           checkout session with any of the portal's own metadata keys
+//           (`kind`, `booking_id`, `lookup_keys`), and a checkout session
+//           with no metadata at all (the /api/checkout membership flow sets none)
+//   unknown a checkout session whose metadata has keys but none of the above
+//           (some other product on the same Stripe account): answered 200 and
+//           logged, never a 400, so Stripe does not retry another product's event.
+// The Glow handler is the same code the Glow tests exercise directly; the
+// portal handler keeps its own claim-and-release logic (N1).
+const PORTAL_CHECKOUT_METADATA_KEYS = ["kind", "booking_id", "lookup_keys"];
+
+function stripeEventOwner(event) {
+  if (!event.type.startsWith("checkout.session.")) return { owner: "portal" };
+  const metadata = (event.data && event.data.object && event.data.object.metadata) || {};
+  if (metadata.signup_id) return { owner: "glow" };
+  const keys = Object.keys(metadata);
+  if (keys.length === 0) return { owner: "portal" };
+  if (PORTAL_CHECKOUT_METADATA_KEYS.some((k) => keys.includes(k))) return { owner: "portal" };
+  return { owner: "unknown", metadataKeys: keys };
+}
+
+async function handleStripeWebhook(request, env, url) {
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    return json({ error: "Webhook not configured. Set STRIPE_WEBHOOK_SECRET on the Worker." }, 503);
+  }
+  // Stripe signs the raw body: read the text, verify, and only then parse.
+  const rawBody = await request.text();
+  const verified = await verifyStripeSignatureWithTolerance(
+    env.STRIPE_WEBHOOK_SECRET, rawBody, request.headers.get("Stripe-Signature"));
+  if (!verified.ok) {
+    // Only the outcome is logged, never the body or any email (CTL-STR-04).
+    console.log(`stripe_webhook_rejected reason=${verified.reason}`);
+    return json({ error: "bad_signature" }, 400);
+  }
+  let event;
+  try { event = JSON.parse(rawBody); } catch { return json({ error: "bad_signature" }, 400); }
+  if (!event || typeof event.id !== "string" || typeof event.type !== "string") {
+    return json({ error: "bad_signature" }, 400);
+  }
+
+  const route = stripeEventOwner(event);
+  if (route.owner === "glow") return applyGlowStripeEvent(event, env);
+  if (route.owner === "portal") return handlePortalStripeEvent(event, env, url);
+  // Metadata key names only: values can carry a person's details.
+  console.log(`stripe_webhook_ignored id=${event.id} type=${event.type} reason=unknown_metadata keys=${route.metadataKeys.join(",")}`);
+  return json({ received: true, ignored: true });
 }
 
 // ---------- D1 schema (self-provisioning) ----------
@@ -947,7 +1009,7 @@ export default {
       // existing path and an existing path can never reach the portal's
       // own dispatch. Everything else below this block is byte-for-byte
       // the pre-portal behaviour.
-      if (p.startsWith("/api/portal/") || (p === "/api/stripe/webhook" && request.method === "POST")) {
+      if (p.startsWith("/api/portal/")) {
         const portalResponse = await handlePortalRequest(request, env, url);
         if (portalResponse) return portalResponse;
       } else if (p.startsWith("/portal")) {
@@ -962,7 +1024,7 @@ export default {
         if (p === "/api/glow/list" && (request.method === "GET" || request.method === "DELETE")) {
           return handleGlowList(request, env, url);
         }
-        if (p === "/api/stripe/webhook" && request.method === "POST") return handleGlowStripeWebhook(request, env);
+        if (p === "/api/stripe/webhook" && request.method === "POST") return handleStripeWebhook(request, env, url);
         if (p === "/api/config" && request.method === "GET") {
           return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
         }

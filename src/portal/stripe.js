@@ -653,30 +653,17 @@ async function computeEffectStatements(event, env, db) {
   }
 }
 
-// Replaces B1's stub. Signature matches the real call site in
-// src/portal/router.js: `handleStripeWebhook(request, penv, db)`.
-export async function handleStripeWebhook(request, env, db) {
-  if (!env.STRIPE_WEBHOOK_SECRET) return notConfigured("stripe"); // A1
-
-  const rawBody = await request.text(); // verified BEFORE any parsing
-  const sigHeader = request.headers.get("Stripe-Signature");
-  const verified = await verifyStripeSignature(env.STRIPE_WEBHOOK_SECRET, rawBody, sigHeader);
-  if (!verified.ok) {
-    // CTL-STR-04: never the body, never an email -- only the outcome.
-    // eslint-disable-next-line no-console
-    console.log(`stripe_webhook_rejected reason=${verified.reason}`);
-    return json({ error: "bad_signature" }, 400);
-  }
-
-  let event;
-  try {
-    event = JSON.parse(rawBody);
-  } catch {
-    return json({ error: "bad_signature" }, 400);
-  }
-  if (!event || typeof event.id !== "string" || typeof event.type !== "string") {
-    return json({ error: "bad_signature" }, 400);
-  }
+// The portal's half of POST /api/stripe/webhook. The signature has already
+// been verified, and the body parsed, by the one-endpoint dispatcher in
+// src/worker.js (pin L6, ruling E1-11), which also decides that this event
+// belongs to the portal and not to Glow. This function claims the event id
+// and applies its effects. `env` is the filtered portal env (buildPortalEnv).
+// Returns a Response: 200 {received:true}, or a masked 500 so Stripe retries.
+export async function processStripeEvent(event, env, db) {
+  // A1: the dispatcher has already checked this. The portal's half still
+  // refuses to apply anything on its own if the secret is absent, so no
+  // caller can reach the effects of an unverifiable event.
+  if (!env.STRIPE_WEBHOOK_SECRET) return notConfigured("stripe");
 
   // M16/PIN-11: claim the event id atomically BEFORE computing or
   // applying any effect. The old check (SELECT status, THEN compute

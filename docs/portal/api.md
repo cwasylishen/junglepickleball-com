@@ -154,17 +154,15 @@ the create/cancel handlers.
 
 | Method & path | Class | Request | Response | Errors |
 |---|---|---|---|---|
-| `POST /api/stripe/webhook` | public, signature-checked (never CSRF/Origin) | raw Stripe event | `200 {received:true}` | `400` bad signature. Idempotent on `event.id` (`webhook_events`). |
+| `POST /api/stripe/webhook` | public, signature-checked (never CSRF/Origin) | raw Stripe event | `200 {received:true}`; `200 {received:true, ignored:true}` for a checkout session that belongs to neither Glow nor the portal | `400 {error:"bad_signature"}`, `503` when `STRIPE_WEBHOOK_SECRET` is unset. One endpoint for Glow and the portal (pin L6, ruling E1-11): `src/worker.js` verifies once, then routes by `metadata`: `signup_id` goes to Glow; the portal's `kind`/`booking_id`/`lookup_keys`, no metadata, and every non-checkout event go to the portal; other metadata is logged and ignored, never a 400. The portal half is idempotent on `event.id` (`webhook_events`). |
 | `POST /api/portal/billing/checkout` | own | `{lookup_key}` (one of the 7 membership tiers or `jp_session_pack8`, amendment 6) | `200 {url}` | `503 not_configured {feature:"stripe"}`, `400 unknown_item` |
 | `POST /api/portal/billing/portal-session` | own | — | `303`-style `{url}` to a server-created Stripe Customer Portal session | `503 not_configured {feature:"stripe"}`, `409 no_billing_account` (no `stripe_customer_id` yet), `503 billing_portal_unavailable` (CTL-STR-07) |
 | `GET /api/portal/billing/history` | own | — | `[{amount_cents, kind, status, created_at}]` from Stripe `charges?customer=`, only the caller's own `stripe_customer_id` (CTL-STR-03); `[]` when the account has none yet | `503 not_configured` |
 | `POST /api/portal/owner/resources/:id/offerings/:offeringId/price` | owner | `{price_cents}` | `200 {offering}` -- creates a new Stripe Price on the same product with the same `lookup_key` + `transfer_lookup_key=true`, updates the mirror (amendment 4 decision 7) | `503 not_configured`, `404 not_found` (no offering or no `lookup_key` set), changes nothing when unset |
 
-**Replacing B1's stub:** `src/portal/router.js` already imports `handleStripeWebhook` from
-`./stripe.js` (B1-fix, amendment 6). B1 commits that file with
-`isStripeConfigured`/`createBookingCheckout`/`handleStripeWebhook` as non-throwing interface
-stubs (amendment 6's interface-first commit); B2b replaces the stub bodies in place -- it
-never needs to touch `router.js`'s import line.
+**Webhook wiring (launch):** `src/worker.js` owns the route and the signature check, and calls
+`handlePortalStripeEvent` (`src/portal/router.js`), which runs the environment gate and then
+`processStripeEvent` (`src/portal/stripe.js`) for events the portal owns.
 
 ## 6. Passkeys -- B2c (`src/portal/passkeys.js`, `portal/js/passkeys.js`)
 

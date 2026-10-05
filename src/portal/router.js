@@ -26,7 +26,7 @@ import {
 } from "./auth.js";
 import { ROUTE_CLASSES, authorize } from "./authz.js";
 import { publicAccount } from "./auth.js";
-import { handleStripeWebhook } from "./stripe.js";
+import { processStripeEvent } from "./stripe.js";
 import { resolveEntitlement } from "./entitlement.js";
 import { ROUTES as BOOKING_ROUTES } from "./routes/booking.js";
 import { ROUTES as OWNER_ROUTES } from "./routes/owner.js";
@@ -257,21 +257,31 @@ export function routeTable() {
   return ROUTES.map((r) => ({ method: r.method, path: r.path, class: r.class }));
 }
 
+// The portal's half of POST /api/stripe/webhook. src/worker.js verifies the
+// signature once, decides this event is the portal's (not Glow's), and calls
+// this with the parsed event. The environment gate (CTL-ENV-01/02) still
+// runs first: a mismatched environment applies nothing and answers 503, so
+// Stripe retries instead of losing the event.
+export async function handlePortalStripeEvent(event, env, url) {
+  const db = env.PORTAL_DB;
+  if (!db) return environmentMismatch();
+  try {
+    const envClass = await resolveEnvironmentClass(db, url.hostname);
+    if (envClass === "mismatch") return environmentMismatch();
+    // M1 (CTL-ERR-01): awaited inside this try, so a rejected effect is
+    // masked by logAndMask and never escapes with a raw error message.
+    return await processStripeEvent(event, buildPortalEnv(env, envClass), db);
+  } catch (err) {
+    return logAndMask(err);
+  }
+}
+
 export async function handlePortalRequest(request, env, url) {
   const db = env.PORTAL_DB;
   if (!db) return environmentMismatch();
 
   try {
     const envClass = await resolveEnvironmentClass(db, url.hostname);
-
-    if (url.pathname === "/api/stripe/webhook" && request.method === "POST") {
-      if (envClass === "mismatch") return environmentMismatch();
-      const penv = buildPortalEnv(env, envClass);
-      // M1 (CTL-ERR-01): must be awaited inside this try, or a rejected
-      // webhook promise skips logAndMask and escapes with a raw error
-      // message via the legacy catch in src/worker.js.
-      return await handleStripeWebhook(request, penv, db);
-    }
 
     if (!url.pathname.startsWith("/api/portal/")) return null; // not ours
 

@@ -39,6 +39,17 @@ INSPECTOR_PORT="${JP_TEST_INSPECTOR_PORT:-9229}"
 # through PORTAL_TEST_SERVER_LOG.
 SERVER_LOG="${JP_TEST_SERVER_LOG:-/tmp/jp-portal-test-server-$PORT.log}"
 
+# Refuse to run if something already listens on the test port or the
+# inspector port. Otherwise `wrangler dev` fails to start, the readiness
+# loop below is answered by the OTHER service, and every test runs against
+# the wrong server (seen on 2026-10-04: port 8811 belonged to a bun service).
+for busy_port in "$PORT" "$INSPECTOR_PORT"; do
+  if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${busy_port}$"; then
+    echo "port $busy_port is already in use; set JP_TEST_PORT and JP_TEST_INSPECTOR_PORT to free ports" >&2
+    exit 2
+  fi
+done
+
 echo "== Local D1: reset + apply migrations + seed (port=$PORT state=$PERSIST_DIR) =="
 rm -rf "$PERSIST_DIR"
 npx wrangler d1 migrations apply PORTAL_DB --local --persist-to "$PERSIST_DIR"
@@ -52,9 +63,11 @@ echo "== Local D1: QA-only fixture (tests/fixtures/seed-test.sql) =="
 npx wrangler d1 execute PORTAL_DB --local --persist-to "$PERSIST_DIR" --file=tests/fixtures/seed-test.sql
 
 echo "== Starting wrangler dev --local on :$PORT (inspector :$INSPECTOR_PORT) =="
+# GLOW_LIST_KEY is a throwaway value for the local server only; the webhook
+# dispatcher test reads Glow's list view with it to see a signup turn paid.
 PORTAL_DEV_LOGIN=1 STRIPE_WEBHOOK_SECRET=whsec_local_test_only \
   npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
-  --var PORTAL_DEV_LOGIN:1 --var STRIPE_WEBHOOK_SECRET:whsec_local_test_only \
+  --var PORTAL_DEV_LOGIN:1 --var STRIPE_WEBHOOK_SECRET:whsec_local_test_only --var GLOW_LIST_KEY:glow-list-key-local-test \
   > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
@@ -90,7 +103,9 @@ set +e
 # several d1() calls per test blew the old 60s ceiling before their own
 # assertions ever got a chance to run (a harness/environment failure,
 # not a product one; named rather than silently raised without record).
-TEST_FILES=$(find tests -name '*.test.mjs' | sort)
+# JP_TEST_FILES (space-separated paths) runs just those files against the same
+# server, for a quick check while building. Unset, the whole suite runs.
+TEST_FILES="${JP_TEST_FILES:-$(find tests -name '*.test.mjs' | sort)}"
 PORTAL_TEST_BASE_URL="http://127.0.0.1:$PORT" PORTAL_TEST_PERSIST_DIR="$PERSIST_DIR" PORTAL_TEST_SERVER_LOG="$SERVER_LOG" \
   node --test --test-concurrency=1 --test-timeout=180000 --test-reporter=spec $TEST_FILES
 STATUS=$?
