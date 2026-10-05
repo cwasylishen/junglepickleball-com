@@ -1179,6 +1179,11 @@
     if (!session.authenticated || !session.account || session.account.role !== "owner") return; // not this area's route to own
 
     const hash = window.location.hash || "#/today";
+    // The Account hub (and its passkeys / app sub-routes) is the shared
+    // screen account.js mounts for every role. A hash this router does not
+    // know is sent to Today below, so without this line the owner's Account
+    // tab bounced to Today (D-R2b-1). Same rule as staff.js and member.js.
+    if (hash.indexOf("#/account") === 0) return;
     let view = null;
     let param = null;
     for (const [re, name] of ROUTES) {

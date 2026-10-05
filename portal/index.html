@@ -24,7 +24,7 @@
   <script src="/portal/js/pwa.js"></script>
   <script defer src="/portal/vendor/alpine-3.14.9.min.js"></script>
 </head>
-<body class="font-body bg-slate-50 text-slate-900" x-data="portalShell()" x-init="init()">
+<body class="font-body bg-slate-50 text-slate-900" x-data="portalShell()" x-init="init()" @hashchange.window="route = window.location.hash">
 
   <!-- Top bar (screens.md §2.1). -->
   <header class="sticky top-0 z-10 h-14 flex items-center justify-between gap-4 px-4 bg-jpteal text-white font-heading">
@@ -35,8 +35,10 @@
          the area routers (hashchange listeners) are what actually mount
          each view, so this is just another link to the same hash. -->
     <nav x-show="session.authenticated" class="hidden md:flex md:items-center md:gap-6">
-      <template x-for="item in nav" :key="item[0]">
-        <a :href="item[0]" class="text-xs uppercase tracking-wide font-heading text-white hover:text-jpyellow"
+      <template x-for="(item, i) in nav" :key="item[0]">
+        <a :href="item[0]" class="text-xs uppercase tracking-wide font-heading hover:text-jpyellow"
+           :class="isActive(item[0], i) ? 'text-jpyellow underline underline-offset-8' : 'text-white'"
+           :aria-current="isActive(item[0], i) ? 'page' : null"
            x-text="window.t ? window.t(item[1]) : item[1]"></a>
       </template>
     </nav>
@@ -95,8 +97,11 @@
        (screens.md §2.1); left as a simple list here since B1 ships the
        mount-point contract, not the final nav chrome (B2f owns that). -->
   <nav x-show="session.authenticated" class="fixed bottom-0 inset-x-0 h-16 bg-white border-t border-slate-200 flex md:hidden">
-    <template x-for="item in nav" :key="item[0]">
-      <a :href="item[0]" class="flex-1 flex items-center justify-center text-xs uppercase font-heading text-jpteal" x-text="window.t ? window.t(item[1]) : item[1]"></a>
+    <template x-for="(item, i) in nav" :key="item[0]">
+      <a :href="item[0]" class="flex-1 flex items-center justify-center text-xs uppercase font-heading text-jpteal border-t-4"
+         :class="isActive(item[0], i) ? 'border-jpyellow bg-slate-100' : 'border-transparent'"
+         :aria-current="isActive(item[0], i) ? 'page' : null"
+         x-text="window.t ? window.t(item[1]) : item[1]"></a>
     </template>
   </nav>
 </body>

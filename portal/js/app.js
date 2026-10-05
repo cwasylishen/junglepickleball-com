@@ -64,6 +64,16 @@ function navForRole(role) {
   return NAV_BY_ROLE[role] || [];
 }
 
+// Which tab is the current page's? Derived from the route alone, never set
+// by a click, so Back, a deep link and a redirect all move the highlight.
+// A tab owns its sub-routes (#/manage/prices is Manage, #/account/passkeys
+// is Account); "#/book" does not own "#/bookings". With no route yet every
+// role's area opens on its first tab.
+function navIsActive(route, href, index) {
+  if (route === "" || route === "#" || route === "#/") return index === 0;
+  return route === href || route.startsWith(href + "/") || route.startsWith(href + "?");
+}
+
 async function bootstrapSession() {
   const res = await PortalApi.get("/api/portal/me");
   if (!res.ok || !res.data) return { authenticated: false, features: {}, account: null };
@@ -118,7 +128,7 @@ function daysWords(n) {
   return n + (n === 1 ? " day" : " days");
 }
 
-window.PortalApp = { navForRole, bootstrapSession, handleLoginFragment, mergeStrings, courtRules, daysWords };
+window.PortalApp = { navForRole, navIsActive, bootstrapSession, handleLoginFragment, mergeStrings, courtRules, daysWords };
 
 // portal(FR1): moved out of index.html's inline <script> tag -- CTL-HDR-01's
 // CSP (`script-src 'self'`) blocks an inline script with no hash/nonce, and
@@ -129,6 +139,7 @@ function portalShell() {
   return {
     session: { authenticated: false, features: {}, account: null },
     nav: [],
+    route: window.location.hash,
     loginEmail: "",
     devLink: null,
     loginSent: false,
@@ -164,6 +175,9 @@ function portalShell() {
       if (!wasAuthenticated && this.session.authenticated) {
         window.dispatchEvent(new Event("hashchange"));
       }
+    },
+    isActive(href, index) {
+      return window.PortalApp.navIsActive(this.route, href, index);
     },
     async refreshSession() {
       this.session = await window.PortalApp.bootstrapSession();
