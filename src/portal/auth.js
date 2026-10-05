@@ -100,11 +100,19 @@ function devLoginEnabled(env, url) {
   return env.PORTAL_DEV_LOGIN === "1" && isDemoEligibleHost(url.hostname);
 }
 
-async function demoDevLink(db, env, url, email, token) {
-  if (!devLoginEnabled(env, url)) return null;
-  if (!email.endsWith("@jp-demo.test")) return null;
+// The whole dev-login gate, written once: PIN-9 (a) and (b) above, plus
+// S-1 (d), the portal_meta marker must say 'preview'. A production marker,
+// or no marker, closes it. demoDevLink (dev links) and loadSession (the
+// jp_portal_dev cookie, F-07) both ask this and nothing else.
+async function devLoginGateOpen(db, env, url) {
+  if (!devLoginEnabled(env, url)) return false;
   const marker = await db.prepare(`SELECT env FROM portal_meta WHERE id = 1`).first();
-  if (!marker || marker.env !== "preview") return null; // S-1 d
+  return Boolean(marker) && marker.env === "preview";
+}
+
+async function demoDevLink(db, env, url, email, token) {
+  if (!email.endsWith("@jp-demo.test")) return null;
+  if (!(await devLoginGateOpen(db, env, url))) return null;
   const account = await db.prepare(`SELECT id, is_demo FROM accounts WHERE email = ?`).bind(email).first();
   if (!account || !account.is_demo) return null; // S-1 e: must already exist, flagged demo
   const link = `${url.origin}/portal/#login=${token}`;
@@ -399,11 +407,17 @@ function getCookie(request, name) {
   return null;
 }
 
-// Loads the live session (if any) for this request, from EITHER cookie
-// name (a dev box may carry the dev cookie; production only ever sets
-// the __Host- one). Expired sessions are treated as absent.
+// Loads the live session (if any) for this request. The __Host- cookie is
+// always read. The unprefixed jp_portal_dev cookie is read only while the
+// dev-login gate is open (F-07): on production it is ignored as if it had
+// not been sent, so it cannot stand in for the __Host- cookie. Expired
+// sessions are treated as absent.
 export async function loadSession(request, env, db, url) {
-  const token = getCookie(request, "__Host-jp_portal") || getCookie(request, "jp_portal_dev");
+  let token = getCookie(request, "__Host-jp_portal");
+  if (!token) {
+    const devToken = getCookie(request, "jp_portal_dev");
+    if (devToken && (await devLoginGateOpen(db, env, url))) token = devToken;
+  }
   if (!token) return null;
   const id = await sha256Hex(token);
   const row = await db.prepare(`SELECT * FROM sessions WHERE id = ?`).bind(id).first();
