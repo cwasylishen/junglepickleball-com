@@ -60,8 +60,10 @@ service = "ward-mail"
 # collide with the portal's own tables of the same name.
 [[d1_databases]]
 binding = "PORTAL_DB"
-database_name = "junglepickleball-portal-preview"
-database_id = "ca34a6c4-47e9-4e0e-baa5-8dd816700ca3"
+# PIN L1: the production D1 is `junglepickleball-portal`. The preview D1
+# `junglepickleball-portal-preview` (ca34a6c4-...) is never bound to production.
+database_name = "junglepickleball-portal"
+database_id = "59f8ab90-886f-4eda-b196-27ea9acd824e"
 migrations_dir = "migrations"
 
 [triggers]
@@ -105,14 +107,9 @@ crons = ["*/15 * * * *"]
 #   EMAIL                        - send_email binding, outbound magic-link email (PIN L5; see the block below)
 
 # Outbound magic-link email (PIN L5, portal(B3)): the Cloudflare Email Service
-# `send_email` binding named EMAIL, From "Jungle Pickleball <portal@junglepickleball.com>".
-# Left COMMENTED on purpose; the deployer uncomments it at the go, once
-# junglepickleball.com is onboarded in Email Service. `wrangler dev` and
-# `wrangler deploy --dry-run` both accept the block without onboarding (checked
-# 2026-10-04), so this is not a tooling limit: adding it makes this file a
-# production config edit, which must also state preview_urls, workers_dev and the
-# live custom domains and crons (checklist 221, 236), and that comparison is the
-# go's decision. Until the binding exists, sign-in fails closed with
-# "Email sign-in is not available right now."
-# [[send_email]]
-# name = "EMAIL"
+# `send_email` binding named EMAIL, From "Jungle Pickleball <portal@junglepickleball.com>"
+# (the From is set in the sending code). junglepickleball.com is onboarded to
+# Email Sending by the deployer. If the binding is ever absent, sign-in fails
+# closed with "Email sign-in is not available right now."
+[[send_email]]
+name = "EMAIL"
