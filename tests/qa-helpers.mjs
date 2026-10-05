@@ -111,6 +111,13 @@ export async function loginNewAccountDirect(email, extra = {}) {
   const origin = { Origin: BASE_URL, ...extra };
   const verify = await client.post("/api/portal/auth/verify", { token, age_16_plus: true, confirm: true }, origin);
   if (verify.status !== 200) throw new Error(`verify failed for ${email}: ${verify.status} ${JSON.stringify(verify.data)}`);
+  // The creation path under test has run: the account came out role=guest,
+  // is_demo=0, as a real first login does. CTL-ENV-02 treats any such row in
+  // the preview database as environment contamination and answers 503 to
+  // every later request, this test's own included. This is a test account
+  // (@jp-demo.test), so it is marked as one now, which keeps the rest of the
+  // suite running against a preview database that agrees with its marker.
+  d1(`UPDATE accounts SET is_demo = 1 WHERE email = '${email}'`);
   return { client, csrfToken: verify.data.csrf_token, account: verify.data.account };
 }
 

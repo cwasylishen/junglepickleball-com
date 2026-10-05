@@ -46,6 +46,7 @@ export function makeClient() {
   return {
     get: (path, headers) => call("GET", path, undefined, headers),
     post: (path, body, headers) => call("POST", path, body, headers),
+    request: (method, path, body, headers) => call(method, path, body, headers),
     clearCookie: () => { cookie = null; },
     getCookie: () => cookie,
   };
@@ -71,6 +72,12 @@ export async function startAndGetDevLink(client, email, origin) {
 // Logs a demo account in end to end (start -> dev_link -> verify) and
 // returns an authenticated client plus its csrf token.
 export async function loginDemo(email, extraHeaders = {}) {
+  // The per-email (5) and per-IP (20) login limits are per 15 minutes, and a
+  // whole suite logs in far more often than that from one address. A login
+  // helper that does not clear them gets no dev_link once the budget is
+  // spent. The tests that exercise the limits themselves call makeClient()
+  // directly and never come through here.
+  d1(`DELETE FROM rate_limits`);
   const client = makeClient();
   const origin = { Origin: BASE_URL, ...extraHeaders };
   const devLink = await startAndGetDevLink(client, email, origin);
@@ -120,12 +127,14 @@ function findPortalDbFile(persistDir) {
 let dbSingleton;
 function portalDb() {
   if (!dbSingleton) {
-    dbSingleton = new DatabaseSync(findPortalDbFile(PERSIST_DIR));
+    // Foreign keys off: the `wrangler d1 execute` calls this replaced did not
+    // enforce them, and the tests' cleanup deletes (a booking before its
+    // calendar_outbox row, an account before its sessions) depend on that.
+    // The server's own connection is unaffected.
+    dbSingleton = new DatabaseSync(findPortalDbFile(PERSIST_DIR), { enableForeignKeyConstraints: false });
     // The running server writes the same file from another process; wait out
     // a write in flight instead of failing a probe on a transient lock.
     dbSingleton.exec("PRAGMA busy_timeout = 10000");
-    // D1 enforces foreign keys; a bare sqlite connection does not.
-    dbSingleton.exec("PRAGMA foreign_keys = ON");
   }
   return dbSingleton;
 }
@@ -175,4 +184,32 @@ export function d1(sql) {
 export function d1Last(sql) {
   const all = d1Each(sql);
   return all[all.length - 1] || [];
+}
+
+// A UTC instant on the Costa Rica calendar day `daysAhead` from today, at
+// the given UTC hour and minute (CR is UTC-6 all year, so CR 08:30 is hour
+// 14, minute 30). Counting days from the UTC calendar is wrong in the six
+// hours when UTC has rolled to tomorrow and CR has not: a "tomorrow" slot
+// then lands two CR days out, past a guest's window.
+export function utcOnCrDay(daysAhead, hour, minute = 0) {
+  const nowCr = new Date(Date.now() - 6 * 3600 * 1000);
+  return new Date(Date.UTC(nowCr.getUTCFullYear(), nowCr.getUTCMonth(), nowCr.getUTCDate() + daysAhead, hour, minute, 0, 0));
+}
+
+// Every test file runs in its own process and imports this module, so this
+// runs once at the start of each file. It puts back the rows a file's
+// predecessors are known to leave behind (bookings and their calendar
+// events, credit balances, QA entitlement grants, login limits), keeping the
+// seeded rows. Without it a booking left by one file tripped another file's
+// per-account cap or took its slot, and a whole suite run gave different
+// answers from the same files run alone. Only the harness sets
+// PORTAL_TEST_PERSIST_DIR, so a file run without a server is not touched.
+if (process.env.PORTAL_TEST_PERSIST_DIR) {
+  d1Each(`
+    DELETE FROM calendar_outbox WHERE booking_id NOT LIKE 'demo-bkg-%';
+    DELETE FROM bookings WHERE id NOT LIKE 'demo-bkg-%';
+    DELETE FROM credits_ledger;
+    UPDATE credits SET balance = 0;
+    DELETE FROM entitlement_grants WHERE id LIKE 'qa-grant-%';
+    DELETE FROM rate_limits`);
 }
