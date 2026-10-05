@@ -32,8 +32,8 @@
       //   - bookingUrl is set to a Google Calendar appointment-schedule link
       // ---------------------------------------------------------------
       const MEMBERSHIP_CONFIG = {
-        // Roger's WhatsApp (text only) — the fallback whenever checkout
-        // is not yet configured (STRIPE_SECRET_KEY unset -> 503) or fails.
+        // Roger's WhatsApp (text only): the fallback when a checkout call
+        // fails while payments are on.
         whatsappNumber: "50689893111",
 
         // Stripe's hosted, no-code Customer Portal login link (Settings ->
@@ -63,9 +63,8 @@
       };
 
       // Calls the checkout endpoint for the given item's lookup_key and
-      // sends the browser to the resulting Stripe Checkout page. If
-      // payments are not configured yet (503) or the call fails for any
-      // other reason, falls back to WhatsApp with a prefilled message
+      // sends the browser to the resulting Stripe Checkout page. If the
+      // call fails, falls back to WhatsApp with a prefilled message
       // naming the item, so Roger can always take the join by hand.
       async function startCheckout(id, name, lookupKey) {
         try {
@@ -80,11 +79,28 @@
             return;
           }
         } catch (err) {
-          // network or server error — fall through to WhatsApp
+          // network or server error: fall through to WhatsApp
         }
         const text = encodeURIComponent(`I want the ${name} membership`);
         window.location.href = `https://wa.me/${MEMBERSHIP_CONFIG.whatsappNumber}?text=${text}`;
       }
+
+      // L4: with payments off (STRIPE_SECRET_KEY unset) no button may lead to
+      // a failure. The buttons are hidden in the HTML; they appear only when
+      // the server answers {enabled:true}. Any other answer, or an error,
+      // leaves the page in the payments-off state with the notice showing.
+      async function applyPaymentsFlag() {
+        try {
+          const res = await fetch("/api/checkout");
+          const data = await res.json();
+          if (!res.ok || data.enabled !== true) return;
+        } catch (err) {
+          return;
+        }
+        document.querySelectorAll("[data-pay-on]").forEach((el) => { el.hidden = false; });
+        document.getElementById("payments-off-notice").hidden = true;
+      }
+      document.addEventListener("DOMContentLoaded", applyPaymentsFlag);
 
       function joinTier(id) {
         const tier = MEMBERSHIP_CONFIG.tiers.find(t => t.id === id);
@@ -122,6 +138,16 @@
         </p>
     </header>
 
+    <!-- L4: shown until /api/checkout says payments are on. Join and buy buttons carry data-pay-on and stay hidden until then. -->
+    <section id="payments-off-notice" class="max-w-3xl mx-auto px-6 mb-10">
+        <div class="bg-yellow-50 border border-yellow-400 rounded-xl p-6 text-center">
+            <p class="font-heading text-xl uppercase text-jungle">Payments are not switched on yet</p>
+            <p class="text-slate-700 mt-2">To join or buy a pass, come by the club in Ojochal or message Roger on WhatsApp. He will sign you up and take your payment in person.</p>
+            <a href="https://wa.me/50689893111?text=I%20want%20to%20join%20the%20club" class="inline-block mt-4 bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide px-6 py-3 rounded hover:bg-yellow-300 transition">Message Roger on WhatsApp</a>
+            <p class="text-sm text-slate-600 mt-3">WhatsApp +506 8989 3111 (text only)</p>
+        </div>
+    </section>
+
     <main class="max-w-6xl mx-auto px-6 pb-24">
 
         <!-- 1 Month -->
@@ -132,7 +158,7 @@
                 <p class="text-sm text-slate-500 mt-1">Per person</p>
                 <p class="text-4xl font-bold font-heading text-jungle mt-4">$75</p>
                 <p class="text-sm text-slate-500 mt-1">$75.00/mo</p>
-                <button onclick="joinTier('month-1')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                <button hidden data-pay-on onclick="joinTier('month-1')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
             </div>
         </section>
 
@@ -145,14 +171,14 @@
                     <p class="text-sm text-slate-500 mt-1">Per person</p>
                     <p class="text-4xl font-bold font-heading text-jungle mt-4">$200</p>
                     <p class="text-sm text-slate-500 mt-1">$66.67/mo &middot; save $25</p>
-                    <button onclick="joinTier('month-3')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                    <button hidden data-pay-on onclick="joinTier('month-3')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
                 </div>
                 <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
                     <h3 class="font-heading text-2xl text-jungle uppercase">3 Month Couples</h3>
                     <p class="text-sm text-slate-500 mt-1">Two people</p>
                     <p class="text-4xl font-bold font-heading text-jungle mt-4">$375</p>
                     <p class="text-sm text-slate-500 mt-1">$125/mo for two &middot; save $75</p>
-                    <button onclick="joinTier('month-3-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                    <button hidden data-pay-on onclick="joinTier('month-3-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
                 </div>
             </div>
         </section>
@@ -166,14 +192,14 @@
                     <p class="text-sm text-slate-500 mt-1">Per person</p>
                     <p class="text-4xl font-bold font-heading text-jungle mt-4">$400</p>
                     <p class="text-sm text-slate-500 mt-1">$66.67/mo &middot; save $50</p>
-                    <button onclick="joinTier('month-6-single')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                    <button hidden data-pay-on onclick="joinTier('month-6-single')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
                 </div>
                 <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 text-center">
                     <h3 class="font-heading text-2xl text-jungle uppercase">6 Month Couples</h3>
                     <p class="text-sm text-slate-500 mt-1">Two people</p>
                     <p class="text-4xl font-bold font-heading text-jungle mt-4">$650</p>
                     <p class="text-sm text-slate-500 mt-1">$108.33/mo for two &middot; save $250</p>
-                    <button onclick="joinTier('month-6-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                    <button hidden data-pay-on onclick="joinTier('month-6-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
                 </div>
             </div>
         </section>
@@ -187,14 +213,14 @@
                     <p class="text-sm text-slate-500 mt-1">Per person</p>
                     <p class="text-4xl font-bold font-heading text-jungle mt-4">$750</p>
                     <p class="text-sm text-slate-500 mt-1">$62.50/mo &middot; save $150</p>
-                    <button onclick="joinTier('annual-single')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                    <button hidden data-pay-on onclick="joinTier('annual-single')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
                 </div>
                 <div class="bg-white border-2 border-yellow-400 rounded-xl shadow-sm p-8 text-center">
                     <h3 class="font-heading text-2xl text-jungle uppercase">Annual Couples</h3>
                     <p class="text-sm text-slate-500 mt-1">Two people</p>
                     <p class="text-4xl font-bold font-heading text-jungle mt-4">$975</p>
                     <p class="text-sm text-slate-500 mt-1">$81.25/mo for two &middot; save $825</p>
-                    <button onclick="joinTier('annual-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
+                    <button hidden data-pay-on onclick="joinTier('annual-couples')" class="mt-6 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Join</button>
                 </div>
             </div>
         </section>
@@ -209,13 +235,13 @@
                     <h3 class="font-heading text-xl uppercase">Pay to Play</h3>
                     <p class="text-3xl font-bold font-heading mt-3">$15</p>
                     <p class="text-sm text-green-100 mt-1">Per person, per 90-minute session</p>
-                    <button onclick="buyPass('pay-to-play')" class="mt-5 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Pay to Play</button>
+                    <button hidden data-pay-on onclick="buyPass('pay-to-play')" class="mt-5 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Pay to Play</button>
                 </div>
                 <div class="bg-white/10 rounded-lg p-6 text-center">
                     <h3 class="font-heading text-xl uppercase">8-Play Prepaid</h3>
                     <p class="text-3xl font-bold font-heading mt-3">$100</p>
-                    <p class="text-sm text-green-100 mt-1">$12.50 per play &mdash; $100 &divide; 8. Usable for individual or group play. Prepay does not apply to other member amenities.</p>
-                    <button onclick="buyPass('pack-8')" class="mt-5 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Buy the Pack</button>
+                    <p class="text-sm text-green-100 mt-1">$12.50 per play ($100 &divide; 8). Usable for individual or group play. Prepay does not apply to other member amenities.</p>
+                    <button hidden data-pay-on onclick="buyPass('pack-8')" class="mt-5 w-full bg-yellow-400 text-black font-bold font-heading uppercase tracking-wide py-3 rounded hover:bg-yellow-300 transition">Buy the Pack</button>
                 </div>
             </div>
         </section>
@@ -258,7 +284,7 @@
         <section class="text-center text-slate-600 text-sm mb-10">
             <p class="font-bold text-jungle mb-1">Payment accepted</p>
             <p>Cash (dollars or colones), SINPE, or credit card.</p>
-            <p class="mt-4">Questions? See Roger &mdash; WhatsApp <a href="https://wa.me/50689893111" class="text-green-700 font-bold underline">+506 8989 3111</a> (text only).</p>
+            <p class="mt-4">Questions? See Roger or WhatsApp <a href="https://wa.me/50689893111" class="text-green-700 font-bold underline">+506 8989 3111</a> (text only).</p>
         </section>
 
     </main>

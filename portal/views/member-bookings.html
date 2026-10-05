@@ -42,6 +42,7 @@
             <div>
               <p class="font-semibold" :class="b.status === 'cancelled' ? 'line-through text-slate-400' : ''" x-text="b.resource"></p>
               <p class="text-sm text-slate-500" x-text="crTime(b.start) + '–' + crTime(b.end)"></p>
+              <p x-show="b.pay_at_club" class="text-sm text-slate-500" x-text="t('bookings.pay_club', { amount: money(b.amount_cents || 0) })"></p>
             </div>
           </div>
           <div class="text-right">

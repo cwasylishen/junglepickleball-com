@@ -956,9 +956,23 @@ const CHECKOUT_ITEMS = {
   jp_session_pack8: { mode: "payment" },
 };
 
+// L4: with STRIPE_SECRET_KEY unset the membership page shows "Payments are
+// not switched on yet" and no buy button. GET /api/checkout is the flag the
+// page reads. A POST that arrives anyway gets the same answer with a message,
+// as a 200: it is an expected state, never a server error.
+const PAYMENTS_OFF_MESSAGE = "Payments are not switched on yet. To join, come by the club or message Roger on WhatsApp (+506 8989 3111, text only) and he will sign you up in person.";
+
+function paymentsEnabled(env) {
+  return Boolean(env.STRIPE_SECRET_KEY);
+}
+
+function checkoutFlag(env) {
+  return json({ enabled: paymentsEnabled(env) });
+}
+
 async function handleCheckout(request, env, url) {
-  if (!env.STRIPE_SECRET_KEY) {
-    return json({ error: "Payments are not configured yet. Message Roger on WhatsApp to join." }, 503);
+  if (!paymentsEnabled(env)) {
+    return json({ enabled: false, message: PAYMENTS_OFF_MESSAGE });
   }
   let body;
   try { body = await request.json(); } catch { return json({ error: "Invalid request." }, 400); }
@@ -1028,6 +1042,7 @@ export default {
         if (p === "/api/config" && request.method === "GET") {
           return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
         }
+        if (p === "/api/checkout" && request.method === "GET") return checkoutFlag(env);
         if (p === "/api/checkout" && request.method === "POST") return handleCheckout(request, env, url);
         if (p === "/api/login" && request.method === "POST") return handleLogin(request, env);
         if (p === "/api/logout" && request.method === "POST") {

@@ -157,7 +157,7 @@ test("BOOK-011: a slot blocked by the owner is rejected -- block and booking bot
   assert.equal(resp.status, 409, `expected rejection for a blocked slot (CR 10:00), got ${resp.status}`);
 });
 
-test("BOOK-012: entitled member goes straight to confirmed/no-checkout at CR 08:30 today+6; non-entitled gets S-11's 503 in THIS harness (Stripe never configured) at CR 08:30 today+1", async () => {
+test("BOOK-012: entitled member goes straight to confirmed/no-checkout at CR 08:30 today+6; non-entitled is recorded pay-at-the-club in THIS harness (Stripe never configured) at CR 08:30 today+1", async () => {
   resetRateLimits(); // self-found FR2-E fix: 7 member.demo + 1 owner.demo logins in this file exceed the 5/15min per-email limit (REQ-AUTH-07); reset before each so none of them silently withholds dev_link
   const entitled = await loginDemo("member.demo@jp-demo.test");
   const entitledResp = await book(entitled.client, entitled.csrfToken, "demo-court-0000-0000-000000000001", crDateAt(6, 8, 30));
@@ -165,19 +165,18 @@ test("BOOK-012: entitled member goes straight to confirmed/no-checkout at CR 08:
   assert.equal(entitledResp.data.booking.status, "confirmed");
   assert.ok(!entitledResp.data.booking.checkout_url, "an entitled member must never see a Checkout call");
 
-  // FINDING (see qa-run-1.md): test-plan.md's BOOK-012 non-entitled leg
-  // reads "pending_payment with hold_expires_at ... Checkout session
-  // created" -- but this harness never sets STRIPE_SECRET_KEY (B2-COMMON
-  // law: secrets unset, not-configured path only), and S-12/S-11
-  // (amendment 3) is explicit that a paid booking with Stripe unset
-  // returns the PIN-11 503 BEFORE writing any hold at all. The two pins
-  // describe different Stripe-availability worlds; this harness is only
-  // ever in the unset one, so 503+no-row is the correct expected result
-  // for THIS suite, not the original table's wording. The
-  // pending_payment/checkout_url shape needs a configured (sandboxed)
-  // Stripe key to ever be observed and is out of this suite's reach.
+  // L4 (replaces S-11/PIN-11's 503): this harness never sets
+  // STRIPE_SECRET_KEY, so a paid booking cannot reach Checkout. It is
+  // recorded confirmed and unpaid, "pay at the club", with the amount, and
+  // never a 5xx. The pending_payment/checkout_url shape needs a configured
+  // (sandboxed) Stripe key to ever be observed and is out of this suite's reach.
   const guest = await loginDemo(poolEmail());
   const guestResp = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(1, 8, 30));
-  assert.equal(guestResp.status, 503, `S-11: payment needed + Stripe unset must be 503 before any hold, got ${guestResp.status}`);
-  assert.deepEqual(guestResp.data, { error: "not_configured", feature: "stripe" });
+  assert.equal(guestResp.status, 201, `L4: payment needed + Stripe unset must be pay at the club, got ${guestResp.status}`);
+  assert.equal(guestResp.data.booking.status, "confirmed");
+  assert.equal(guestResp.data.booking.pay_at_club, true);
+  assert.equal(guestResp.data.booking.amount_cents, 1500);
+  assert.ok(!guestResp.data.booking.checkout_url);
+  // Leave the slot free: this row exists only to prove the path.
+  d1(`DELETE FROM calendar_outbox WHERE booking_id = '${guestResp.data.booking.id}'; DELETE FROM bookings WHERE id = '${guestResp.data.booking.id}'`);
 });

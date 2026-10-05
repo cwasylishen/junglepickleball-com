@@ -336,11 +336,15 @@ export async function quote(request, env, db, url, session, account, params) {
   if (audience.mode === "not_bookable") return json({ error: "price_not_set" }, 409);
 
   const unitCents = audience.unit_cents || 0;
-  const perPlayer = resource.price_mode === "per_player" && audience.mode !== "included";
-  const totalCents = audience.mode === "included" ? 0 : perPlayer ? unitCents * partySize : unitCents;
+  const totalCents = bookingTotalCents(resource, audience, partySize);
   const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
   const creditsHave = creditsRow ? creditsRow.balance : 0;
   const creditsNeeded = resource.kind === "court" && audience.mode === "pay" ? partySize : 0;
+  // L4: with Stripe off, a paid booking is recorded unpaid, to pay at the
+  // club. Credits still win when they cover a court (createBooking's own
+  // default), so they are not "pay at the club".
+  const creditsCover = creditsNeeded > 0 && creditsHave >= partySize;
+  const payAtClub = audience.mode === "pay" && !creditsCover && !isStripeConfigured(env);
 
   return json({
     mode: audience.mode,
@@ -349,15 +353,27 @@ export async function quote(request, env, db, url, session, account, params) {
     total_cents: totalCents,
     credits_needed: creditsNeeded,
     credits_have: creditsHave,
+    pay_at_club: payAtClub,
     cancel_cutoff_minutes: resource.cancel_cutoff_minutes,
   });
+}
+
+// What a booking costs: nothing when the membership includes it, the unit
+// price per player for a per-player resource, the unit price otherwise.
+// The one place this is computed; the quote and the booking both call it.
+function bookingTotalCents(resource, audience, partySize) {
+  if (audience.mode === "included") return 0;
+  const unitCents = audience.unit_cents || 0;
+  return resource.price_mode === "per_player" ? unitCents * partySize : unitCents;
 }
 
 // ---------------------------------------------------------------------
 // §3 POST /api/portal/bookings
 //
-// S-11: a paid path checks `isStripeConfigured` and returns 503 BEFORE
-// any row is written -- never after a hold is inserted.
+// L4 (replaces S-11's 503): with Stripe off, a paid booking is written
+// confirmed and unpaid ("pay at the club") with the amount in the reply.
+// No hold, no checkout, never a 503. With Stripe on, the paid path inserts
+// a pending_payment hold and returns the Checkout URL, as before.
 // CTL-CRD-01: credit sufficiency is part of the SAME atomic INSERT
 // guard as the overlap check, so "not enough credits" and "slot taken"
 // can never race each other into a bad state; the booking simply does
@@ -431,6 +447,7 @@ export async function createBooking(request, env, db, url, session, account) {
   }
 
   let paymentMode;
+  let payAtClub = false;
   let creditsSpent = 0;
   if (audience.mode === "included") {
     paymentMode = "included";
@@ -453,13 +470,16 @@ export async function createBooking(request, env, db, url, session, account) {
       creditsSpent = partySize;
     } else {
       paymentMode = "pay";
-      if (!isStripeConfigured(env)) return notConfigured("stripe"); // S-11: before any write
+      payAtClub = !isStripeConfigured(env); // L4
     }
   }
 
+  // A card payment needs a Checkout session and a hold on the slot until it
+  // is paid. A pay-at-club booking needs neither: it is confirmed now.
+  const needsCheckout = paymentMode === "pay" && !payAtClub;
   const createdAt = nowIsoVal;
-  const holdExpiresAt = paymentMode === "pay" ? new Date(nowDate.getTime() + (CHECKOUT_MINUTES + HOLD_EXTRA_MINUTES) * 60000).toISOString() : null;
-  const status = paymentMode === "pay" ? "pending_payment" : "confirmed";
+  const holdExpiresAt = needsCheckout ? new Date(nowDate.getTime() + (CHECKOUT_MINUTES + HOLD_EXTRA_MINUTES) * 60000).toISOString() : null;
+  const status = needsCheckout ? "pending_payment" : "confirmed";
   const requiredCredits = paymentMode === "credits" ? partySize : 0;
 
   // CTL-BOOK-01: the shared, overlap-guarded insert (see insertBookingAtomic
@@ -483,7 +503,7 @@ export async function createBooking(request, env, db, url, session, account) {
   });
 
   let row;
-  if (paymentMode === "pay") {
+  if (needsCheckout) {
     row = (await insertStmt.first()) || null;
   } else {
     const extra = [];
@@ -502,7 +522,7 @@ export async function createBooking(request, env, db, url, session, account) {
     return json({ error: "slot_taken" }, 409);
   }
 
-  if (paymentMode === "pay") {
+  if (needsCheckout) {
     const quantity = resource.price_mode === "per_player" ? partySize : 1;
     let checkout;
     try {
@@ -535,6 +555,9 @@ export async function createBooking(request, env, db, url, session, account) {
     return json({ booking: { id, status: row.status, payment_mode: paymentMode, hold_expires_at: holdExpiresAt, checkout_url: checkout.url } }, 201);
   }
 
+  if (payAtClub) {
+    return json({ booking: { id, status: row.status, payment_mode: paymentMode, pay_at_club: true, amount_cents: bookingTotalCents(resource, audience, partySize) } }, 201);
+  }
   return json({ booking: { id, status: row.status, payment_mode: paymentMode } }, 201);
 }
 
@@ -624,8 +647,10 @@ export async function listMyBookings(request, env, db, url, session, account) {
     (
       await db
         .prepare(
-          `SELECT b.id, r.name AS resource_name, b.start_at, b.end_at, b.status, b.payment_mode, b.party_size
+          `SELECT b.id, r.name AS resource_name, r.price_mode, b.start_at, b.end_at, b.status, b.payment_mode, b.party_size,
+                  b.payment_intent_id, o.display_price_cents
              FROM bookings b JOIN resources r ON r.id = b.resource_id
+             LEFT JOIN offerings o ON o.id = b.offering_id
              WHERE b.account_id = ? ORDER BY b.start_at DESC`
         )
         .bind(account.id)
@@ -635,7 +660,20 @@ export async function listMyBookings(request, env, db, url, session, account) {
   // though M1's "{players} players" line and M2d's per-player cost line
   // on an existing booking both need it (member.js already reads
   // `b.party_size` defensively -- this just fills the gap it names).
-  return json(rows.map((r) => ({ id: r.id, resource: r.resource_name, start: r.start_at, end: r.end_at, status: r.status, payment_mode: r.payment_mode, party_size: r.party_size })));
+  return json(rows.map(bookingListEntry));
+}
+
+// A booking confirmed with payment_mode 'pay' and no Stripe payment on it
+// is a pay-at-club booking (L4): a paid one always carries its payment
+// intent. Its amount is the offering's price now, times the players for a
+// per-player resource.
+function bookingListEntry(r) {
+  const entry = { id: r.id, resource: r.resource_name, start: r.start_at, end: r.end_at, status: r.status, payment_mode: r.payment_mode, party_size: r.party_size };
+  if (r.status === "confirmed" && r.payment_mode === "pay" && !r.payment_intent_id) {
+    entry.pay_at_club = true;
+    entry.amount_cents = (r.display_price_cents || 0) * (r.price_mode === "per_player" ? r.party_size : 1);
+  }
+  return entry;
 }
 
 // ---------------------------------------------------------------------

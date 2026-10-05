@@ -86,7 +86,6 @@ window.PortalApp.mergeStrings({
   "home.empty_title": "No bookings yet",
   "home.empty_body": "Courts are open {open}–{close} every day.",
   "nc.stripe_title": "Payments are not switched on yet",
-  "nc.stripe_book_body": "You can't pay online for this booking yet.",
   "nc.stripe_billing_body": "When they are, you'll manage your card and membership here.",
   "nc.stripe_history_body": "Your payment history will show here once they are.",
   "act.view": "View",
@@ -119,6 +118,10 @@ window.PortalApp.mergeStrings({
   "book.to_payment": "Continue to payment",
   "book.opening_payment": "Booking…",
   "book.use_credits_instead": "Use credits instead",
+  "book.pay_at_club": "Pay at the club: {amount}",
+  "book.confirm_pay_club": "Book now, pay at the club",
+  "book.done_pay_club": "Pay {amount} at the club.",
+  "bookings.pay_club": "Pay at the club: {amount}",
   "book.done_title": "You're booked",
   "book.err_taken": "Someone just took that time. Pick another.",
   "book.err_window": "That date isn't open for booking yet.",
@@ -315,6 +318,7 @@ function memberBook() {
     confirming: false,
     confirmError: "",
     done: false,
+    doneAmountCents: null, // set when the booking was recorded as pay at the club (L4)
     features: {},
     t: window.t,
     crTime: window.crTime,
@@ -457,19 +461,18 @@ function memberBook() {
       if (!this.quote) return "";
       if (this.quote.mode === "included") return t("book.cost_included");
       if (this.quote.mode === "credits") return t("book.pay_credits", { n: this.quote.credits_needed, left: this.quote.credits_have - this.quote.credits_needed });
+      if (this.quote.pay_at_club) return t("book.pay_at_club", { amount: money(this.quote.total_cents) });
       return money(this.quote.total_cents);
     },
     cutoffLabel() {
       var m = (this.quote && this.quote.cancel_cutoff_minutes) || 120;
       return m % 60 === 0 ? (m / 60) + "h" : m + "min";
     },
-    needsStripeAndOff() {
-      return this.quote && this.quote.mode === "card" && !this.features.stripe && !(this.quote.credits_have >= this.partySize && this.quote.credits_have > 0);
-    },
-    useCreditsInstead() {
-      // Server decides mode; re-quoting with the same inputs is all the
-      // UI needs to do -- the quote's own mode flips once credits cover it.
-      this.loadQuote();
+    // True when confirming will send the person to Stripe Checkout: a paid
+    // booking, payments on, and credits not covering it.
+    quoteNeedsCard() {
+      var q = this.quote;
+      return !!q && q.mode === "pay" && !q.pay_at_club && !(q.credits_needed > 0 && q.credits_have >= q.credits_needed);
     },
     watchPartySize: null,
     async confirm() {
@@ -483,6 +486,7 @@ function memberBook() {
       if (res.ok && res.data && res.data.booking) {
         var b = res.data.booking;
         if (b.checkout_url) { window.location.assign(b.checkout_url); return; }
+        this.doneAmountCents = b.pay_at_club ? b.amount_cents : null;
         this.done = true;
         return;
       }
