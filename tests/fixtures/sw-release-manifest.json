@@ -1,0 +1,10 @@
+{
+  "build_id": "2026-10-05.1",
+  "files": {
+    "portal/icon-192.png": "7b0532739fff063a3bf5d965d12b191b3206626dbec7063fd14c24096c86e6a0",
+    "portal/icon-512.png": "103d012bcaaefd5f1c1d584364a79dcfd9a00f8eca62a85ede62c48da27fa0e6",
+    "portal/manifest.webmanifest": "e68a9da3723d9964b3552a7664852098be9459601b6390ef8a18908c99b11641",
+    "portal/portal.css": "a020f1aa25fab882974459775942142d9df5ea447a8751fbc5ee9803b36d63cc",
+    "portal/vendor/alpine-3.14.9.min.js": "3ed1eed252488921df65e363d6715deb04d7f92aaedb9e52199fdf73cb1e0ad3"
+  }
+}
