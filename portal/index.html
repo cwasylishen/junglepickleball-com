@@ -96,7 +96,7 @@
   <!-- Bottom tab bar (mobile). Desktop moves these into the top bar
        (screens.md §2.1); left as a simple list here since B1 ships the
        mount-point contract, not the final nav chrome (B2f owns that). -->
-  <nav x-show="session.authenticated" class="fixed bottom-0 inset-x-0 h-16 bg-white border-t border-slate-200 flex md:hidden">
+  <nav x-show="session.authenticated" class="fixed bottom-0 inset-x-0 h-16 px-4 bg-white border-t border-slate-200 flex md:hidden">
     <template x-for="(item, i) in nav" :key="item[0]">
       <a :href="item[0]" class="flex-1 flex items-center justify-center text-xs uppercase font-heading text-jpteal border-t-4"
          :class="isActive(item[0], i) ? 'border-jpyellow bg-slate-100' : 'border-transparent'"
