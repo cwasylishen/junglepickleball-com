@@ -4,8 +4,6 @@
 // check (controls.md says so for CTL-ENT-01/02, CTL-ROLE-01, CTL-AUTH-07,
 // CTL-DATA-01/02/03/05), in which case the test says so at the top.
 
-import { execFileSync } from "node:child_process";
-
 export const BASE_URL = process.env.PORTAL_TEST_BASE_URL || "http://127.0.0.1:8799";
 
 // A tiny cookie jar: fetch() in Node does not persist Set-Cookie across
@@ -82,20 +80,99 @@ export async function loginDemo(email, extraHeaders = {}) {
   return { client, csrfToken: verify.data.csrf_token, account: verify.data.account };
 }
 
-// Runs a wrangler d1 execute against the SAME local PORTAL_DB the
-// running server uses (--persist-to, set by scripts/test.sh -- see that
-// file for why state lives outside the watched project tree). Used only
-// by probes whose control explicitly inspects the schema or triggers
-// (CTL-DATA-01/02/03/05, CTL-ENV-01/02), which have no HTTP surface by
-// design.
+// Direct SQL against the SAME local PORTAL_DB the running server uses
+// (--persist-to, set by scripts/test.sh -- see that file for why state
+// lives outside the watched project tree). Used by probes that need to see
+// or set rows the API gives no handle on, and by the schema/trigger probes
+// (CTL-DATA-01/02/03/05, CTL-ENV-01/02).
+//
+// This opens the persisted sqlite file with Node's built-in `node:sqlite`
+// (no new dependency). It used to run `npx wrangler d1 execute` once per
+// call, which costs a cold Miniflare start every time (15-25 s on a busy
+// host, measured on 2026-10-04) and, because execFileSync blocks the one
+// Node thread, node:test's own timeout could never fire during it: a suite
+// with a few hundred calls looked hung for an hour. Same data, in
+// milliseconds, with nothing to block. push-cron.test.mjs already read the
+// file this way.
+import { DatabaseSync } from "node:sqlite";
+import { readdirSync } from "node:fs";
+
 const PERSIST_DIR = process.env.PORTAL_TEST_PERSIST_DIR || ".wrangler/state";
 
+// The sqlite file name is content-hashed per database id. Pick the file
+// that holds the portal's tables; `metadata.sqlite` is Miniflare's own
+// bookkeeping, and the ANALYTICS database (if the server ever touched it)
+// has no portal_meta table.
+function findPortalDbFile(persistDir) {
+  const dir = `${persistDir}/v3/d1/miniflare-D1DatabaseObject`;
+  const names = readdirSync(dir).filter((n) => n.endsWith(".sqlite") && n !== "metadata.sqlite");
+  for (const name of names) {
+    const probe = new DatabaseSync(`${dir}/${name}`, { readOnly: true });
+    try {
+      if (probe.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'portal_meta'`).get()) return `${dir}/${name}`;
+    } finally {
+      probe.close();
+    }
+  }
+  throw new Error(`no portal database (a file with a portal_meta table) in ${dir}; found: ${names.join(", ") || "none"}`);
+}
+
+let dbSingleton;
+function portalDb() {
+  if (!dbSingleton) {
+    dbSingleton = new DatabaseSync(findPortalDbFile(PERSIST_DIR));
+    // The running server writes the same file from another process; wait out
+    // a write in flight instead of failing a probe on a transient lock.
+    dbSingleton.exec("PRAGMA busy_timeout = 10000");
+    // D1 enforces foreign keys; a bare sqlite connection does not.
+    dbSingleton.exec("PRAGMA foreign_keys = ON");
+  }
+  return dbSingleton;
+}
+
+// Splits on `;` outside single- or double-quoted text, so a value that
+// contains a semicolon stays whole.
+function splitStatements(sql) {
+  const out = [];
+  let current = "";
+  let quote = null;
+  for (const ch of sql) {
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      current += ch;
+    } else if (ch === ";") {
+      if (current.trim()) out.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) out.push(current.trim());
+  return out;
+}
+
+// Runs each statement in order; returns one array of rows per statement
+// (empty for a statement that returns no columns). A SQL error throws.
+export function d1Each(sql) {
+  const db = portalDb();
+  return splitStatements(sql).map((text) => {
+    const statement = db.prepare(text);
+    if (statement.columns().length > 0) return statement.all().map((row) => ({ ...row }));
+    statement.run();
+    return [];
+  });
+}
+
+// Rows of the first statement (the long-standing shape of d1()).
 export function d1(sql) {
-  const out = execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", "PORTAL_DB", "--local", "--persist-to", PERSIST_DIR, "--json", "--command", sql],
-    { cwd: new URL("../..", import.meta.url).pathname, encoding: "utf8" }
-  );
-  const parsed = JSON.parse(out);
-  return parsed[0].results;
+  return d1Each(sql)[0] || [];
+}
+
+// Rows of the last statement.
+export function d1Last(sql) {
+  const all = d1Each(sql);
+  return all[all.length - 1] || [];
 }

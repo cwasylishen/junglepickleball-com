@@ -18,42 +18,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { BASE_URL } from "./helpers.mjs";
+import { BASE_URL, d1Last as d1, d1Each } from "./helpers.mjs";
 
 const WEBHOOK_SECRET = "whsec_local_test_only";
 const PERSIST_DIR = process.env.PORTAL_TEST_PERSIST_DIR || ".wrangler/state";
-
-// Same local-D1 probe as helpers.mjs's d1(), but accepts several
-// semicolon-separated statements in ONE wrangler invocation and calls
-// the wrangler binary directly rather than through `npx`: this machine
-// is running several other parts' own `wrangler dev` instances right
-// now (this part's dispatch note), and under that load `npx wrangler`'s
-// resolution overhead turns every call into 15-20s, which multiplies
-// fast across this file's cleanup-heavy tests.
-function d1(sql) {
-  const out = execFileSync(
-    "/home/mike/.npm-global/bin/wrangler",
-    ["d1", "execute", "PORTAL_DB", "--local", "--persist-to", PERSIST_DIR, "--json", "--command", sql],
-    { cwd: new URL("../..", import.meta.url).pathname, encoding: "utf8" }
-  );
-  const parsed = JSON.parse(out);
-  return parsed[parsed.length - 1].results;
-}
-
-// Same call, but returns the `.results` of EVERY semicolon-separated
-// statement (in order) instead of just the last one -- lets a test read
-// several rows in the ONE slow wrangler round trip instead of one per
-// read, under this machine's current load (several other parts' own
-// `wrangler dev`/test runs going at once).
-function d1Each(sql) {
-  const out = execFileSync(
-    "/home/mike/.npm-global/bin/wrangler",
-    ["d1", "execute", "PORTAL_DB", "--local", "--persist-to", PERSIST_DIR, "--json", "--command", sql],
-    { cwd: new URL("../..", import.meta.url).pathname, encoding: "utf8" }
-  );
-  return JSON.parse(out).map((r) => r.results);
-}
 
 function sign(secret, rawBody, timestamp) {
   const signedPayload = `${timestamp}.${rawBody}`;
