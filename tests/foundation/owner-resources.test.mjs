@@ -49,10 +49,10 @@ test("CTL-RES-01: out-of-range rule values are refused with 400 and change nothi
 
 test("REQ-OWN-11: shortening hours never touches the existing booking row -- it is listed as a misfit", async () => {
   const bookingId = "res-misfit-booking-1";
-  // 18:00-19:30 CR local, inside the original 07:00-19:30 hours.
+  // 17:30-19:00 CR local, inside the seeded 07:00-19:00 hours (PIN L3).
   d1(
     `INSERT INTO bookings (id, account_id, resource_id, start_at, end_at, party_size, status, payment_mode, created_by, created_at, updated_at)
-     VALUES ('${bookingId}', '${MEMBER_ID}', '${COURT_1}', '2026-10-02T00:00:00.000Z', '2026-10-02T01:30:00.000Z', 1, 'confirmed', 'included', '${MEMBER_ID}', datetime('now'), datetime('now'))`
+     VALUES ('${bookingId}', '${MEMBER_ID}', '${COURT_1}', '2026-10-01T23:30:00.000Z', '2026-10-02T01:00:00.000Z', 1, 'confirmed', 'included', '${MEMBER_ID}', datetime('now'), datetime('now'))`
   );
   try {
     const before = d1(`SELECT * FROM bookings WHERE id = '${bookingId}'`)[0];
@@ -69,7 +69,7 @@ test("REQ-OWN-11: shortening hours never touches the existing booking row -- it 
   } finally {
     d1(`DELETE FROM bookings WHERE id = '${bookingId}'`);
     // Restore the seeded hours for every other test file sharing this DB.
-    await patchResource(COURT_1, { close_time: "19:30" });
+    await patchResource(COURT_1, { close_time: "19:00" });
   }
 });
 

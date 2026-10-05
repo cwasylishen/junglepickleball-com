@@ -51,16 +51,16 @@ async function book(client, csrfToken, resourceId, start, extra = {}) {
   return client.post("/api/portal/bookings", { resource_id: resourceId, start, party_size: 1, ...extra }, { "X-CSRF-Token": csrfToken, Origin: BASE_URL });
 }
 
-test("BOOK-001/002 (conditional on A-13 reading 2): member window boundary -- CR 08:30 (on-grid, so the window is the only variable), today+7 OK, today+8 rejected", async () => {
+test("BOOK-001/002 (conditional on A-13 reading 2; PIN L3 window of 60 days): member window boundary -- CR 08:30 (on-grid, so the window is the only variable), today+60 OK, today+61 rejected", async () => {
   resetRateLimits(); // self-found FR2-E fix: 7 member.demo + 1 owner.demo logins in this file exceed the 5/15min per-email limit (REQ-AUTH-07); reset before each so none of them silently withholds dev_link
   const member = await loginDemo("member.demo@jp-demo.test");
-  const ok = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000001", crDateAt(7, 8, 30));
-  assert.equal(ok.status, 201, `BOOK-001: CR 08:30 today+7, expected 200/201, got ${ok.status}`);
-  const over = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000001", crDateAt(8, 8, 30));
-  assert.equal(over.status, 409, `BOOK-002: CR 08:30 today+8, expected 409 window-exceeded, got ${over.status}`);
+  const ok = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000001", crDateAt(60, 8, 30));
+  assert.equal(ok.status, 201, `BOOK-001: CR 08:30 today+60, expected 200/201, got ${ok.status}`);
+  const over = await book(member.client, member.csrfToken, "demo-court-0000-0000-000000000001", crDateAt(61, 8, 30));
+  assert.equal(over.status, 409, `BOOK-002: CR 08:30 today+61, expected 409 window-exceeded, got ${over.status}`);
 });
 
-test("BOOK-003/004: guest non-member window boundary -- CR 08:30 (on-grid), today+2 OK, today+3 rejected", async () => {
+test("BOOK-003/004 (PIN L3: 60 days for every booker): guest non-member window boundary -- CR 08:30 (on-grid), today+60 OK, today+61 rejected", async () => {
   const guest = await loginDemo(poolEmail());
   // QA3 SELF-FOUND DEFECT (this run): a non-entitled, no-credit guest
   // booking a COURT hits src/portal/booking.js's "pay" branch, which
@@ -73,17 +73,21 @@ test("BOOK-003/004: guest non-member window boundary -- CR 08:30 (on-grid), toda
   // named for) -- 2 credits covers both the OK and the (separately
   // rejected, so never actually spent) over-window attempt.
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${guest.account.id}', 2, datetime('now'))`);
-  const ok = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(2, 8, 30));
-  assert.equal(ok.status, 201, `BOOK-003: CR 08:30 today+2, expected 200/201, got ${ok.status}`);
-  const over = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(3, 8, 30));
-  assert.equal(over.status, 409, `BOOK-004: CR 08:30 today+3, expected 409, got ${over.status}`);
+  const ok = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(60, 8, 30));
+  assert.equal(ok.status, 201, `BOOK-003: CR 08:30 today+60, expected 200/201, got ${ok.status}`);
+  const over = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(61, 8, 30));
+  assert.equal(over.status, 409, `BOOK-004: CR 08:30 today+61, expected 409, got ${over.status}`);
 });
 
-test("BOOK-005 (D-A13): owner has no window -- CR 08:30 today+60 succeeds", async () => {
+test("BOOK-005 (D-A13): owner has no window -- CR 08:30 today+90 succeeds (past the 60-day window everyone else has)", async () => {
   resetRateLimits(); // self-found FR2-E fix: 7 member.demo + 1 owner.demo logins in this file exceed the 5/15min per-email limit (REQ-AUTH-07); reset before each so none of them silently withholds dev_link
   const owner = await loginDemo("owner.demo@jp-demo.test");
-  const resp = await book(owner.client, owner.csrfToken, "demo-court-0000-0000-000000000003", crDateAt(60, 8, 30));
-  assert.equal(resp.status, 201, `expected 200/201 (no window for owner), CR 08:30 today+60, got ${resp.status}`);
+  // The owner booking as themselves is not entitled, so it is a credit spend
+  // (Stripe is never configured on this harness and a paid booking would be
+  // the 503 of S-11): give the owner credits so the only variable is the window.
+  d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${owner.account.id}', 4, datetime('now'))`);
+  const resp = await book(owner.client, owner.csrfToken, "demo-court-0000-0000-000000000003", crDateAt(90, 8, 30));
+  assert.equal(resp.status, 201, `expected 200/201 (no window for owner), CR 08:30 today+90, got ${resp.status}`);
 });
 
 test("BOOK-006: a start in the past is rejected -- CR 08:30 yesterday", async () => {
@@ -152,9 +156,18 @@ test("BOOK-011: a slot blocked by the owner is rejected -- block and booking bot
   const resourceId = "demo-msg-00000-0000-000000000005";
   const blockStart = crDateAt(5, 10, 0);
   d1(`INSERT INTO blocks (id, resource_id, kind, date, start_time, end_time, label, created_by, created_at) VALUES ('qa-book011-block', '${resourceId}', 'one_off', date('${blockStart}'), '10:00', '11:00', 'QA block', 'demo-owner-0000-0000-000000000001', datetime('now'))`);
-  const member = await loginDemo(poolEmail());
-  const resp = await book(member.client, member.csrfToken, resourceId, blockStart, { offering_id: "demo-off-00000-0000-000000000005" });
-  assert.equal(resp.status, 409, `expected rejection for a blocked slot (CR 10:00), got ${resp.status}`);
+  // Massage is seeded inactive (PIN L3), and an inactive offering is also
+  // a 409: switch it on for this case so the 409 below can only be the
+  // block, then put it back.
+  d1(`UPDATE offerings SET active = 1 WHERE resource_id = '${resourceId}'`);
+  try {
+    const member = await loginDemo(poolEmail());
+    const resp = await book(member.client, member.csrfToken, resourceId, blockStart, { offering_id: "demo-off-00000-0000-000000000005" });
+    assert.equal(resp.status, 409, `expected rejection for a blocked slot (CR 10:00), got ${resp.status}`);
+    assert.equal(resp.data.error, "blocked");
+  } finally {
+    d1(`UPDATE offerings SET active = 0 WHERE resource_id = '${resourceId}'`);
+  }
 });
 
 test("BOOK-012: entitled member goes straight to confirmed/no-checkout at CR 08:30 today+6; non-entitled is recorded pay-at-the-club in THIS harness (Stripe never configured) at CR 08:30 today+1", async () => {

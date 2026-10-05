@@ -74,6 +74,9 @@ test("CTL-MSG-01: massage is always a paid booking, never included/credits, even
   // Lift it for this case (L3: members have no cap) and put it back after.
   const capBefore = d1(`SELECT max_active_per_account AS cap FROM resources WHERE id = '${resourceId}'`)[0].cap;
   d1(`UPDATE resources SET max_active_per_account = NULL WHERE id = '${resourceId}'`);
+  // Massage is seeded inactive (PIN L3); this case is about how a massage
+  // is PAID for, so switch the offerings on here and put them back after.
+  d1(`UPDATE offerings SET active = 1 WHERE resource_id = '${resourceId}'`);
   let resp;
   try {
     resp = await annual.client.post(
@@ -82,6 +85,7 @@ test("CTL-MSG-01: massage is always a paid booking, never included/credits, even
       { "X-CSRF-Token": annual.csrfToken, Origin: BASE_URL }
     );
   } finally {
+    d1(`UPDATE offerings SET active = 0 WHERE resource_id = '${resourceId}'`);
     d1(`UPDATE resources SET max_active_per_account = ${capBefore === null ? "NULL" : capBefore} WHERE id = '${resourceId}'`);
   }
   // Stripe is unconfigured on this harness (D-A23), so under L4 a massage is
