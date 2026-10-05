@@ -286,15 +286,23 @@ async function verifyStripeSignature(rawBody, header, secret) {
 // to the webhook. Repeatable: marking an already-paid signup paid again
 // with the same session id leaves the list unchanged (the run-it-twice
 // case the webhook itself can trigger if Stripe retries delivery).
+//
+// Returns { found, transitioned, signup }. `transitioned` is true only when
+// the row's status before this call was not "paid" and this call wrote it as
+// "paid": that is the one moment the owner's paid email is sent, so a retry,
+// or a second session id on an already-paid row, never mails again.
 async function markGlowSignupPaid(env, signupId, amountCents, stripeSessionId) {
   const list = await getGlowSignups(env);
   const idx = list.findIndex((s) => s.id === signupId);
-  if (idx === -1) return false;
+  if (idx === -1) return { found: false, transitioned: false, signup: null };
   const current = list[idx];
-  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) return true;
+  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) {
+    return { found: true, transitioned: false, signup: current };
+  }
+  const wasPaid = current.status === "paid";
   list[idx] = { ...current, status: "paid", amountCents, currency: GLOW_CURRENCY, stripeSessionId };
   await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
-  return true;
+  return { found: true, transitioned: !wasPaid, signup: list[idx] };
 }
 
 async function getGlowSignups(env) {
@@ -364,42 +372,77 @@ async function setGlowSignupStripeSession(env, signupId, stripeSessionId) {
   return true;
 }
 
-async function notifyGlowSignup(env, signup) {
+// Who hears about every Glow signup and every Glow payment (owner's order,
+// Clinton 2026-10-05: Roger gets them too). One /send POST per address,
+// because ward-mail hands `to` straight to env.EMAIL.send as one string.
+const GLOW_NOTIFY_RECIPIENTS = ["cwasylishen@gmail.com", "rogerworsham.cr@gmail.com"];
+
+const GLOW_STATUS_LABELS = {
+  pending_payment: "Not paid yet (sent to Stripe checkout)",
+  pay_at_event: "Pay at the event",
+  free: "Free",
+};
+
+// Sends one Glow email to every recipient. Never throws, and one recipient's
+// failure never stops the next send. Result: { sent, reason?, recipients }
+// where `sent` is true only if every recipient's send succeeded, `reason`
+// names each failure with the address it happened to, and `recipients` holds
+// { to, sent, reason? } per address.
+async function sendGlowMail(env, subject, text) {
   if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
-    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set)." };
+    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set).", recipients: [] };
   }
-  try {
-    const res = await env.WARD_MAIL.fetch("https://ward-mail/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
-      body: JSON.stringify({
-        to: "cwasylishen@gmail.com",
-        from: "ward@wizardweb.ca",
-        subject: `Glow Tournament signup: ${signup.name}`,
-        text: [
-          `New Glow in the Dark Fun Tournament signup.`,
-          ``,
-          `Name: ${signup.name}`,
-          `Phone/WhatsApp: ${signup.phone}`,
-          `Email: ${signup.email || "(none)"}`,
-          `Member: ${signup.member ? "Yes" : "No"}`,
-          `Role: ${signup.role}`,
-          signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
-          `Partner: ${signup.partnerName || "(none)"}`,
-          `People: ${signup.people}`,
-          `Notes: ${signup.notes || "(none)"}`,
-          `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
-          `Payment status: ${signup.status}`,
-          ``,
-          GLOW_PRICE_NOTE,
-        ].filter(Boolean).join("\n"),
-      }),
-    });
-    if (!res.ok) return { sent: false, reason: `ward-mail returned ${res.status}` };
-    return { sent: true };
-  } catch (err) {
-    return { sent: false, reason: String((err && err.message) || err).slice(0, 200) };
+  const recipients = [];
+  for (const to of GLOW_NOTIFY_RECIPIENTS) {
+    try {
+      const res = await env.WARD_MAIL.fetch("https://ward-mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
+        body: JSON.stringify({ to, from: "ward@wizardweb.ca", subject, text }),
+      });
+      recipients.push(res.ok ? { to, sent: true } : { to, sent: false, reason: `ward-mail returned ${res.status}` });
+    } catch (err) {
+      recipients.push({ to, sent: false, reason: String((err && err.message) || err).slice(0, 200) });
+    }
   }
+  const failed = recipients.filter((r) => !r.sent);
+  if (failed.length === 0) return { sent: true, recipients };
+  return { sent: false, reason: failed.map((r) => `${r.to}: ${r.reason}`).join("; "), recipients };
+}
+
+async function notifyGlowSignup(env, signup) {
+  return sendGlowMail(env, `Glow Tournament signup: ${signup.name}`, [
+    `New Glow in the Dark Fun Tournament signup.`,
+    ``,
+    `Name: ${signup.name}`,
+    `Phone/WhatsApp: ${signup.phone}`,
+    `Email: ${signup.email || "(none)"}`,
+    `Member: ${signup.member ? "Yes" : "No"}`,
+    `Role: ${signup.role}`,
+    signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
+    `Partner: ${signup.partnerName || "(none)"}`,
+    `People: ${signup.people}`,
+    `Notes: ${signup.notes || "(none)"}`,
+    `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
+    `Payment status: ${GLOW_STATUS_LABELS[signup.status] || signup.status}`,
+    ``,
+    GLOW_PRICE_NOTE,
+  ].filter(Boolean).join("\n"));
+}
+
+// Sent once per signup, when the webhook moves it to "paid" (see
+// markGlowSignupPaid's `transitioned`). Attempted after the KV write.
+async function notifyGlowPaid(env, signup) {
+  const amount = `$${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`;
+  return sendGlowMail(env, `PAID: Glow Tournament - ${signup.name}, ${amount}`, [
+    `A Glow in the Dark Fun Tournament signup has been paid.`,
+    ``,
+    `Name: ${signup.name}`,
+    `People: ${signup.people}`,
+    `Partner: ${signup.partnerName || "(none)"}`,
+    `Amount: ${amount}`,
+    `Stripe session: ${signup.stripeSessionId}`,
+  ].join("\n"));
 }
 
 async function handleGlowSignup(request, env) {
@@ -526,8 +569,18 @@ async function applyGlowStripeEvent(event, env) {
     const session = event.data && event.data.object;
     const signupId = session && session.metadata && session.metadata.signup_id;
     if (!signupId) return json({ error: "Missing signup_id metadata on session." }, 400);
-    const ok = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
-    if (!ok) return json({ error: `No signup found for id ${signupId}.` }, 404);
+    const marked = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
+    if (!marked.found) return json({ error: `No signup found for id ${signupId}.` }, 404);
+    if (marked.transitioned) {
+      // The row is already written. Mail trouble is logged with the signup id
+      // and never changes the answer Stripe gets, so Stripe does not retry.
+      try {
+        const mail = await notifyGlowPaid(env, marked.signup);
+        if (!mail.sent) console.log(`glow_paid_mail_failed signup=${signupId} reason=${mail.reason}`);
+      } catch (mailErr) {
+        console.log(`glow_paid_mail_failed signup=${signupId} reason=${String((mailErr && mailErr.message) || mailErr).slice(0, 200)}`);
+      }
+    }
   }
   return json({ received: true });
 }
