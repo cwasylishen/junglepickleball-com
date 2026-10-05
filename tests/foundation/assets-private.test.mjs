@@ -46,6 +46,24 @@ test("M8: the exact dispatch probe set -- public paths still serve", async () =>
   assert.equal(await status("/admin/"), 200);
 });
 
+// The allow-list replaced main's deny-list. Everything main served at
+// 7b42600 must still be served, and Glow is live with a real signup.
+// glow.html and glow/list.html are the two files the first allow-list
+// draft did not name, so they get their own test.
+test("Glow files stay public under the allow-list: /glow, /glow/list, and the immutable -v3 poster", async () => {
+  assert.equal(await status("/glow"), 200, "glow.html is the live Glow signup page");
+  assert.equal(await status("/glow/list"), 200, "glow/list.html is the Glow list page (key-gated by the API, the shell is public)");
+  assert.equal(await status("/assets/events/glow-tournament-2026-v3.jpg"), 200);
+  assert.equal(await status("/assets/events/glow-tournament-2026-v3.webp"), 200);
+});
+
+// wrangler treats _headers and _redirects as config, not assets. An
+// allow-list that negates them publishes both files by accident.
+test("_headers and _redirects are config, not public files", async () => {
+  assert.equal(await status("/_headers"), 404);
+  assert.equal(await status("/_redirects"), 404);
+});
+
 test("M8 RED->GREEN: a brand-new, never-negated root file is private by construction (the allow-list's whole point)", async () => {
   // There is no `!/zz-private-probe.txt` anywhere in .assetsignore, and
   // there never will be -- this is the exact probe controls.md's own

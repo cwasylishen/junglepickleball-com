@@ -22,8 +22,12 @@
 !/robots.txt
 !/sitemap.xml
 !/llms.txt
-!/_headers
-!/_redirects
+
+# _headers and _redirects are deliberately NOT negated. wrangler ignores
+# both as asset files by itself (they are config it parses), and main's
+# deny-list never served them. A `!/_headers` here re-includes them and
+# publishes both files at /_headers and /_redirects (found by comparing
+# `wrangler deploy --dry-run` asset lists for 7b42600 and this branch).
 
 !/assets
 !/assets/*
