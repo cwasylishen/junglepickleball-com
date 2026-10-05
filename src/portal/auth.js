@@ -117,11 +117,13 @@ async function demoDevLink(db, env, url, email, token) {
 
 // AUTH-07: one mailbox, nothing that could address another or add a
 // header. The address goes to the mail service as the `to` string, so a
-// comma, semicolon, angle bracket, quote, whitespace or control character
-// is refused here, before a token exists.
+// comma, semicolon, angle bracket, double quote, whitespace or control
+// character is refused here, before a token exists. An apostrophe is
+// allowed (o'brien@...): it is a legal character in a local part and
+// cannot start a second mailbox or a header (C4-03).
 export function isSendableEmail(email) {
   if (email.length > MAX_EMAIL_LENGTH) return false;
-  return /^[^\s\x00-\x1f\x7f,;<>"'()\\@]+@[^\s\x00-\x1f\x7f,;<>"'()\\@]+$/.test(email);
+  return /^[^\s\x00-\x1f\x7f,;<>"()\\@]+@[^\s\x00-\x1f\x7f,;<>"()\\@]+$/.test(email);
 }
 
 export function magicLinkMessage(email, link) {

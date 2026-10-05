@@ -177,6 +177,41 @@ test("an address that could address more than one mailbox, or inject a header, i
   assert.equal(db.sqlite.prepare(`SELECT COUNT(*) AS n FROM login_tokens`).get().n, 0);
 });
 
+// C4-03: an apostrophe is legal in the local part of a real address
+// (o'brien@...). It cannot start a second mailbox or a header, so it is
+// accepted, and the message goes to exactly the address given.
+test("an address with an apostrophe is accepted and is the one mailbox the link goes to", async () => {
+  for (const email of ["o'brien@example.com", "d'arcy.o'neil@example.com"]) {
+    const r = await start(email);
+    assert.deepEqual([r.status, r.body], [200, { ok: true }], email);
+  }
+  assert.deepEqual(sent.map((m) => m.to), ["o'brien@example.com", "d'arcy.o'neil@example.com"]);
+  assert.equal(db.sqlite.prepare(`SELECT COUNT(*) AS n FROM login_tokens`).get().n, 2);
+});
+
+// C4-03 / AUTH-07: allowing the apostrophe must not open anything else.
+// Each of these is an apostrophe address with one injection character added.
+test("an apostrophe address with a line break, comma, semicolon, angle bracket or quote is still refused", async () => {
+  const injected = [
+    "o'brien@example.com\r\nBcc: x@y.example",
+    "o'brien@example.com\nBcc: x@y.example",
+    "o'brien@example.com\rBcc: x@y.example",
+    "o'brien@example.com, x@y.example",
+    "o'brien@example.com;x@y.example",
+    "<o'brien@example.com>",
+    "o'brien@example.com>",
+    'o"brien@example.com',
+    "\"o'brien\"@example.com",
+    "o'brien@exam\nple.com",
+  ];
+  for (const email of injected) {
+    const r = await start(email);
+    assert.equal(r.status, 400, JSON.stringify(email));
+  }
+  assert.equal(sent.length, 0);
+  assert.equal(db.sqlite.prepare(`SELECT COUNT(*) AS n FROM login_tokens`).get().n, 0);
+});
+
 test("a request with no Origin is refused and sends nothing", async () => {
   const url = new URL("/api/portal/auth/start", PROD_ORIGIN);
   const response = await handlePortalRequest(
