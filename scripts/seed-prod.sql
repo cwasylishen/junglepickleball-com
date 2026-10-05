@@ -29,7 +29,8 @@ UPDATE portal_meta SET env = NULL WHERE id = 1 AND env <> 'production';
 
 -- 3. Resources, PIN L3. Courts: 90 min slots, 07:00 first start, close
 -- 19:00 (last start 17:30), 7 days, window 60 days for every booker, no
--- cap on upcoming court bookings (max_active_per_account NULL), online
+-- cap for members on upcoming court bookings (max_active_per_account NULL;
+-- the 2-booking cap for guests is in the booking engine, A6), online
 -- cancel up to 24 h (1440 min) before the start.
 -- Cold Plunge: open 7 days, 20 min, bookable at least 24 h ahead (1440).
 -- Massage: present, but its offerings below are inactive.

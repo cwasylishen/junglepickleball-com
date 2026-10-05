@@ -50,3 +50,32 @@ test("no em or en dash in the new copy", () => {
   assert.ok(newCopy.length >= 15, `found ${newCopy.length} strings`);
   for (const [, key, text] of newCopy) assert.doesNotMatch(text, dashes, key);
 });
+
+// C4-01: runs the real booking screen code (portal/js/member.js) in a
+// bare context with the API stubbed, and reads what the screen would show.
+test("the booking screen shows a guest the engine's own sentence when the guest cap refuses", async () => {
+  const { runInNewContext } = await import("node:vm");
+  const sentence = "Guests can hold up to 2 upcoming court bookings. Become a member for unlimited booking, or ask at the club.";
+  const strings = {};
+  // In a browser `window` is the global object; do the same here.
+  const context = {
+    STR: { en: strings },
+    PortalApp: { mergeStrings: (dict) => Object.assign(strings, dict) },
+    PortalAreas: {},
+    addEventListener() {},
+    location: {},
+    document: { getElementById: () => null },
+    PortalApi: { post: async () => ({ ok: false, status: 409, error: "guest_cap_reached", data: { error: "guest_cap_reached", message: sentence } }), get: async () => ({ ok: true, data: {} }) },
+    Intl,
+    console,
+  };
+  context.window = context;
+  runInNewContext(`${memberJs}\nthis.__memberBook = memberBook;`, context);
+  const screen = context.__memberBook();
+  screen.resource = { id: "court-1", name: "Court 1" };
+  screen.slot = { start: "2026-10-08T14:30:00.000Z" };
+  await screen.confirm();
+  assert.equal(screen.confirmError, sentence);
+  assert.equal(screen.done, false);
+  assert.doesNotMatch(screen.confirmError, new RegExp(`[${String.fromCharCode(0x2014)}${String.fromCharCode(0x2013)}]`));
+});

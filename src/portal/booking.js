@@ -40,6 +40,15 @@ const HOLD_EXTRA_MINUTES = 2; // amendment 5 F-4: hold_expires_at = checkout exp
 const CHECKOUT_MINUTES = 31; // amendment 5 F-4: checkout expires_at = now + 31 min
 const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
 
+// PIN L3 as amended by A6 (2026-10-04, ruling on inspection C4-01): Roger's
+// "no limit on court bookings" is for members only. A guest, meaning an
+// account with no active membership (resolveEntitlement says not entitled),
+// holds at most this many upcoming court bookings across all courts. Members,
+// the owner and staff are not held to it. Plunge and massage keep the
+// per-resource cap on their own resource row.
+const GUEST_MAX_UPCOMING_COURT_BOOKINGS = 2;
+const GUEST_CAP_MESSAGE = `Guests can hold up to ${GUEST_MAX_UPCOMING_COURT_BOOKINGS} upcoming court bookings. Become a member for unlimited booking, or ask at the club.`;
+
 // The ONE definition of a "live" booking: one that occupies its court right
 // now. It is confirmed, or it is a payment hold that has not run out (a hold
 // with no expiry is still a hold). Every query in this file that asks "is
@@ -173,11 +182,19 @@ export function guardedOutboxInsertStatement(db, { bookingId, action, resourceId
 // surviving row between them. `requiredCredits` is 0 for every caller
 // that does not spend credits (owner override, included, massage/plunge
 // pay), so the balance check is then trivially satisfied.
+//
+// `guestCourtCap` (C4-01) is null for everyone but a guest booking a court.
+// For that one caller it adds a third condition to the same WHERE: the
+// account holds fewer than that many upcoming court bookings. Two requests
+// that both saw "one held" cannot both insert, for the same reason two
+// requests for one slot cannot.
 export function insertBookingAtomic(
   db,
-  { accountId, resourceId, offeringId = null, startIso, endIso, partySize, freeKids = 0, status, paymentMode, holdExpiresAt = null, creditsSpent = 0, walkInName = null, createdBy, createdAt = nowIso(), requiredCredits = 0 }
+  { accountId, resourceId, offeringId = null, startIso, endIso, partySize, freeKids = 0, status, paymentMode, holdExpiresAt = null, creditsSpent = 0, walkInName = null, createdBy, createdAt = nowIso(), requiredCredits = 0, guestCourtCap = null }
 ) {
   const id = newId();
+  const capGuard = guestCourtCap == null ? "" : `AND (${upcomingCourtBookingsSql()}) < ?`;
+  const capBinds = guestCourtCap == null ? [] : [accountId, createdAt, createdAt, guestCourtCap];
   const stmt = db
     .prepare(
       `INSERT INTO bookings (
@@ -192,6 +209,7 @@ export function insertBookingAtomic(
            AND ${liveBookingSql()}
        )
        AND COALESCE((SELECT balance FROM credits WHERE account_id = ?), 0) >= ?
+       ${capGuard}
        RETURNING *`
     )
     .bind(
@@ -199,7 +217,8 @@ export function insertBookingAtomic(
       status, paymentMode, holdExpiresAt, creditsSpent,
       walkInName, createdBy, createdAt, createdAt,
       resourceId, endIso, startIso, createdAt,
-      accountId, requiredCredits
+      accountId, requiredCredits,
+      ...capBinds
     );
   return { id, statement: stmt };
 }
@@ -234,6 +253,26 @@ async function isBlockedSlot(db, resourceId, crDateStr, startHHMM, endHHMM) {
         .all()
     ).results || [];
   return rows.find((b) => hhmmToMinutes(startHHMM) < hhmmToMinutes(b.end_time) && hhmmToMinutes(b.start_time) < hhmmToMinutes(endHHMM)) || null;
+}
+
+// The guest cap's count, written once: this account's live court bookings
+// that start after now. Three `?`: the account id, then now twice (the
+// "upcoming" test and the live rule). Used inside the booking INSERT's own
+// guard (insertBookingAtomic) and by countUpcomingCourtBookings below.
+function upcomingCourtBookingsSql() {
+  return `SELECT COUNT(*) FROM bookings gb JOIN resources gr ON gr.id = gb.resource_id
+          WHERE gb.account_id = ? AND gr.kind = 'court' AND gb.start_at > ? AND ${liveBookingSql("gb")}`;
+}
+
+// READER: how many upcoming court bookings this account holds (the early,
+// friendly check, and the reason given when the INSERT's guard refuses).
+async function countUpcomingCourtBookings(db, accountId, nowIsoVal) {
+  const row = await db.prepare(`SELECT (${upcomingCourtBookingsSql()}) AS n`).bind(accountId, nowIsoVal, nowIsoVal).first();
+  return row ? row.n : 0;
+}
+
+function guestCapReached() {
+  return json({ error: "guest_cap_reached", message: GUEST_CAP_MESSAGE, max_upcoming_court_bookings: GUEST_MAX_UPCOMING_COURT_BOOKINGS }, 409);
 }
 
 // READER: how many live bookings on one resource start in
@@ -455,8 +494,10 @@ export async function createBooking(request, env, db, url, session, account) {
   if (gridError) return json({ error: gridError }, 400);
 
   // D-A13: owner/staff have no window or minimum notice; member/guest do.
-  if (account.role !== "owner" && account.role !== "staff") {
-    const entitlement = await resolveEntitlement(db, account.id, nowIsoVal);
+  const isOwnerOrStaff = account.role === "owner" || account.role === "staff";
+  let entitlement = null;
+  if (!isOwnerOrStaff) {
+    entitlement = await resolveEntitlement(db, account.id, nowIsoVal);
     if (!withinWindow(resource, crDateStr, entitlement.entitled)) return json({ error: "outside_window" }, 409);
     if (tooSoon(resource, startDate.getTime(), nowDate.getTime())) {
       return json({ error: "too_soon", min_advance_minutes: resource.min_advance_minutes }, 409);
@@ -478,6 +519,12 @@ export async function createBooking(request, env, db, url, session, account) {
       .first();
     if (countRow && countRow.n >= resource.max_active_per_account) return json({ error: "cap_reached" }, 409);
   }
+
+  // C4-01: a guest (not entitled) is held to the guest cap on courts. The
+  // early check gives the plain refusal; the INSERT's own guard (below)
+  // keeps two simultaneous requests from both getting through it.
+  const guestCourtCap = resource.kind === "court" && entitlement && !entitlement.entitled ? GUEST_MAX_UPCOMING_COURT_BOOKINGS : null;
+  if (guestCourtCap != null && (await countUpcomingCourtBookings(db, account.id, nowIsoVal)) >= guestCourtCap) return guestCapReached();
 
   let paymentMode;
   let payAtClub = false;
@@ -533,6 +580,7 @@ export async function createBooking(request, env, db, url, session, account) {
     createdBy: account.id,
     createdAt,
     requiredCredits,
+    guestCourtCap,
   });
 
   let row;
@@ -547,6 +595,8 @@ export async function createBooking(request, env, db, url, session, account) {
   }
 
   if (!row) {
+    // The guard may have refused it: a twin request took the guest's last place.
+    if (guestCourtCap != null && (await countUpcomingCourtBookings(db, account.id, nowIsoVal)) >= guestCourtCap) return guestCapReached();
     if (paymentMode === "credits") {
       const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
       const have = creditsRow ? creditsRow.balance : 0;

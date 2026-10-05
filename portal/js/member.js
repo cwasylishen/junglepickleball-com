@@ -514,6 +514,8 @@ function memberBook() {
         in_past: t("book.err_past"),
         blocked: t("book.err_blocked"),
         cap_reached: t("book.err_cap", { n: "", resource: this.resource.name }),
+        // C4-01: the server's own sentence, so the words live in one place.
+        guest_cap_reached: res.data && res.data.message,
         insufficient_credits: t("book.err_credits"),
         price_not_set: t("book.err_price_not_set"),
         too_soon: t("book.err_too_soon", { notice: noticeWords(res.data && res.data.min_advance_minutes) }),
