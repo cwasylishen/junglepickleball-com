@@ -34,6 +34,10 @@ echo "ok: no live-looking secret found."
 PORT="${JP_TEST_PORT:-8799}"
 PERSIST_DIR="${JP_TEST_STATE:-/tmp/jp-portal-test-d1-state}"
 INSPECTOR_PORT="${JP_TEST_INSPECTOR_PORT:-9229}"
+# The server log is per-port so two suite runs never write one file. Tests
+# that assert a log line (the webhook dispatcher's "ignored" line) read it
+# through PORTAL_TEST_SERVER_LOG.
+SERVER_LOG="${JP_TEST_SERVER_LOG:-/tmp/jp-portal-test-server-$PORT.log}"
 
 echo "== Local D1: reset + apply migrations + seed (port=$PORT state=$PERSIST_DIR) =="
 rm -rf "$PERSIST_DIR"
@@ -51,7 +55,7 @@ echo "== Starting wrangler dev --local on :$PORT (inspector :$INSPECTOR_PORT) ==
 PORTAL_DEV_LOGIN=1 STRIPE_WEBHOOK_SECRET=whsec_local_test_only \
   npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
   --var PORTAL_DEV_LOGIN:1 --var STRIPE_WEBHOOK_SECRET:whsec_local_test_only \
-  > /tmp/jp-portal-test-server.log 2>&1 &
+  > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
@@ -87,7 +91,7 @@ set +e
 # assertions ever got a chance to run (a harness/environment failure,
 # not a product one; named rather than silently raised without record).
 TEST_FILES=$(find tests -name '*.test.mjs' | sort)
-PORTAL_TEST_BASE_URL="http://127.0.0.1:$PORT" PORTAL_TEST_PERSIST_DIR="$PERSIST_DIR" \
+PORTAL_TEST_BASE_URL="http://127.0.0.1:$PORT" PORTAL_TEST_PERSIST_DIR="$PERSIST_DIR" PORTAL_TEST_SERVER_LOG="$SERVER_LOG" \
   node --test --test-concurrency=1 --test-timeout=180000 --test-reporter=spec $TEST_FILES
 STATUS=$?
 set -e
