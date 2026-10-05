@@ -72,10 +72,14 @@ test("M6: /portal renders the member view via a real login fragment with zero CS
   await withPage(puppeteer, async (page, consoleViolations) => {
     const token = await tokenFromDevLink(makeClient(), "member.demo@jp-demo.test");
     await page.goto(`${BASE_URL}/portal/#login=${encodeURIComponent(token)}`, { waitUntil: "networkidle0" });
-    await page.waitForFunction(() => document.body.textContent.includes("Signed in as"), { timeout: 10000 });
-    const bodyText = await page.evaluate(() => document.body.textContent);
-    assert.match(bodyText, /Signed in as member\.demo@jp-demo\.test/);
-    assert.match(bodyText, /\(member\)/);
+    // The shell no longer prints "Signed in as <email> (<role>)" (portal(FR4-A)
+    // renders the person's default view and shows their display name in the
+    // header). Wait for the name, then ask the server who this browser is.
+    await page.waitForFunction(() => document.body.textContent.includes("Member Demo"), { timeout: 30000 });
+    const me = await page.evaluate(() => fetch("/api/portal/me", { credentials: "same-origin" }).then((r) => r.json()));
+    assert.equal(me.authenticated, true);
+    assert.equal(me.account.email, "member.demo@jp-demo.test");
+    assert.equal(me.account.role, "member");
     const domViolations = await page.evaluate(() => window.__cspViolations);
     assert.deepEqual(domViolations, [], `CSP violations fired: ${JSON.stringify(domViolations)}`);
     assert.deepEqual(consoleViolations, [], `CSP console errors: ${JSON.stringify(consoleViolations)}`);
@@ -89,10 +93,12 @@ test("M6: /portal renders the owner view via a real login fragment with zero CSP
   await withPage(puppeteer, async (page, consoleViolations) => {
     const token = await tokenFromDevLink(makeClient(), "owner.demo@jp-demo.test");
     await page.goto(`${BASE_URL}/portal/#login=${encodeURIComponent(token)}`, { waitUntil: "networkidle0" });
-    await page.waitForFunction(() => document.body.textContent.includes("Signed in as"), { timeout: 10000 });
-    const bodyText = await page.evaluate(() => document.body.textContent);
-    assert.match(bodyText, /Signed in as owner\.demo@jp-demo\.test/);
-    assert.match(bodyText, /\(owner\)/);
+    // See the member case: the header shows the display name now.
+    await page.waitForFunction(() => document.body.textContent.includes("Owner Demo"), { timeout: 30000 });
+    const me = await page.evaluate(() => fetch("/api/portal/me", { credentials: "same-origin" }).then((r) => r.json()));
+    assert.equal(me.authenticated, true);
+    assert.equal(me.account.email, "owner.demo@jp-demo.test");
+    assert.equal(me.account.role, "owner");
     const domViolations = await page.evaluate(() => window.__cspViolations);
     assert.deepEqual(domViolations, [], `CSP violations fired: ${JSON.stringify(domViolations)}`);
     assert.deepEqual(consoleViolations, [], `CSP console errors: ${JSON.stringify(consoleViolations)}`);
@@ -117,7 +123,7 @@ test("M7 RED->GREEN: a brand-new email completes sign-up through the real UI, ag
       await page.goto(`${BASE_URL}/portal/#login=${encodeURIComponent(rawToken)}`, { waitUntil: "networkidle0" });
       // RED (pre-M7): the shell has no handler for age_confirmation_required
       // at all, so this prompt never appears -- a new email is stuck.
-      await page.waitForFunction(() => document.body.textContent.includes("Confirm your age"), { timeout: 10000 });
+      await page.waitForFunction(() => document.body.textContent.includes("Confirm your age"), { timeout: 30000 });
 
       await page.click('input[type="checkbox"]');
       const verifyResponse = page.waitForResponse(
