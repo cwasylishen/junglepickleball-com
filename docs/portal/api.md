@@ -119,7 +119,7 @@ the create/cancel handlers.
 | `POST /api/portal/owner/accounts/:id/dependants` | owner | `{first_name, birth_year}` | `201 {dependant}` (D-A03; first name + birth year only, CTL-DATA-04) | |
 | `PATCH /api/portal/owner/accounts/:id/role` | owner | `{role}`, `role ≠ 'owner'` always enforced | `200 {account}` | `403` if `role:'owner'` attempted (CTL-ROLE-02) |
 | `DELETE /api/portal/owner/accounts/:id` | owner | — | `200 {ok:true}` (added portal(FR2-B): anonymises rather than deletes the row -- see appendix) | `404` (already anonymised, same end state) |
-| `GET /api/portal/owner/today?date=YYYY-MM-DD` | owner | — | every resource's bookings for that CR date, `state ∈ {confirmed,held,blocked,paid_conflict}`, `payment_intent_id`, `walk_in_name`, `block.weekly` (screens §10 item 8) | |
+| `GET /api/portal/owner/today?date=YYYY-MM-DD` | owner | — | every resource's bookings for that CR date, `state ∈ {confirmed,held,blocked,paid_conflict}`, `payment_intent_id`, `walk_in_name`, `block.weekly` (screens §10 item 8), `pay_at_club` and `amount_cents` (a booking recorded as pay at the club, with what is owed; C4-05, ruling A6) | |
 | `GET /api/portal/owner/resources` / `POST` / `PATCH /:id` | owner | resource fields (CTL-AUTHZ-03 explicit list) | resource row + `unconfirmed_fields` | `400` on out-of-range values (CTL-RES-01: slot 0, buffer < 0, close ≤ open → 400) |
 | `GET /api/portal/owner/day-extensions` | owner | — | `[{date, close_time, set_by, updated_at}]`, today and later (Costa Rica date), soonest first | — |
 | `POST /api/portal/owner/day-extensions` | owner | `{date:'YYYY-MM-DD', close_time:'HH:MM'}` | `200 {override:{date,close_time,...}, changed, late_bookings}`. PIN L3 / ruling PF-3: extends that Costa Rica day's court closing time (21:00 at most). Repeatable: the same request again returns `changed:false` and writes nothing. `late_bookings` counts live bookings that end after the day's closing time as it now stands (never moved). Audited (`day_extension_set`). | `400 bad_date`, `400 date_in_past`, `400 bad_close_time`, `400 close_too_late` (after 21:00), `400 not_an_extension` (not later than the normal close) |
@@ -133,7 +133,7 @@ the create/cancel handlers.
 | `GET /api/portal/owner/health` | owner | — | `{owners:[...], email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured, outbox:{pending,failed}}` (CTL-OWN-01, CTL-AUTH-06, CTL-UI-06; `outbox` wired portal(FR1)) | |
 | `GET /api/portal/owner/outbox` | owner | — | `{pending, failed:[...]}` (screens §10 item 9) | |
 | `GET /api/portal/owner/overlaps` | owner | — | accounts with >1 valid entitlement source (P-4) | |
-| `GET /api/portal/staff/calendar?date=` | staff-own | — | `[{start,end,resource,display_name,state}]`, this staff's own resource only, no email/phone/notes/payment (D-A16) | `403` if asking another resource (CTL-STF-01) |
+| `GET /api/portal/staff/calendar?date=` | staff-own | — | `[{start,end,resource,display_name,state,pay_at_club?}]`, this staff's own resource only, no email/phone/notes/payment (D-A16); `pay_at_club: true` (present only when true) marks a booking the club collects at the desk, with no amount (C4-05, ruling A6) | `403` if asking another resource (CTL-STF-01) |
 
 **B2a2 appendix (2026-10-01, portal(FR2-B)):**
 - **CTL-REF-01.** Cancelling a paid, confirmed booking (member before cutoff, or owner at any

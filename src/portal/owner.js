@@ -12,7 +12,7 @@ import { auditStatement } from "./audit.js";
 import { resolveEntitlement, validGrants } from "./entitlement.js";
 import { outboxSummary } from "./outbox.js";
 import { crLocalMinutesOfUtcIso, timeToMinutes } from "./resources.js";
-import { insertBookingAtomic, gridAndHoursError, guardedOutboxInsertStatement } from "./booking.js";
+import { insertBookingAtomic, gridAndHoursError, guardedOutboxInsertStatement, isPayAtClub, payAtClubAmountCents } from "./booking.js";
 import { resourceForDate } from "./day-hours.js";
 
 // Mirrors the 7 tier lookup_key families entitlement.js's TIER_RANK
@@ -295,7 +295,7 @@ export async function todayAcrossResources(db, dateStr) {
   const next = new Date(new Date(dayStartUtc).getTime() + 24 * 60 * 60 * 1000);
   const dayEndUtc = next.toISOString();
 
-  const resources = (await db.prepare(`SELECT id, name, kind FROM resources ORDER BY kind, name`).all()).results || [];
+  const resources = (await db.prepare(`SELECT id, name, kind, price_mode FROM resources ORDER BY kind, name`).all()).results || [];
   const resourceById = new Map(resources.map((r) => [r.id, r]));
 
   // M19/CTL-REF-01: a cancelled-but-refund-due booking stays on Today
@@ -303,14 +303,18 @@ export async function todayAcrossResources(db, dateStr) {
   // sees it and its refund link until marked refunded.
   const bookings = (await db
     .prepare(
-      `SELECT b.*, a.display_name AS account_display_name
+      `SELECT b.*, a.display_name AS account_display_name, o.display_price_cents
        FROM bookings b JOIN accounts a ON a.id = b.account_id
+       LEFT JOIN offerings o ON o.id = b.offering_id
        WHERE b.start_at >= ? AND b.start_at < ? AND (b.status != 'cancelled' OR b.refund_state = 'due')
        ORDER BY b.resource_id, b.start_at`
     )
     .bind(dayStartUtc, dayEndUtc)
     .all()).results || [];
 
+  // C4-05: the club collects pay-at-club bookings at the desk, so the
+  // screen marks them and shows what is owed. The rule and the amount are
+  // booking.js's, the same ones My Bookings uses.
   const items = bookings.map((b) => ({
     id: b.id,
     resource_id: b.resource_id,
@@ -324,6 +328,8 @@ export async function todayAcrossResources(db, dateStr) {
     payment_intent_id: b.payment_intent_id,
     refund_state: b.refund_state,
     refund_url: b.payment_intent_id ? `https://dashboard.stripe.com/payments/${b.payment_intent_id}` : null,
+    pay_at_club: isPayAtClub(b),
+    amount_cents: isPayAtClub(b) ? payAtClubAmountCents({ ...b, price_mode: resourceById.get(b.resource_id)?.price_mode }) : null,
     block: null,
   }));
 
@@ -344,6 +350,8 @@ export async function todayAcrossResources(db, dateStr) {
       party_size: null,
       payment_intent_id: null,
       refund_url: null,
+      pay_at_club: false,
+      amount_cents: null,
       block: { id: blk.id, weekly: blk.kind === "weekly", label: blk.label, start_time: blk.start_time, end_time: blk.end_time },
     });
   }

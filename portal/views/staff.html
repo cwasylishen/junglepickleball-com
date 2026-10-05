@@ -1,5 +1,6 @@
 <!-- S1 Staff calendar (screens.md §6). Names only -- never email, phone,
-     notes, price or payment state beyond "awaiting payment" (D-A16).
+     notes, price or payment state beyond "awaiting payment" and "Pay at
+     club" (D-A16, C4-05). The marker carries no amount.
      Mounted by portal/js/staff.js. -->
 <section x-data="staffCalendar()" x-init="load()">
   <h1 class="font-heading text-2xl text-jpteal" x-text="resourceTitle()"></h1>
@@ -57,6 +58,7 @@
               <span class="text-sm font-semibold" x-text="r.display_name"></span>
               <span x-show="r.length_label" class="text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-slate-600" x-text="r.length_label"></span>
               <span x-show="r.state !== 'confirmed'" class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass(r.state)" x-text="r.state === 'held' ? t('staff.awaiting') : t('chip.' + r.state)"></span>
+              <span x-show="r.pay_at_club" class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass('held')" x-text="t('staff.pay_club')"></span>
             </div>
           </template>
         </div>

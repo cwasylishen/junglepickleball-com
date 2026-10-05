@@ -87,7 +87,11 @@ test("D-A16/CTL-AUTHZ-02: a staff calendar response body carries no email, phone
     }
     const event = res.data.find((e) => e.resource === "Massage Therapy by Samy");
     assert.ok(event, `the seeded massage booking must appear on staff's own calendar: ${text}`);
-    assert.deepEqual(Object.keys(event).sort(), ["display_name", "end", "resource", "start", "state"].sort());
+    // This booking is payment_mode 'pay' with no payment on it: a pay-at-the-club booking
+    // (L4). C4-05 (ruling A6) adds the yes/no marker `pay_at_club` for it, and nothing else:
+    // no amount, no price.
+    assert.deepEqual(Object.keys(event).sort(), ["display_name", "end", "pay_at_club", "resource", "start", "state"].sort());
+    assert.equal(event.pay_at_club, true);
   } finally {
     d1(`DELETE FROM bookings WHERE id = '${bookingId}'`);
   }

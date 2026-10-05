@@ -746,15 +746,27 @@ export async function listMyBookings(request, env, db, url, session, account) {
   return json(rows.map(bookingListEntry));
 }
 
-// A booking confirmed with payment_mode 'pay' and no Stripe payment on it
-// is a pay-at-club booking (L4): a paid one always carries its payment
-// intent. Its amount is the offering's price now, times the players for a
-// per-player resource.
+// L4: a booking confirmed with payment_mode 'pay' and no Stripe payment on
+// it is a pay-at-club booking (a paid one always carries its payment
+// intent). The one definition, used by My Bookings, the owner's Today
+// screen and the staff calendar so all three mark the same bookings.
+export function isPayAtClub(row) {
+  return row.status === "confirmed" && row.payment_mode === "pay" && !row.payment_intent_id;
+}
+
+// What a pay-at-club booking owes: the offering's price now (C4-04: the
+// price at booking time is deferred to the payments-on gate), times the
+// players for a per-player resource. The row must carry display_price_cents
+// (from the offering), price_mode (from the resource) and party_size.
+export function payAtClubAmountCents(row) {
+  return (row.display_price_cents || 0) * (row.price_mode === "per_player" ? row.party_size : 1);
+}
+
 function bookingListEntry(r) {
   const entry = { id: r.id, resource: r.resource_name, start: r.start_at, end: r.end_at, status: r.status, payment_mode: r.payment_mode, party_size: r.party_size };
-  if (r.status === "confirmed" && r.payment_mode === "pay" && !r.payment_intent_id) {
+  if (isPayAtClub(r)) {
     entry.pay_at_club = true;
-    entry.amount_cents = (r.display_price_cents || 0) * (r.price_mode === "per_player" ? r.party_size : 1);
+    entry.amount_cents = payAtClubAmountCents(r);
   }
   return entry;
 }

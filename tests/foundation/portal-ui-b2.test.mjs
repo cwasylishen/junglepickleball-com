@@ -229,13 +229,13 @@ const TODAY_ITEMS = (day) => [
   party_size,
 }));
 
-async function openOwnerToday(browser, width) {
+async function openOwnerToday(browser, width, items = null) {
   const page = await browser.newPage();
   await page.setViewport({ width, height: 900 });
   // The CR calendar day the view asks for.
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Costa_Rica", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   await signIn(page, "owner.demo@jp-demo.test", {
-    "/api/portal/owner/today": { date: today, items: TODAY_ITEMS(today), alerts: [] },
+    "/api/portal/owner/today": { date: today, items: items ? items(today) : TODAY_ITEMS(today), alerts: [] },
   });
   await page.waitForFunction(() => /Fay Frio/.test(document.body.innerText), { timeout: 30000 });
   return page;
@@ -335,5 +335,59 @@ test("pluralisation: owner Today reads '1 booking' and '1 player' for one", { ti
     assert.match(text, /\b1 player\b/, "a party of one reads '1 player'");
     assert.doesNotMatch(text, /\b1 players\b/);
     assert.match(text, /\b2 players\b/, "a party of two stays plural");
+  });
+});
+
+// ---------------------------------------------------------------------
+// C4-05: the pay-at-the-club marker is drawn on the owner's Today screen
+// (with the amount) and on the staff calendar (without one).
+// ---------------------------------------------------------------------
+test("C4-05: owner Today marks a pay-at-the-club booking with the amount, on its tile and on its sheet, and no other tile", { timeout: 90000 }, async (t) => {
+  const puppeteer = await loadPuppeteer();
+  if (!puppeteer) return t.skip("puppeteer-core not on NODE_PATH");
+
+  // The first booking owes $30.00; the others carry the fields the server sends for "not owed".
+  const items = (day) => TODAY_ITEMS(day).map((it, i) => ({ ...it, pay_at_club: i === 0, amount_cents: i === 0 ? 3000 : null }));
+  await withBrowser(puppeteer, async (browser) => {
+    const page = await openOwnerToday(browser, 1280, items);
+    const tiles = await page.evaluate(() =>
+      [...document.querySelectorAll("#portal-area .overflow-x-auto button")].map((b) => b.innerText.replace(/\s+/g, " ").trim())
+    );
+    assert.equal(tiles.length, 6);
+    const marked = tiles.filter((x) => /pay at club/i.test(x));
+    assert.equal(marked.length, 1, `exactly one tile is marked: ${JSON.stringify(tiles)}`);
+    assert.match(marked[0], /Ana Uno/);
+    assert.match(marked[0], /pay at club: \$30\.00/i);
+
+    await page.evaluate(() => document.querySelector("#portal-area .overflow-x-auto button").click());
+    const sheet = await page
+      .waitForFunction(() => { const el = document.querySelector("#portal-area .fixed"); return el ? el.innerText : false; }, { timeout: 15000 })
+      .then((h) => h.jsonValue());
+    assert.match(sheet, /pay at club: \$30\.00/i, `the sheet shows what is owed: ${JSON.stringify(sheet)}`);
+  });
+});
+
+test("C4-05: the staff calendar marks a pay-at-the-club booking 'Pay at club', with no amount", { timeout: 90000 }, async (t) => {
+  const puppeteer = await loadPuppeteer();
+  if (!puppeteer) return t.skip("puppeteer-core not on NODE_PATH");
+
+  const items = [
+    { start: "2026-12-01T17:00:00.000Z", end: "2026-12-01T18:30:00.000Z", state: "confirmed", display_name: "Gus Guest", resource: "Massage Therapy by Samy", pay_at_club: true },
+    { start: "2026-12-01T19:00:00.000Z", end: "2026-12-01T20:30:00.000Z", state: "confirmed", display_name: "Mia Member", resource: "Massage Therapy by Samy" },
+  ];
+  await withBrowser(puppeteer, async (browser) => {
+    const page = await browser.newPage();
+    await signIn(page, "staff.demo@jp-demo.test", { "/api/portal/staff/calendar": items });
+    const handle = await page
+      .waitForFunction(() => {
+        const section = document.querySelector("section");
+        const text = section ? section.innerText : "";
+        return /Gus Guest/.test(text) && /Mia Member/.test(text) ? text : false;
+      }, { timeout: 25000, polling: 500 })
+      .catch(() => null);
+    const text = handle ? await handle.jsonValue() : await page.evaluate(() => (document.querySelector("section") || {}).innerText);
+    assert.equal((text.match(/pay at club/gi) || []).length, 1, `exactly one booking is marked: ${JSON.stringify(text)}`);
+    assert.ok(text.search(/Gus Guest/) < text.search(/pay at club/i) && text.search(/pay at club/i) < text.search(/Mia Member/), "the marker sits on Gus's row, before Mia's");
+    assert.doesNotMatch(text, /\$/, "staff never see an amount");
   });
 });

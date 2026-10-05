@@ -1,8 +1,13 @@
 // Staff calendar (B2a2, docs/portal/api.md §4). CTL-STF-01: the query is
 // fixed to the caller's OWN resource(s) -- no resource id is ever
 // accepted from the request, and D-A16 bounds the fields returned to
-// start/end/resource/display_name/state. CTL-AUTHZ-02: a dependant's
-// name never appears here (this file never reads `dependants` at all).
+// start/end/resource/display_name/state, plus (C4-05, ruling A6) a
+// `pay_at_club: true` marker on a booking the club collects at the desk.
+// The marker is a yes, never an amount: no price reaches this payload.
+// CTL-AUTHZ-02: a dependant's name never appears here (this file never
+// reads `dependants` at all).
+
+import { isPayAtClub } from "./booking.js";
 
 // Costa Rica is a fixed UTC-6 offset, no DST (same small conversion
 // owner.js and resources.js each carry their own copy of -- see the
@@ -32,7 +37,7 @@ export async function staffCalendar(db, staffAccountId, dateStr, resourceIdParam
   const placeholders = resourceIds.map(() => "?").join(",");
   const bookings = (await db
     .prepare(
-      `SELECT b.start_at, b.end_at, b.resource_id, b.status, a.display_name AS account_display_name, b.walk_in_name
+      `SELECT b.start_at, b.end_at, b.resource_id, b.status, b.payment_mode, b.payment_intent_id, a.display_name AS account_display_name, b.walk_in_name
        FROM bookings b JOIN accounts a ON a.id = b.account_id
        WHERE b.resource_id IN (${placeholders}) AND b.start_at >= ? AND b.start_at < ? AND b.status != 'cancelled'
        ORDER BY b.start_at`
@@ -42,13 +47,16 @@ export async function staffCalendar(db, staffAccountId, dateStr, resourceIdParam
 
   // D-A16: start, end, resource, display_name, state ONLY -- never
   // email, phone, notes or payment detail beyond the held/confirmed
-  // state itself.
+  // state itself, and the pay-at-club marker (C4-05), present only when
+  // true. payment_mode and payment_intent_id are read to decide that one
+  // marker and are never sent.
   const events = bookings.map((b) => ({
     start: b.start_at,
     end: b.end_at,
     resource: resourceNameById.get(b.resource_id) || null,
     display_name: b.walk_in_name || b.account_display_name,
     state: b.status === "pending_payment" ? "held" : "confirmed",
+    ...(isPayAtClub(b) ? { pay_at_club: true } : {}),
   }));
 
   const blocks = (await db

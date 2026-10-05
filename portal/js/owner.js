@@ -83,6 +83,7 @@
     "today.empty": "No bookings on {date}. Every time is open.",
     "today.stripe_off_note": "Payments are not switched on yet, so refund links will not find a real payment.",
     "today.walk_in": "Walk-in",
+    "today.pay_club": "Pay at club: {amount}",
 
     "members.top": "{active} active members · {ending} ending in 14 days",
     "members.search": "Search name or email",
