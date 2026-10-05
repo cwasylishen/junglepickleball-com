@@ -66,11 +66,21 @@ echo "== Starting wrangler dev --local on :$PORT (inspector :$INSPECTOR_PORT) ==
 # GLOW_LIST_KEY is a throwaway value for the local server only; the webhook
 # dispatcher test reads Glow's list view with it to see a signup turn paid.
 PORTAL_DEV_LOGIN=1 STRIPE_WEBHOOK_SECRET=whsec_local_test_only \
-  npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
+  setsid npx wrangler dev --local --port "$PORT" --inspector-port "$INSPECTOR_PORT" --persist-to "$PERSIST_DIR" \
   --var PORTAL_DEV_LOGIN:1 --var STRIPE_WEBHOOK_SECRET:whsec_local_test_only --var GLOW_LIST_KEY:glow-list-key-local-test \
   > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+# setsid made the server its own process group, so one kill reaches npx,
+# wrangler and workerd. Killing only npx left workerd listening on the
+# port for a while, and the next run was refused.
+stop_server() {
+  kill -- "-$SERVER_PID" 2>/dev/null || kill "$SERVER_PID" 2>/dev/null || true
+  for _ in $(seq 1 30); do
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${PORT}$" || break
+    sleep 1
+  done
+}
+trap stop_server EXIT
 
 echo "Waiting for the server to answer..."
 for i in $(seq 1 30); do
@@ -111,6 +121,6 @@ PORTAL_TEST_BASE_URL="http://127.0.0.1:$PORT" PORTAL_TEST_PERSIST_DIR="$PERSIST_
 STATUS=$?
 set -e
 
-kill "$SERVER_PID" 2>/dev/null || true
+stop_server
 trap - EXIT
 exit $STATUS
