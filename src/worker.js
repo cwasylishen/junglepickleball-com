@@ -383,28 +383,54 @@ const GLOW_STATUS_LABELS = {
   free: "Free",
 };
 
+// Each ward-mail /send call is bounded (pin PIN-TIMEOUT, 2026-10-05): 5000 ms,
+// overridable by env.GLOW_MAIL_TIMEOUT_MS so a test can shorten it. A call
+// that has not answered by then counts as a failed send for that recipient.
+const GLOW_MAIL_TIMEOUT_MS = 5000;
+
+function glowMailTimeoutMs(env) {
+  const ms = Number(env.GLOW_MAIL_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : GLOW_MAIL_TIMEOUT_MS;
+}
+
+// One /send POST, raced against a timer. The race works whether or not the
+// service binding honours an AbortSignal. The timer is always cleared, so a
+// quick answer leaves nothing running.
+async function sendOneGlowMail(env, to, subject, text) {
+  const limitMs = glowMailTimeoutMs(env);
+  let timer;
+  const timedOut = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`ward-mail did not answer within ${limitMs} ms`)), limitMs);
+  });
+  try {
+    const res = await Promise.race([
+      env.WARD_MAIL.fetch("https://ward-mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
+        body: JSON.stringify({ to, from: "ward@wizardweb.ca", subject, text }),
+      }),
+      timedOut,
+    ]);
+    return res.ok ? { to, sent: true } : { to, sent: false, reason: `ward-mail returned ${res.status}` };
+  } catch (err) {
+    return { to, sent: false, reason: String((err && err.message) || err).slice(0, 200) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Sends one Glow email to every recipient. Never throws, and one recipient's
-// failure never stops the next send. Result: { sent, reason?, recipients }
-// where `sent` is true only if every recipient's send succeeded, `reason`
-// names each failure with the address it happened to, and `recipients` holds
-// { to, sent, reason? } per address.
+// failure never stops the other's send. The recipients are sent at the same
+// time, so the whole call is bounded by one timeout, not one per address
+// (the paid email is awaited before the webhook answers Stripe).
+// Result: { sent, reason?, recipients } where `sent` is true only if every
+// recipient's send succeeded, `reason` names each failure with the address it
+// happened to, and `recipients` holds { to, sent, reason? } per address.
 async function sendGlowMail(env, subject, text) {
   if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
     return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set).", recipients: [] };
   }
-  const recipients = [];
-  for (const to of GLOW_NOTIFY_RECIPIENTS) {
-    try {
-      const res = await env.WARD_MAIL.fetch("https://ward-mail/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
-        body: JSON.stringify({ to, from: "ward@wizardweb.ca", subject, text }),
-      });
-      recipients.push(res.ok ? { to, sent: true } : { to, sent: false, reason: `ward-mail returned ${res.status}` });
-    } catch (err) {
-      recipients.push({ to, sent: false, reason: String((err && err.message) || err).slice(0, 200) });
-    }
-  }
+  const recipients = await Promise.all(GLOW_NOTIFY_RECIPIENTS.map((to) => sendOneGlowMail(env, to, subject, text)));
   const failed = recipients.filter((r) => !r.sent);
   if (failed.length === 0) return { sent: true, recipients };
   return { sent: false, reason: failed.map((r) => `${r.to}: ${r.reason}`).join("; "), recipients };

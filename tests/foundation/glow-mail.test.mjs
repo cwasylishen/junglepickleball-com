@@ -306,3 +306,114 @@ test("a paid event for a row created through createGlowSignup also mails once (e
   assert.equal(wm.calls.length, 2);
   assert.equal(wm.calls[0].body.subject, "PAID: Glow Tournament - Lee, $20.00 USD");
 });
+
+// ---------- 5. PIN-TIMEOUT: each ward-mail /send call is bounded ----------
+//
+// env.GLOW_MAIL_TIMEOUT_MS shortens the bound (default 5000) so these run in
+// milliseconds. `within` is the test's own guard: on code with no bound a
+// hanging fetch never settles, and the test must fail, not hang.
+
+const SHORT_BOUND_MS = 40;
+
+// A WARD_MAIL whose fetch never resolves for the listed recipients.
+function makeHangingWardMail(hangFor) {
+  const calls = [];
+  return {
+    calls,
+    fetch(url, init) {
+      const body = JSON.parse(init.body);
+      calls.push({ url: String(url), body });
+      if (hangFor.includes(body.to)) return new Promise(() => {});
+      return Promise.resolve({ ok: true, status: 200 });
+    },
+  };
+}
+
+async function within(ms, promise, what) {
+  let guard;
+  const expired = new Promise((_, reject) => {
+    guard = setTimeout(() => reject(new Error(`${what} did not finish within ${ms} ms (no bound on the mail call)`)), ms);
+  });
+  try {
+    return await Promise.race([promise, expired]);
+  } finally {
+    clearTimeout(guard);
+  }
+}
+
+async function paidRun(wardMail, extraEnv = {}) {
+  const env = mailEnv(wardMail, extraEnv);
+  seedPendingRow(env);
+  const started = Date.now();
+  const res = await within(1000, dispatch(completedEvent("signup_fixed_1"), env), "the paid webhook");
+  return { status: res.status, body: await res.text(), kv: env.EVENTS.store.get("glow_signups"), ms: Date.now() - started };
+}
+
+test("a WARD_MAIL fetch that never resolves: same webhook response and KV row as mail ok, within the bound, other recipient still sent", async () => {
+  const ok = await paidRun(makeWardMail());
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse(ok.kv)[0].status, "paid");
+
+  // Clinton's send hangs; Roger's must still go out.
+  const hangOne = makeHangingWardMail([CLINTON]);
+  const one = await paidRun(hangOne, { GLOW_MAIL_TIMEOUT_MS: SHORT_BOUND_MS });
+  assert.deepEqual({ status: one.status, body: one.body, kv: one.kv }, { status: ok.status, body: ok.body, kv: ok.kv });
+  assert.deepEqual(hangOne.calls.map((c) => c.body.to).sort(), [CLINTON, ROGER].sort(), "both attempted");
+  assert.ok(one.ms < 500, `answered in ${one.ms} ms`);
+
+  // Both hang: still the same answer, and still bounded by ONE timeout (not one per address).
+  const hangBoth = makeHangingWardMail([CLINTON, ROGER]);
+  const both = await paidRun(hangBoth, { GLOW_MAIL_TIMEOUT_MS: SHORT_BOUND_MS });
+  assert.deepEqual({ status: both.status, body: both.body, kv: both.kv }, { status: ok.status, body: ok.body, kv: ok.kv });
+  assert.equal(hangBoth.calls.length, 2);
+  assert.ok(both.ms < 500, `answered in ${both.ms} ms`);
+});
+
+test("a timed-out send is reported like any failed send: that address, sent false, a reason naming the bound; the other address is sent", async () => {
+  for (const hanging of [CLINTON, ROGER]) {
+    const wm = makeHangingWardMail([hanging]);
+    const env = mailEnv(wm, { GLOW_MAIL_TIMEOUT_MS: SHORT_BOUND_MS });
+    const res = await within(1000, handleGlowSignup(signupRequest({ name: "Pat", phone: "1", role: "player", people: 1 }, `7.7.7.${hanging.length}`), env), "the signup");
+    assert.equal(res.status, 201);
+    const { mail } = await res.json();
+    assert.equal(mail.sent, false);
+    const byTo = Object.fromEntries(mail.recipients.map((r) => [r.to, r]));
+    assert.equal(byTo[hanging].sent, false);
+    assert.match(byTo[hanging].reason, new RegExp(`within ${SHORT_BOUND_MS} ms`));
+    const other = hanging === CLINTON ? ROGER : CLINTON;
+    assert.equal(byTo[other].sent, true);
+    assert.equal(wm.calls.length, 2);
+  }
+});
+
+test("without GLOW_MAIL_TIMEOUT_MS the bound is 5000 ms, and a bad override falls back to it", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const override of [undefined, "", "abc", "0", "-5"]) {
+    const wm = makeHangingWardMail([CLINTON, ROGER]);
+    const env = mailEnv(wm, override === undefined ? {} : { GLOW_MAIL_TIMEOUT_MS: override });
+    let settled = false;
+    const pending = handleGlowSignup(signupRequest({ name: "Pat", phone: "1", role: "player", people: 1 }, "6.6.6.6"), env).then((r) => { settled = true; return r; });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    t.mock.timers.tick(4999);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    assert.equal(settled, false, `still waiting at 4999 ms (override ${JSON.stringify(override)})`);
+    t.mock.timers.tick(1);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    assert.equal(settled, true, `answered at 5000 ms (override ${JSON.stringify(override)})`);
+    assert.equal((await pending).status, 201);
+  }
+});
+
+test("a quick mail answer clears its timer: every timer the mail path starts is cleared", async (t) => {
+  const realSet = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  const live = new Set();
+  t.after(() => { globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; });
+  globalThis.setTimeout = (...args) => { const id = realSet(...args); live.add(id); return id; };
+  globalThis.clearTimeout = (id) => { live.delete(id); return realClear(id); };
+  const wm = makeWardMail();
+  const res = await handleGlowSignup(signupRequest({ name: "Pat", phone: "1", role: "player", people: 1 }, "5.5.5.5"), mailEnv(wm));
+  assert.equal(res.status, 201);
+  assert.equal(wm.calls.length, 2);
+  assert.equal(live.size, 0, "no timer left running after the sends answered");
+});
