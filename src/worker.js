@@ -877,7 +877,8 @@ async function adminSettings(request, env) {
 // amount is hardcoded here — scripts/stripe-setup.mjs is what creates the
 // actual products/prices in Stripe with amounts matching the posted sign.
 
-const STRIPE_API = "https://api.stripe.com/v1";
+// STRIPE_API, stripeForm and stripeRequest are defined once above, in the
+// Glow section; this checkout reuses them.
 
 // lookup_key -> Checkout Session mode. Subscription intervals (month/year,
 // interval_count) live on the Stripe Price itself, not here.
@@ -892,42 +893,6 @@ const CHECKOUT_ITEMS = {
   jp_session_single: { mode: "payment" },
   jp_session_pack8: { mode: "payment" },
 };
-
-// Stripe's API takes application/x-www-form-urlencoded with PHP-style
-// bracket nesting for objects and arrays (e.g. line_items[0][price]=...).
-function stripeForm(obj, prefix = "") {
-  const parts = [];
-  for (const [k, v] of Object.entries(obj)) {
-    if (v == null) continue;
-    const key = prefix ? `${prefix}[${k}]` : k;
-    if (Array.isArray(v)) {
-      v.forEach((item, i) => {
-        const arrKey = `${key}[${i}]`;
-        if (item && typeof item === "object") parts.push(stripeForm(item, arrKey));
-        else parts.push(`${encodeURIComponent(arrKey)}=${encodeURIComponent(item)}`);
-      });
-    } else if (typeof v === "object") {
-      parts.push(stripeForm(v, key));
-    } else {
-      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`);
-    }
-  }
-  return parts.filter(Boolean).join("&");
-}
-
-async function stripeRequest(env, method, path, body) {
-  const res = await fetch(`${STRIPE_API}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body ? stripeForm(body) : undefined,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error((data.error && data.error.message) || `Stripe error ${res.status}`);
-  return data;
-}
 
 async function handleCheckout(request, env, url) {
   if (!env.STRIPE_SECRET_KEY) {
