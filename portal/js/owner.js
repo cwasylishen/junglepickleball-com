@@ -161,6 +161,8 @@
 
     "manage.top": "{n} courts or services still have default settings to check",
     "manage.top_done": "All settings confirmed",
+    "manage.loading": "Checking settings…",
+    "manage.error": "Could not check your settings. Please try again.",
     "manage.resources": "Courts and services",
     "manage.prices": "Prices",
     "manage.blocks": "Blocks",
@@ -814,6 +816,8 @@
           PortalApi.get("/api/portal/owner/resources"),
           PortalApi.get("/api/portal/owner/health"),
         ]);
+        // The count is only known if this call worked. A failed call leaves
+        // state "error", so the screen never reads a missing count as zero.
         if (resRes.ok) {
           const rows = resRes.data || [];
           this.resourcesDefaults = rows.reduce((n, r) => n + ((r.unconfirmed_fields || []).length > 0 ? 1 : 0), 0);
@@ -825,7 +829,7 @@
           else if (h.outbox && h.outbox.failed && h.outbox.failed.length) this.syncHint = String(h.outbox.failed.length);
           else this.syncHint = "ok";
         }
-        this.state = "ok";
+        this.state = resRes.ok ? "ok" : "error";
       },
       get totalDefaults() {
         return this.resourcesDefaults;
