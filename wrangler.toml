@@ -102,4 +102,17 @@ crons = ["*/15 * * * *"]
 #   VAPID_PUBLIC_KEY             - var (B2e, push)
 #   VAPID_PRIVATE_KEY            - secret (B2e, push)
 #   VAPID_SUBJECT                - var, e.g. mailto:owner@junglepickleball.com (B2e, push)
-#   EMAIL                        - secret/binding, outbound magic-link email (not yet provisioned)
+#   EMAIL                        - send_email binding, outbound magic-link email (PIN L5; see the block below)
+
+# Outbound magic-link email (PIN L5, portal(B3)): the Cloudflare Email Service
+# `send_email` binding named EMAIL, From "Jungle Pickleball <portal@junglepickleball.com>".
+# Left COMMENTED on purpose; the deployer uncomments it at the go, once
+# junglepickleball.com is onboarded in Email Service. `wrangler dev` and
+# `wrangler deploy --dry-run` both accept the block without onboarding (checked
+# 2026-10-04), so this is not a tooling limit: adding it makes this file a
+# production config edit, which must also state preview_urls, workers_dev and the
+# live custom domains and crons (checklist 221, 236), and that comparison is the
+# go's decision. Until the binding exists, sign-in fails closed with
+# "Email sign-in is not available right now."
+# [[send_email]]
+# name = "EMAIL"

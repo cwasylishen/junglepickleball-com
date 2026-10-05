@@ -10,6 +10,13 @@ import { outboxSummary } from "./outbox.js";
 
 const TOKEN_TTL_MS = 15 * 60 * 1000; // PIN-8
 const SESSION_TTL_MS = { owner: 7 * 86400000, staff: 7 * 86400000, member: 30 * 86400000, guest: 30 * 86400000 }; // S-5
+// PIN L5 (Roger, 2026-10-01): "magic links go out through the Cloudflare
+// Email Service `send_email` binding named `EMAIL`, From `Jungle Pickleball
+// <portal@junglepickleball.com>`". Subject and wording are this file's:
+// short, plain, the 15 minute expiry stated.
+const MAGIC_LINK_FROM = { email: "portal@junglepickleball.com", name: "Jungle Pickleball" };
+const MAGIC_LINK_SUBJECT = "Your Jungle Pickleball sign-in link";
+const MAX_EMAIL_LENGTH = 254;
 const DEMO_HOST_RE = /^[0-9a-f]{8}-junglepickleball-com\.cwasylishen\.workers\.dev$/;
 
 export const CSRF_EXEMPT_ROUTES = new Set([
@@ -87,9 +94,14 @@ export function isDemoEligibleHost(hostname) {
   return hostname === "localhost" || hostname === "127.0.0.1" || DEMO_HOST_RE.test(hostname);
 }
 
+// PIN-9 (a) and (b): the two checks that need no database. When these
+// hold the preview may sign people in without email.
+function devLoginEnabled(env, url) {
+  return env.PORTAL_DEV_LOGIN === "1" && isDemoEligibleHost(url.hostname);
+}
+
 async function demoDevLink(db, env, url, email, token) {
-  if (env.PORTAL_DEV_LOGIN !== "1") return null;
-  if (!isDemoEligibleHost(url.hostname)) return null;
+  if (!devLoginEnabled(env, url)) return null;
   if (!email.endsWith("@jp-demo.test")) return null;
   const marker = await db.prepare(`SELECT env FROM portal_meta WHERE id = 1`).first();
   if (!marker || marker.env !== "preview") return null; // S-1 d
@@ -99,6 +111,54 @@ async function demoDevLink(db, env, url, email, token) {
   // eslint-disable-next-line no-console
   console.log(`[portal demo login] ${email} -> ${link}`);
   return link;
+}
+
+// ---------- magic-link email (M2, PIN L5) ----------
+
+// AUTH-07: one mailbox, nothing that could address another or add a
+// header. The address goes to the mail service as the `to` string, so a
+// comma, semicolon, angle bracket, quote, whitespace or control character
+// is refused here, before a token exists.
+export function isSendableEmail(email) {
+  if (email.length > MAX_EMAIL_LENGTH) return false;
+  return /^[^\s\x00-\x1f\x7f,;<>"'()\\@]+@[^\s\x00-\x1f\x7f,;<>"'()\\@]+$/.test(email);
+}
+
+export function magicLinkMessage(email, link) {
+  const minutes = TOKEN_TTL_MS / 60000;
+  const text = [
+    "Hello,",
+    "",
+    "Use this link to sign in to the Jungle Pickleball portal:",
+    link,
+    "",
+    `The link works once and expires in ${minutes} minutes.`,
+    "If you did not ask for it, you can ignore this email.",
+    "",
+    "Jungle Pickleball, Ojochal",
+  ].join("\n");
+  const html =
+    `<p>Hello,</p>` +
+    `<p>Use this link to sign in to the Jungle Pickleball portal:</p>` +
+    `<p><a href="${link}">Sign in to Jungle Pickleball</a></p>` +
+    `<p>The link works once and expires in ${minutes} minutes. If you did not ask for it, you can ignore this email.</p>` +
+    `<p>Jungle Pickleball, Ojochal</p>`;
+  return { to: email, from: MAGIC_LINK_FROM, subject: MAGIC_LINK_SUBJECT, text, html };
+}
+
+// One send. A failure is counted (CTL-AUTH-06, shown on owner health) and
+// logged by its code only: the error's message can name the address, and
+// the link is the credential, so neither is ever written to a log. The
+// caller still gets the generic response, so a refused or suppressed
+// address cannot be told apart from an accepted one.
+async function sendMagicLink(db, env, email, link) {
+  try {
+    await env.EMAIL.send(magicLinkMessage(email, link));
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.log(`email_send_failed code=${(err && err.code) || "unknown"}`);
+    await recordEmailSendFailure(db);
+  }
 }
 
 // ---------- login start ----------
@@ -112,7 +172,17 @@ export async function authStart(request, env, db, url) {
     return json({ error: "invalid_request" }, 400);
   }
   const email = normalizeEmailIdentity(body.email);
-  if (!email || email.indexOf("@") < 1) return json({ error: "invalid_request" }, 400);
+  if (!isSendableEmail(email)) return json({ error: "invalid_request" }, 400);
+
+  // Fail closed (PIN L5): with no EMAIL binding and no demo dev login, the
+  // link cannot reach anyone. Say so now, before a token or a rate-limit
+  // row is written. This depends on the deployment, never on the address,
+  // so it reveals nothing about any account.
+  if (!env.EMAIL && !devLoginEnabled(env, url)) {
+    // eslint-disable-next-line no-console
+    console.log("email_not_configured");
+    return json({ error: "email_unavailable" }, 503);
+  }
 
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   const emailOk = await checkAndBump(db, `email:${normalizeEmailRateLimitKey(email)}`, 5, 15);
@@ -130,6 +200,7 @@ export async function authStart(request, env, db, url) {
       .bind(newId(), email, tokenHash, nowIso(), new Date(Date.now() + TOKEN_TTL_MS).toISOString(), ip)
       .run();
     devLink = await demoDevLink(db, env, url, email, token);
+    if (env.EMAIL) await sendMagicLink(db, env, email, `${url.origin}/portal/#login=${token}`);
   }
   const resp = { ok: true };
   if (devLink) resp.dev_link = devLink;
