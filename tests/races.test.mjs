@@ -53,6 +53,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
+import { burstUntilUninterrupted } from "./foundation/helpers.mjs";
 import { d1, loginFreshAccounts, BASE_URL, poolEmail, loginDemo, patchWithClient, signStripeBody, postRaw, resetRateLimits, crDateAt, grantEntitlement, grantEntitlements } from "./qa-helpers.mjs";
 
 // FINDING (qa-run-1.md): loginFreshAccounts() already resets per call,
@@ -85,8 +86,12 @@ test("RACE-001: 20 concurrent identical-slot bookings from 20 accounts -- exactl
   const accounts = await loginFreshAccounts(20, "race001");
   grantEntitlements(accounts.map((a) => a.account.id)); // QA3 fix: see file header (batched, one d1 call for all 20)
   const resourceId = "demo-court-0000-0000-000000000003";
-  const start = crDateAt(10, 8, 30); // CR 08:30, on the 90-min grid (07:00 + 90min)
-  const results = await Promise.all(accounts.map((a) => bookOnce(a.client, a.csrfToken, resourceId, start)));
+  let start;
+  // A burst the local runtime interrupted proves nothing; it is run again on another day (helpers.mjs).
+  const { results } = await burstUntilUninterrupted((shift) => {
+    start = crDateAt(10 + shift, 8, 30); // CR 08:30, on the 90-min grid (07:00 + 90min)
+    return Promise.all(accounts.map((a) => bookOnce(a.client, a.csrfToken, resourceId, start)));
+  });
   const successes = results.filter((r) => r.status === 201).length;
   const conflicts = results.filter((r) => r.status === 409).length;
   assert.equal(successes, 1, `expected exactly 1 success, got ${successes} (statuses: ${results.map((r) => r.status).join(",")}) -- waiting on B2a1`);
@@ -97,8 +102,8 @@ test("RACE-001: 20 concurrent identical-slot bookings from 20 accounts -- exactl
 
 test("RACE-002/003 (A2 overlapping starts): two different, on-grid starts whose durations overlap never both survive", async () => {
   const resourceId = "demo-court-0000-0000-000000000004";
-  const startA = crDateAt(11, 7, 0); // CR 07:00, the resource's open time -- on-grid
-  const startB = crDateAt(11, 8, 30); // CR 08:30, the very next 90-min grid point -- on-grid
+  let startA;
+  let startB;
   // Local-test-only offering: 120 min duration (> the 90-min grid step),
   // so a booking at startA ends 09:00 CR, overlapping startB's 08:30-10:00
   // CR range. Never touches the resource's own slot_minutes (A2's
@@ -110,10 +115,14 @@ test("RACE-002/003 (A2 overlapping starts): two different, on-grid starts whose 
   grantEntitlements(accounts.map((a) => a.account.id)); // QA3 fix: see file header (batched, one d1 call for all 20)
   const half = accounts.slice(0, 10);
   const otherHalf = accounts.slice(10, 20);
-  const results = await Promise.all([
-    ...half.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startA, { offering_id: longOfferingId })),
-    ...otherHalf.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startB)),
-  ]);
+  const { results } = await burstUntilUninterrupted((shift) => {
+    startA = crDateAt(11 + shift, 7, 0); // CR 07:00, the resource's open time -- on-grid
+    startB = crDateAt(11 + shift, 8, 30); // CR 08:30, the very next 90-min grid point -- on-grid
+    return Promise.all([
+      ...half.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startA, { offering_id: longOfferingId })),
+      ...otherHalf.map((a) => bookOnce(a.client, a.csrfToken, resourceId, startB)),
+    ]);
+  });
   const successes = results.filter((r) => r.status === 201).length;
   assert.equal(successes, 1, `exactly one booking must survive across BOTH overlapping starts combined, got ${successes} successes -- waiting on B2a1`);
 });
@@ -186,11 +195,19 @@ test("RACE-009 (credit race, REQ-ENT-15): 2 credits, 3 concurrent spends -- exac
   const resourceId = "demo-court-0000-0000-000000000004";
   // Three DIFFERENT on-grid CR starts (08:30, 10:00, 11:30) so each
   // booking only competes on credit balance, never on slot collision.
-  const results = await Promise.all([
-    bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16, 8, 30)),
-    bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16, 10, 0)),
-    bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16, 11, 30)),
-  ]);
+  // payment_choice "credits" is explicit: without it, a request that reads the
+  // balance after the first two spends fell through to "pay at the club" (PIN
+  // L4, payments off) and booked, so the number of successes depended on timing.
+  // With it, the third request can only be refused, which is the race under test.
+  const { results } = await burstUntilUninterrupted(async (shift) => {
+    // An interrupted burst may have spent credits: put the 2 back before the next one.
+    d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${account.account.id}', 2, datetime('now'))`);
+    return Promise.all([
+      bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16 + shift, 8, 30), { payment_choice: "credits" }),
+      bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16 + shift, 10, 0), { payment_choice: "credits" }),
+      bookOnce(account.client, account.csrfToken, resourceId, crDateAt(16 + shift, 11, 30), { payment_choice: "credits" }),
+    ]);
+  });
   const successes = results.filter((r) => [200, 201].includes(r.status)).length;
   assert.equal(successes, 2, `expected exactly 2 successful credit spends, got ${successes} -- waiting on B2a1`);
   const balance = d1(`SELECT balance FROM credits WHERE account_id = '${account.account.id}'`)[0].balance;

@@ -63,6 +63,21 @@ export function isPlatformRestart(result) {
   return result.status === 503 && result.data === null;
 }
 
+// Runs one burst of concurrent requests. If the local runtime restarted in the
+// middle of it (isPlatformRestart), the burst's outcome is unknown, so it is
+// thrown away and run again on another day's slot: attempt 0 uses the slot the
+// test names, later attempts move it 20 days on. The assertions are applied,
+// unchanged, to the first burst the runtime did not interrupt. Three
+// interrupted bursts in a row fail the test by name.
+export async function burstUntilUninterrupted(runBurst) {
+  const attempts = 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const results = await runBurst(attempt * 20);
+    if (!results.some(isPlatformRestart)) return { results, shiftDays: attempt * 20 };
+  }
+  assert.fail(`the local server restarted mid-request in all ${attempts} bursts; this host is too loaded to say anything about the race`);
+}
+
 // `wrangler dev`'s hot-reload can tear down and rebuild the D1
 // connection mid-request, which the portal's own top-level catch
 // (CTL-ERR-01) correctly turns into a generic 500 -- that is the control
@@ -114,6 +129,7 @@ export async function loginDemo(email, extraHeaders = {}) {
 // file this way.
 import { DatabaseSync } from "node:sqlite";
 import { readdirSync } from "node:fs";
+import assert from "node:assert/strict";
 
 const PERSIST_DIR = process.env.PORTAL_TEST_PERSIST_DIR || ".wrangler/state";
 

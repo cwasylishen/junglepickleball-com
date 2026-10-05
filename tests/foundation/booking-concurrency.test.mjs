@@ -28,7 +28,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { d1, loginDemo, BASE_URL, utcOnCrDay, isPlatformRestart } from "./helpers.mjs";
+import { d1, loginDemo, BASE_URL, utcOnCrDay, burstUntilUninterrupted } from "./helpers.mjs";
 
 function resetRateLimits() {
   d1(`DELETE FROM rate_limits`);
@@ -41,21 +41,6 @@ async function loginSeeded(email) {
 
 function freshStartIso(daysAhead, hour, minute = 0) {
   return utcOnCrDay(daysAhead, hour, minute).toISOString();
-}
-
-// Runs one burst of concurrent requests. If the local runtime restarted in the
-// middle of it (isPlatformRestart), the burst's outcome is unknown, so it is
-// thrown away and run again on another day's slot: attempt 0 uses the slot the
-// test names, later attempts move it 20 days on. The assertions are applied,
-// unchanged, to the first burst the runtime did not interrupt. Three
-// interrupted bursts in a row fail the test by name.
-async function burstUntilUninterrupted(runBurst) {
-  const attempts = 3;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const results = await runBurst(attempt * 20);
-    if (!results.some(isPlatformRestart)) return { results, shiftDays: attempt * 20 };
-  }
-  assert.fail(`the local server restarted mid-request in all ${attempts} bursts; this host is too loaded to say anything about the race`);
 }
 
 async function create(client, csrfToken, resourceId, start, extra = {}) {
