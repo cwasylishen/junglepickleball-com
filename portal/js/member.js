@@ -267,11 +267,20 @@ function memberHome() {
     async load() {
       this.loading = true;
       this.error = false;
-      var me = await PortalApi.get("/api/portal/me");
+      // The three reads go out together: one after another they were five
+      // round trips from sign-in to Home, and on a phone's network the
+      // "Signed in as" placeholder showed for seconds (D-R3).
+      var reads = await Promise.all([
+        PortalApi.get("/api/portal/me"),
+        PortalApi.get("/api/portal/bookings"),
+        PortalApi.get("/api/portal/resources"),
+      ]);
+      var me = reads[0];
+      var list = reads[1];
+      var resourcesRes = reads[2];
       if (!me.ok || !me.data || !me.data.authenticated) { this.error = true; this.loading = false; return; }
       var account = me.data.account;
       this.firstName = (account.display_name || account.email || "").split(" ")[0];
-      var list = await PortalApi.get("/api/portal/bookings");
       if (!list.ok) { this.error = true; this.loading = false; return; }
       var bookings = (list.data || []).filter(function (b) { return b.status !== "cancelled"; });
       var nowIso = new Date().toISOString();
@@ -285,7 +294,6 @@ function memberHome() {
       // The hours and the booking window in the words below come from the
       // courts the API returns, never from text in this file. If they cannot
       // be read, the sentence that needs them is left out, not guessed.
-      var resourcesRes = await PortalApi.get("/api/portal/resources");
       var rules = resourcesRes.ok ? window.PortalApp.courtRules(resourcesRes.data) : null;
       this.courtHours = rules ? { open: rules.open, close: rules.close } : null;
       var ent = me.data.entitlement || { entitled: false };

@@ -226,3 +226,22 @@ test("D-R1: no em dash in the touched copy", () => {
   const text = read("portal/js/member.js") + read("portal/js/owner.js") + read("portal/js/app.js") + read("portal/views/member-home.html");
   assert.doesNotMatch(text, /\u2014/);
 });
+
+// D-R3 (mitigation): Home asks for what it needs all at once, so the first
+// screen after sign-in is not five round trips behind a placeholder.
+test("D-R3: Home issues its three reads together, before any of them has answered", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const api = guestApi();
+  const ctx = loadPortalScripts(async (url) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight--;
+    return api(url);
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30)); // let the owner script's own start-up read finish
+  peak = 0;
+  await ctx.__memberHome().load();
+  assert.equal(peak, 3, "me, bookings and resources must be requested together");
+});
