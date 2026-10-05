@@ -23,7 +23,6 @@ window.PortalApp.mergeStrings({
   "account.sign_out": "Sign out",
   "account.signed_out": "You're signed out.",
   "account.hint_billing_off": "Not switched on",
-  "account.version": "Build {id}",
   "chip.owner": "Owner",
   "chip.staff": "Staff",
   "chip.member": "Member",
@@ -65,7 +64,6 @@ function accountHub() {
     loading: true,
     account: null,
     features: {},
-    buildId: "dev",
     toast: window.sessionStorage.getItem("jp_toast") || "",
     t: window.t,
     async load() {
