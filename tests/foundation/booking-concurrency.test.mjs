@@ -28,7 +28,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { d1, loginDemo, BASE_URL, utcOnCrDay } from "./helpers.mjs";
+import { d1, loginDemo, BASE_URL, utcOnCrDay, isPlatformRestart } from "./helpers.mjs";
 
 function resetRateLimits() {
   d1(`DELETE FROM rate_limits`);
@@ -43,15 +43,33 @@ function freshStartIso(daysAhead, hour, minute = 0) {
   return utcOnCrDay(daysAhead, hour, minute).toISOString();
 }
 
+// Runs one burst of concurrent requests. If the local runtime restarted in the
+// middle of it (isPlatformRestart), the burst's outcome is unknown, so it is
+// thrown away and run again on another day's slot: attempt 0 uses the slot the
+// test names, later attempts move it 20 days on. The assertions are applied,
+// unchanged, to the first burst the runtime did not interrupt. Three
+// interrupted bursts in a row fail the test by name.
+async function burstUntilUninterrupted(runBurst) {
+  const attempts = 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const results = await runBurst(attempt * 20);
+    if (!results.some(isPlatformRestart)) return { results, shiftDays: attempt * 20 };
+  }
+  assert.fail(`the local server restarted mid-request in all ${attempts} bursts; this host is too loaded to say anything about the race`);
+}
+
 async function create(client, csrfToken, resourceId, start, extra = {}) {
   return client.post("/api/portal/bookings", { resource_id: resourceId, start, party_size: 1, ...extra }, { "X-CSRF-Token": csrfToken, Origin: BASE_URL });
 }
 
 test("B2a1 equal-start race: 20 concurrent creates on the same resource+start, exactly 1 success", async () => {
   const resourceId = "demo-court-0000-0000-000000000001";
-  const start = freshStartIso(1, 13); // 07:00 CR -- on Court 1's grid (portal(FR2-B)/M10)
   const actor = await loginSeeded("member.demo@jp-demo.test"); // included mode -- no Stripe gate in the way
-  const results = await Promise.all(Array.from({ length: 20 }, () => create(actor.client, actor.csrfToken, resourceId, start)));
+  let start;
+  const { results } = await burstUntilUninterrupted((shift) => {
+    start = freshStartIso(1 + shift, 13); // 07:00 CR -- on Court 1's grid (portal(FR2-B)/M10)
+    return Promise.all(Array.from({ length: 20 }, () => create(actor.client, actor.csrfToken, resourceId, start)));
+  });
   const successes = results.filter((r) => r.status === 201).length;
   const conflicts = results.filter((r) => r.status === 409 && r.data && r.data.error === "slot_taken").length;
   assert.equal(successes, 1, `expected exactly 1 success, got ${successes} (statuses: ${results.map((r) => r.status).join(",")})`);
@@ -71,14 +89,17 @@ test("B2a1 overlapping-different-start race (A2 + M10): slot length changed mid-
   const resourceId = "demo-court-0000-0000-000000000002";
   d1(`UPDATE resources SET slot_minutes = 60 WHERE id = '${resourceId}'`);
   try {
-    const startA = freshStartIso(1, 15, 0); // 09:00 CR -- on the NEW 60-min grid
-    const startB = freshStartIso(1, 15, 30); // 09:30 CR -- off the 60-min grid; would have overlapped startA's cell
     const actor = await loginSeeded("member.demo@jp-demo.test");
-    const calls = [
-      ...Array.from({ length: 10 }, () => create(actor.client, actor.csrfToken, resourceId, startA)),
-      ...Array.from({ length: 10 }, () => create(actor.client, actor.csrfToken, resourceId, startB)),
-    ];
-    const results = await Promise.all(calls);
+    let startA;
+    let startB;
+    const { results } = await burstUntilUninterrupted((shift) => {
+      startA = freshStartIso(1 + shift, 15, 0); // 09:00 CR -- on the NEW 60-min grid
+      startB = freshStartIso(1 + shift, 15, 30); // 09:30 CR -- off the 60-min grid; would have overlapped startA's cell
+      return Promise.all([
+        ...Array.from({ length: 10 }, () => create(actor.client, actor.csrfToken, resourceId, startA)),
+        ...Array.from({ length: 10 }, () => create(actor.client, actor.csrfToken, resourceId, startB)),
+      ]);
+    });
     const successesA = results.slice(0, 10).filter((r) => r.status === 201).length;
     const offGridB = results.slice(10).filter((r) => r.status === 400 && r.data && r.data.error === "off_grid").length;
     assert.equal(successesA, 1, `exactly one of the on-grid startA calls must succeed, got ${successesA}`);

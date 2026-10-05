@@ -52,6 +52,17 @@ export function makeClient() {
   };
 }
 
+// True for the local runtime's own "Your worker restarted mid-request"
+// answer: a 503 whose body is plain text. Every 503 this application sends is
+// JSON (src/portal/http.js), so a 503 with no JSON body did not come from the
+// application. Measured 2026-10-04 on a host at load average 70: about one run
+// in four of a 20-request burst gets this answer for 2 of its requests, with
+// nothing in the application's log. Which of those requests had already
+// committed is unknown, so a burst that contains one proves nothing either way.
+export function isPlatformRestart(result) {
+  return result.status === 503 && result.data === null;
+}
+
 // `wrangler dev`'s hot-reload can tear down and rebuild the D1
 // connection mid-request, which the portal's own top-level catch
 // (CTL-ERR-01) correctly turns into a generic 500 -- that is the control
