@@ -63,7 +63,7 @@ binding = "PORTAL_DB"
 # PIN L1: the production D1 is `junglepickleball-portal`. The preview D1
 # `junglepickleball-portal-preview` (ca34a6c4-...) is never bound to production.
 database_name = "junglepickleball-portal"
-database_id = "59f8ab90-886f-4eda-b196-27ea9acd824e"
+database_id = "d7daeb61-9843-4fa5-86a2-a3134e777ea7"
 migrations_dir = "migrations"
 
 [triggers]
