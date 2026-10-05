@@ -34,6 +34,9 @@ window.STR.en = Object.assign(
     "auth.age_confirm_checkbox": "I confirm I am 16 years of age or older.",
     "auth.age_confirm_submit": "Continue",
     "auth.age_confirm_error": "Please confirm your age to continue.",
+    "auth.link_sent": "If that address can receive email, a sign-in link is on its way. It works once and expires in 15 minutes.",
+    "auth.email_unavailable": "Email sign-in is not available right now. Please try again later.",
+    "auth.email_invalid": "Enter a valid email address.",
     // Bottom-nav labels (NAV_BY_ROLE below) -- the only place this shell
     // renders a string outside STR.en (PIN-10), so these keys live here
     // rather than in each area's own dictionary.
@@ -102,6 +105,8 @@ function portalShell() {
     nav: [],
     loginEmail: "",
     devLink: null,
+    loginSent: false,
+    loginError: "",
     // M7/CTL-AUTH-05/CTL-UI-04: a brand-new email verifying for the
     // first time gets 409 age_confirmation_required from the server --
     // this holds that pending token and shows the age prompt so the
@@ -141,7 +146,22 @@ function portalShell() {
     async startLogin() {
       // age_16_plus is never sent here -- /auth/start ignores it, and
       // the person has not been asked anything yet at this point.
+      this.loginSent = false;
+      this.loginError = "";
       const res = await PortalApi.post("/api/portal/auth/start", { email: this.loginEmail });
+      if (res.status === 503 && res.error === "email_unavailable") {
+        this.loginError = STR.en["auth.email_unavailable"];
+        return;
+      }
+      if (res.status === 400) {
+        this.loginError = STR.en["auth.email_invalid"];
+        return;
+      }
+      if (!res.ok) {
+        this.loginError = STR.en["state.error_body"];
+        return;
+      }
+      this.loginSent = true;
       if (res.data && res.data.dev_link) {
         this.devLink = res.data.dev_link;
         // eslint-disable-next-line no-console

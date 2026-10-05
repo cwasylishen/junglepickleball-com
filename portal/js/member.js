@@ -128,12 +128,15 @@ window.PortalApp.mergeStrings({
   "book.err_past": "That time has already passed.",
   "book.err_cap": "You've reached the limit of upcoming bookings for {resource}.",
   "book.err_blocked": "That time is closed.",
+  "book.err_too_soon": "This needs at least {notice} notice. Pick a later time.",
+  "book.err_not_bookable": "This can't be booked online right now. Please contact the club.",
   "book.err_credits": "Not enough credits for this booking.",
   "book.err_price_not_set": "This can't be booked online yet: the club hasn't set a price.",
   "slot.available": "Free",
   "slot.taken": "Booked",
   "slot.held": "On hold",
   "slot.blocked": "Closed",
+  "slot.too_soon": "Too soon",
   "slot.my_hold": "Your hold",
   "slot.mine": "Yours",
 
@@ -150,7 +153,7 @@ window.PortalApp.mergeStrings({
   "cancel.confirm": "Cancel booking",
   "cancel.keep": "Go back",
   "cancel.done": "Booking cancelled.",
-  "cancel.err_cutoff": "It's too close to the start to cancel online. Contact the club.",
+  "cancel.err_cutoff": "To cancel within {cutoff}, please contact the club.",
 
   "account.billing": "Billing",
   "account.history": "History",
@@ -299,6 +302,16 @@ function memberHome() {
 
 // ---- M2 Booking flow -----------------------------------------------------
 
+// A notice period in the words a person says: 1440 -> "24 hours".
+function noticeWords(minutes) {
+  if (typeof minutes !== "number" || minutes <= 0) return "advance";
+  if (minutes % 60 === 0) {
+    var h = minutes / 60;
+    return h + (h === 1 ? " hour" : " hours");
+  }
+  return minutes + " minutes";
+}
+
 function memberBook() {
   return {
     loadingResources: true,
@@ -320,6 +333,7 @@ function memberBook() {
     done: false,
     doneAmountCents: null, // set when the booking was recorded as pay at the club (L4)
     features: {},
+    entitled: false,
     t: window.t,
     crTime: window.crTime,
     async load() {
@@ -327,6 +341,7 @@ function memberBook() {
       this.resourceError = false;
       var me = await PortalApi.get("/api/portal/me");
       if (me.ok && me.data) this.features = me.data.features || {};
+      this.entitled = !!(me.ok && me.data && me.data.entitlement && me.data.entitlement.entitled);
       var res = await PortalApi.get("/api/portal/resources");
       if (!res.ok) { this.resourceError = true; this.loadingResources = false; return; }
       this.resources = (res.data || []).filter(function (r) { return r.active !== false; });
@@ -392,10 +407,12 @@ function memberBook() {
       window.location.hash = "#/book";
     },
     buildDateOptions() {
-      // D-A13 base window (resource-level overrides are not exposed by
-      // GET /api/portal/resources today -- flagged in the return).
-      var days = this.resource && this.resource.kind !== "court" ? 7 : 7;
-      var n = 7; // member default; guest default is 3 (today + 2)
+      // D-A13/PIN L3: the booker's own window, as the server states it for
+      // this resource (60 days for everyone). The day count is the last
+      // day offered after today. An older server that does not say falls
+      // back to a week.
+      var windowDays = this.resource && (this.entitled ? this.resource.member_window_days : this.resource.non_member_window_days);
+      var n = (typeof windowDays === "number" ? windowDays : 6) + 1;
       this.dateOptions = [];
       for (var i = 0; i < n; i++) {
         var d = new Date();
@@ -434,12 +451,13 @@ function memberBook() {
         mine: "bg-white border-2 border-jpteal text-jpteal",
         blocked: "bg-[#f1f5f9] text-slate-400",
         past: "bg-white text-slate-300",
+        too_soon: "bg-white text-slate-300",
       };
       if (this.slot && this.slot.start === s.start) return "bg-jpteal text-jpyellow";
       return map[s.state] || "bg-white text-slate-500";
     },
     slotLabel(s) {
-      var map = { taken: t("slot.taken"), held: t("slot.held"), held_mine: t("slot.my_hold"), mine: t("slot.mine"), blocked: t("slot.blocked") };
+      var map = { taken: t("slot.taken"), held: t("slot.held"), held_mine: t("slot.my_hold"), mine: t("slot.mine"), blocked: t("slot.blocked"), too_soon: t("slot.too_soon") };
       return map[s.state] || crTime(s.end);
     },
     pickSlot(s) {
@@ -498,6 +516,8 @@ function memberBook() {
         cap_reached: t("book.err_cap", { n: "", resource: this.resource.name }),
         insufficient_credits: t("book.err_credits"),
         price_not_set: t("book.err_price_not_set"),
+        too_soon: t("book.err_too_soon", { notice: noticeWords(res.data && res.data.min_advance_minutes) }),
+        not_bookable_online: t("book.err_not_bookable"),
       };
       this.confirmError = errMap[res.error] || t("state.error_body");
       if (res.error === "slot_taken") this.loadSlots();
@@ -580,7 +600,8 @@ function memberBookings() {
         var self = this;
         setTimeout(function () { self.toast = ""; }, 3000);
       } else if (res.error === "past_cutoff") {
-        this.cancelError = t("cancel.err_cutoff");
+        // PIN L3: inside the cancel window the UI sends people to the club.
+        this.cancelError = t("cancel.err_cutoff", { cutoff: noticeWords(res.data && res.data.cancel_cutoff_minutes) });
       } else {
         this.cancelError = t("state.error_body");
       }

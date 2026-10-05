@@ -26,7 +26,7 @@ becomes `500 {"error":"server_error"}` (CTL-ERR-01).
 
 | Method & path | Class | Request | Response | Errors |
 |---|---|---|---|---|
-| `POST /api/portal/auth/start` | public (Origin-checked, CSRF-exempt) | `{email}` | `200 {ok:true}`, `+{dev_link}` only under PIN-9/S-1 | `403 origin_required`, `400 invalid_request`. Identical shape whether the email exists or is rate-limited (PIN-8). |
+| `POST /api/portal/auth/start` | public (Origin-checked, CSRF-exempt) | `{email}` | `200 {ok:true}`, `+{dev_link}` only under PIN-9/S-1. The link is emailed with `env.EMAIL.send` (PIN L5, portal(B3)). | `403 origin_required`, `400 invalid_request` (also for an address that could reach more than one mailbox: comma, semicolon, whitespace, angle brackets, over 254 characters), `503 email_unavailable` (no `EMAIL` binding and no demo dev login: fail closed, nothing written). Otherwise identical shape whether the email exists, is rate-limited or the send failed (PIN-8). |
 | `POST /api/portal/auth/verify` | public (Origin-checked, CSRF-exempt) | `{token, age_16_plus?, confirm?}` | `200 {ok, first_login, csrf_token, account:{id,email,role,display_name}}` + `Set-Cookie` | `400 verify.bad_invalid` / `verify.bad_used` / `verify.bad_expired`, `409 age_confirmation_required`, `409 confirm_account_switch {account_hint}` |
 | `POST /api/portal/auth/logout` | own | — | `200 {ok:true}` + cleared cookie | — |
 | `POST /api/portal/auth/passkey/register/start` | own | — | WebAuthn registration options | `503 not_configured {feature:"passkeys"}` until B2c lands |
@@ -60,11 +60,11 @@ only `{display_name}` (CTL-AUTHZ-03); every other field in the body is ignored, 
 
 | Method & path | Class | Request | Response | Errors |
 |---|---|---|---|---|
-| `GET /api/portal/resources` | own | — | `[{id, kind, name, open_time, close_time, slot_minutes, buffer_minutes, member_included, offerings:[{id,name,duration_minutes,audience,display_price_cents}]}]` | — |
-| `GET /api/portal/resources/:id/availability?date=YYYY-MM-DD` | own | — | `{slots:[{start,end,state}]}`, `state ∈ {available,taken,held,held_mine,mine,blocked,past}` (screens §10 item 2). No account fields for member/guest (CTL-AVL-01). Owner variant (`GET /api/portal/owner/resources/:id/availability`, B2a2) adds `display_name`, `booking_id`. | `400 bad_date` |
+| `GET /api/portal/resources` | own | — | `[{id, kind, name, open_time, close_time, slot_minutes, buffer_minutes, member_included, member_window_days, non_member_window_days, min_advance_minutes, cancel_cutoff_minutes, active, offerings:[{id,name,duration_minutes,audience,display_price_cents}]}]`. `active` is false when no offering is active (massage until Roger gives Samy's hours, PIN L3); `close_time` is the normal close, an owner-extended day is read from availability. (The four rule fields and `active` were added portal(B3).) | — |
+| `GET /api/portal/resources/:id/availability?date=YYYY-MM-DD` | own | — | `{slots:[{start,end,state}]}`, `state ∈ {available,taken,held,held_mine,mine,blocked,past,too_soon}` (screens §10 item 2; `too_soon` added portal(B3): inside the resource's minimum notice, member and guest only). The grid follows the day's real hours, so an owner-extended court day has the extra slot. No account fields for member/guest (CTL-AVL-01). Owner variant (`GET /api/portal/owner/resources/:id/availability`, B2a2) adds `display_name`, `booking_id`. | `400 bad_date` |
 | `GET /api/portal/resources/:id/quote?offering_id=&start=&party_size=` | own | — | `{mode, unit_cents, party_size, total_cents, credits_needed, credits_have, cancel_cutoff_minutes}` (screens §10 item 3), `mode` from `entitlement.resolveAudience` | `409 price_not_set` |
-| `POST /api/portal/bookings` | own | `{resource_id, offering_id?, start, party_size, free_kids?, payment_choice?}` | `201 {booking:{id,status,payment_mode,hold_expires_at?,checkout_url?}}`. **Must not create any row at all if a paid path is `not_configured` (S-11/F-D1) -- check Stripe configuration before inserting a hold.** | `409 slot_taken`, `409 outside_window`, `409 in_past`, `409 blocked`, `409 cap_reached`, `409 insufficient_credits`, `409 price_not_set`, `409 price_mismatch` (CTL-STR-02, added portal(FR1)), `400 off_grid` / `400 outside_hours` (D-A14/S-12, added portal(FR2-B), checked for every caller incl. staff/owner self-book), `503 not_configured {feature:"stripe"}`, `400 invalid_request` |
-| `POST /api/portal/bookings/:id/cancel` | own | — | `200 {ok:true, credits_returned}` | `404` (not this account's or already cancelled), `409 past_cutoff` (UI string key `cancel.err_cutoff`) |
+| `POST /api/portal/bookings` | own | `{resource_id, offering_id?, start, party_size, free_kids?, payment_choice?}` | `201 {booking:{id,status,payment_mode,hold_expires_at?,checkout_url?}}`. **Must not create any row at all if a paid path is `not_configured` (S-11/F-D1) -- check Stripe configuration before inserting a hold.** | `409 slot_taken`, `409 outside_window`, `409 in_past`, `409 blocked`, `409 cap_reached`, `409 insufficient_credits`, `409 price_not_set`, `409 price_mismatch` (CTL-STR-02, added portal(FR1)), `409 too_soon {min_advance_minutes}` (PIN L3 minimum notice, Cold Plunge 1440, member and guest only), `409 not_bookable_online` (no active offering, or the offering asked for is inactive; massage until Roger gives Samy's hours; added portal(B3)), `400 off_grid` / `400 outside_hours` (D-A14/S-12, added portal(FR2-B), checked for every caller incl. staff/owner self-book), `503 not_configured {feature:"stripe"}`, `400 invalid_request` |
+| `POST /api/portal/bookings/:id/cancel` | own | — | `200 {ok:true, credits_returned}` | `404` (not this account's or already cancelled), `409 past_cutoff {cancel_cutoff_minutes}` (UI string key `cancel.err_cutoff`; 1440 under PIN L3, so inside 24 h the UI says to contact the club) |
 | `GET /api/portal/bookings` | own | — | `[{id,resource,start,end,status,payment_mode,party_size}]` (`party_size` added portal(FR1)), this account's own rows only | — |
 
 Credit spend/return is one function in `booking.js` (CTL-CRD-01); it is never computed inline in
@@ -121,6 +121,9 @@ the create/cancel handlers.
 | `DELETE /api/portal/owner/accounts/:id` | owner | — | `200 {ok:true}` (added portal(FR2-B): anonymises rather than deletes the row -- see appendix) | `404` (already anonymised, same end state) |
 | `GET /api/portal/owner/today?date=YYYY-MM-DD` | owner | — | every resource's bookings for that CR date, `state ∈ {confirmed,held,blocked,paid_conflict}`, `payment_intent_id`, `walk_in_name`, `block.weekly` (screens §10 item 8) | |
 | `GET /api/portal/owner/resources` / `POST` / `PATCH /:id` | owner | resource fields (CTL-AUTHZ-03 explicit list) | resource row + `unconfirmed_fields` | `400` on out-of-range values (CTL-RES-01: slot 0, buffer < 0, close ≤ open → 400) |
+| `GET /api/portal/owner/day-extensions` | owner | — | `[{date, close_time, set_by, updated_at}]`, today and later (Costa Rica date), soonest first | — |
+| `POST /api/portal/owner/day-extensions` | owner | `{date:'YYYY-MM-DD', close_time:'HH:MM'}` | `200 {override:{date,close_time,...}, changed, late_bookings}`. PIN L3 / ruling PF-3: extends that Costa Rica day's court closing time (21:00 at most). Repeatable: the same request again returns `changed:false` and writes nothing. `late_bookings` counts live bookings that end after the day's closing time as it now stands (never moved). Audited (`day_extension_set`). | `400 bad_date`, `400 date_in_past`, `400 bad_close_time`, `400 close_too_late` (after 21:00), `400 not_an_extension` (not later than the normal close) |
+| `DELETE /api/portal/owner/day-extensions/:date` | owner | — | `200 {ok:true, changed, late_bookings}`; clearing a day with no extension is `changed:false`. Audited (`day_extension_cleared`). | `400 bad_date` |
 | `POST /api/portal/owner/resources/:id/confirm-field` | owner | `{field}` | `200 {ok:true}` (audited; clears that name from `unconfirmed_fields`) | |
 | `GET/POST/PATCH/DELETE /api/portal/owner/resources/:id/offerings[/:offeringId]` | owner | offering fields | offering row | |
 | `GET/POST/DELETE /api/portal/owner/blocks[/:id]` | owner | `{resource_id, kind, weekday|date, start_time, end_time, label}` | block row(s) | Warns, never bumps an existing booking (F-D3) |
@@ -241,6 +244,13 @@ item 10 → §4 staff calendar row.
 ---
 
 ## Changelog
+
+- 2026-10-04 (B3, PINs L3 L5 L7, ruling PF-3): migration `0009_launch_rules.sql` (`resources.min_advance_minutes`, table
+  `day_close_overrides`); `src/portal/day-hours.js` and the three `/owner/day-extensions` routes above; booking engine
+  enforces the day's real hours, the minimum notice and inactive offerings (`too_soon`, `not_bookable_online`, availability
+  state `too_soon`); `GET /resources` carries the window, notice, cancel-cutoff and `active` fields; `past_cutoff` names the
+  cutoff; `auth/start` sends the magic link through `env.EMAIL` and fails closed with `503 email_unavailable`, and now refuses
+  an address that could reach more than one mailbox (AUTH-07). No existing field was removed or renamed.
 
 - 2026-09-30 (B1): initial contract.
 - 2026-09-30 (B1-fix, amendment 6): `src/portal/router.js`'s `ROUTES` table now supports

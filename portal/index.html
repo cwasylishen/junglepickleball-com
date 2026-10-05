@@ -79,6 +79,8 @@
                  class="flex-1 border border-slate-300 rounded px-3 py-2" />
           <button type="submit" class="bg-jpteal text-white rounded px-4 py-2">Send link</button>
         </form>
+        <p x-show="loginSent" class="text-sm text-slate-700 mt-3" x-text="STR.en['auth.link_sent']"></p>
+        <p x-show="loginError" class="text-sm text-red-600 mt-3" x-text="loginError"></p>
         <p x-show="devLink" class="text-xs text-slate-500 mt-3">Preview only: the link was written to the browser console.</p>
       </section>
     </template>
