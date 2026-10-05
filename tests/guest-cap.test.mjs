@@ -175,6 +175,30 @@ test("on-behalf unaffected: the owner books for a guest who already holds two, a
   }
 });
 
+// C4R-01 (inspection 4): the ruling's second clause. Bookings the owner makes
+// on a guest's behalf are exempt from the cap when they are made, but they
+// belong to the guest afterwards and count toward the guest's 2. Without this
+// case, a count that only looked at the guest's own bookings (created_by =
+// account_id) passed every test.
+test("on-behalf bookings count afterwards: two made by the owner for a guest, then the guest's own court booking is refused", async () => {
+  const g = await guest("g1");
+  await personWithRole("owner-1", "owner");
+  for (const [court, start] of [SLOT_A, SLOT_B]) {
+    const made = await ownerOverrideBooking(db, "owner-1", { resource_id: court, start, account_id: "g1" });
+    assert.equal(made.error, undefined, JSON.stringify(made));
+  }
+  assert.equal(
+    db.sqlite.prepare(`SELECT COUNT(*) AS n FROM bookings WHERE account_id = 'g1' AND created_by = 'owner-1'`).get().n,
+    2,
+    "both bookings were made by the owner, not by the guest",
+  );
+
+  const third = await book(g, ...SLOT_C);
+  assert.deepEqual([third.status, third.data.error], [409, "guest_cap_reached"]);
+  assert.equal(third.data.message, GUEST_CAP_MESSAGE);
+  assert.equal(liveCount("g1"), 2, "the refused request wrote nothing");
+});
+
 test("staff unaffected: a staff account books three courts for itself", async () => {
   const s = await personWithRole("staff-1", "staff");
   for (const [court, day] of [["court-1", "2026-10-12"], ["court-2", "2026-10-13"], ["court-3", "2026-10-14"]]) {
