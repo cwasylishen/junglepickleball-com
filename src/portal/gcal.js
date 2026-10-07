@@ -1,6 +1,8 @@
-// Google Calendar push (B2d, PIN-13, D-A17). One-way: `calendar_outbox`
-// rows become Google Calendar events; nothing ever flows back from
-// Google into a booking (REQ-CAL-01). Auth is a hand-rolled RS256
+// Google Calendar push (B2d, PIN-13, D-A17). Push of bookings is one-way:
+// outbox rows become Google events and Google never creates or changes a
+// booking. The read of busy time lives in gcal-busy.js (two-way calendar:
+// push + read busy), REQ-CAL-01 as amended 2026-10-07, Clinton's approval
+// 10:04. Auth is a hand-rolled RS256
 // service-account JWT -- no library, no domain-wide delegation
 // (research.md Q5) -- exchanged for an access token that this module
 // caches for its own lifetime.

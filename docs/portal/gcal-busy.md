@@ -32,10 +32,20 @@ no cache read.
 - Cache: 180 s, keys `gcalbusy:v1:<calendar>:<CR date>`. By default the Workers Cache API (portal code may not touch the legacy EVENTS KV, CTL-ENV-03); it stores nothing on a workers.dev hostname, so there every view asks Google. To use KV instead, bind a KV namespace as `GCAL_BUSY_CACHE`: no code change.
 - **Fail safe**: if Google cannot be read (token, HTTP error, 3 s timeout, bad secret) the
   portal shows and books from the database alone, never refuses because Google is down,
-  logs one `gcal_busy_unreadable error_id=<8 hex> resource_id=<id> message=...` line, and
-  does not ask or log again for 60 s (key `gcalbusy:v1:err:<calendar>`).
+  logs one `gcal_busy_unreadable error_id=<8 hex> resource_id=<id> message=...` line. The
+  60 s pause applies to availability views only; the booking POST deliberately bypasses
+  the pause (it always re-checks Google fresh, waits at most the 3 s timeout, logs a new
+  line and refreshes the pause) so a recovered Google is honoured at once (key
+  `gcalbusy:v1:err:<calendar>`).
 - Preview environment class never receives the Google secret (router.js buildPortalEnv,
   CTL-ENV-01), so this is exercised end to end only on the production class.
+
+## Window
+
+Google reads are clamped to today in Costa Rica through the longest of
+`member_window_days` and `non_member_window_days`. Outside that window Google is never
+called and slots are database-only; owners and staff with no window are included in the
+same clamp.
 
 ## Time
 

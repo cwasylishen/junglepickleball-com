@@ -14,7 +14,10 @@ import { busyIntervalsForWindow, crDatesCovering, eventInterval, isBusyEvent, PO
 import { crDateStringFromUtc } from "../src/portal/cr-time.js";
 
 const DAY = "2026-10-08";
+const TODAY_CR = "2026-10-05";
+const LAST_DAY_CR = "2026-12-04"; // 60 days after the mocked Costa Rica date; the seeded windows are 60 days.
 const CAL = "court1@group.calendar.google.com";
+const CAL2 = "court2@group.calendar.google.com";
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 const SECRET = JSON.stringify({ client_email: "jp-portal@example.iam.gserviceaccount.com", private_key: privateKey });
 
@@ -25,16 +28,29 @@ let google; // the fake Google: google.events[calendarId] = [event, ...]
 let errorLines;
 
 // A Map-backed KV that remembers each put's TTL.
-function fakeKv() {
+function fakeKv({ honorExpiry = false } = {}) {
   const map = new Map();
+  const expires = new Map();
   return { map, ttls: new Map(), gets: 0, puts: 0,
-    async get(k) { this.gets += 1; return map.get(k) ?? null; },
-    async put(k, v, opts) { this.puts += 1; map.set(k, v); this.ttls.set(k, opts && opts.expirationTtl); } };
+    async get(k) {
+      this.gets += 1;
+      if (honorExpiry && expires.has(k) && Date.now() >= expires.get(k)) {
+        map.delete(k);
+        expires.delete(k);
+      }
+      return map.get(k) ?? null;
+    },
+    async put(k, v, opts) {
+      this.puts += 1;
+      map.set(k, v);
+      this.ttls.set(k, opts && opts.expirationTtl);
+      if (honorExpiry && opts && opts.expirationTtl != null) expires.set(k, Date.now() + opts.expirationTtl * 1000);
+    } };
 }
 
 // A fake Google: token endpoint + events.list (honours timeMin/timeMax, pages of `pageSize`).
 function fakeGoogle() {
-  const g = { events: {}, calls: [], mode: "ok", pageSize: 250 };
+  const g = { events: {}, calls: [], mode: "ok", pageSize: 250, failCalendars: new Set(), hangEvents: false, hangInterval: null };
   g.fetch = async (url, init = {}) => {
     const u = new URL(String(url));
     g.calls.push({ url: String(url), init });
@@ -45,6 +61,21 @@ function fakeGoogle() {
     if (g.mode === "throw") throw new Error("network down");
     if (g.mode === "http500") return new Response("boom", { status: 500 });
     const calendarId = decodeURIComponent(u.pathname.split("/")[4]);
+    if (g.failCalendars.has(calendarId)) return new Response("boom", { status: 500 });
+    if (g.hangEvents) {
+      g.hangInterval = setInterval(() => {}, 1000);
+      try {
+        return await new Promise((resolve, reject) => {
+          const abort = () => reject(init.signal.reason || new Error("aborted"));
+          if (!init.signal) return;
+          if (init.signal.aborted) abort();
+          else init.signal.addEventListener("abort", abort, { once: true });
+        });
+      } finally {
+        clearInterval(g.hangInterval);
+        g.hangInterval = null;
+      }
+    }
     const min = u.searchParams.get("timeMin");
     const max = u.searchParams.get("timeMax");
     const all = (g.events[calendarId] || []).filter((e) => {
@@ -143,6 +174,43 @@ test("busy merge: several events, a second page, and an all-day event all count;
   kv.map.clear();
   assert.ok((await slots(env())).every((s) => s.state === "blocked"));
   assert.ok((await slots(env(), "court-1", "2026-10-09")).every((s) => s.state === "available"), "the all-day event ends at midnight CR");
+});
+
+test("two resources keep same-day busy cache entries separate by calendar", async () => {
+  setCalendar("court-2", CAL2);
+  google.events[CAL] = [timed(DAY, "10:00", "11:30")];
+  google.events[CAL2] = [timed(DAY, "13:00", "14:30")];
+
+  const e = env();
+  const court1 = await slots(e, "court-1");
+  const court2 = await slots(e, "court-2");
+  assert.equal(stateAt(court1, DAY, "10:00"), "blocked");
+  assert.equal(stateAt(court1, DAY, "13:00"), "available");
+  assert.equal(stateAt(court2, DAY, "10:00"), "available");
+  assert.equal(stateAt(court2, DAY, "13:00"), "blocked");
+  const okKeys = [...kv.map.keys()].filter((key) => key.startsWith("gcalbusy:v1:") && !key.includes(":err:"));
+  assert.equal(okKeys.length, 2);
+  assert.ok(okKeys.some((key) => key.includes(encodeURIComponent(CAL))));
+  assert.ok(okKeys.some((key) => key.includes(encodeURIComponent(CAL2))));
+});
+
+test("error memos are separate by calendar and fresh booking reads recover independently", async () => {
+  setCalendar("court-2", CAL2);
+  google.failCalendars.add(CAL);
+  google.events[CAL] = [timed(DAY, "10:00", "11:30")];
+  google.events[CAL2] = [timed(DAY, "13:00", "14:30")];
+
+  const e = env();
+  assert.equal(stateAt(await slots(e, "court-1"), DAY, "10:00"), "available");
+  assert.equal(stateAt(await slots(e, "court-2"), DAY, "13:00"), "blocked");
+  const errKeys = [...kv.map.keys()].filter((key) => key.startsWith("gcalbusy:v1:err:"));
+  assert.equal(errKeys.length, 1);
+  assert.ok(errKeys[0].includes(encodeURIComponent(CAL)));
+
+  const court2Busy = await book(e, "court-2", crAt(DAY, "13:00"));
+  assert.deepEqual([court2Busy.status, court2Busy.data.error], [409, "calendar_busy"]);
+  const court1Recovered = await book(e, "court-1", crAt(DAY, "10:00"));
+  assert.equal(court1Recovered.status, 201, JSON.stringify(court1Recovered.data));
 });
 
 test("events the portal pushed are skipped: source=portal, and an older push that only has booking_id", async () => {
@@ -254,10 +322,74 @@ test("Google error: the database's own double-booking guard still refuses a take
   assert.deepEqual([second.status, second.data.error], [409, "slot_taken"]);
 });
 
+test("a hanging Google events request aborts at 3 seconds for availability and fresh booking", { timeout: 10000 }, async () => {
+  google.hangEvents = true;
+  const e = env();
+
+  const viewStart = process.hrtime.bigint();
+  const list = await slots(e);
+  const viewElapsedMs = Number(process.hrtime.bigint() - viewStart) / 1e6;
+  assert.ok(list.every((s) => s.state === "available"));
+  assert.ok(viewElapsedMs >= 2900 && viewElapsedMs < 3600, `availability took ${viewElapsedMs} ms`);
+
+  kv = fakeKv();
+  const bookingStart = process.hrtime.bigint();
+  const booked = await book(env(), "court-1", crAt(DAY, "11:30"));
+  const bookingElapsedMs = Number(process.hrtime.bigint() - bookingStart) / 1e6;
+  assert.equal(booked.status, 201, JSON.stringify(booked.data));
+  assert.ok(bookingElapsedMs < 3600, `booking took ${bookingElapsedMs} ms`);
+});
+
+test("the availability error memo expires after 60 seconds", async () => {
+  kv = fakeKv({ honorExpiry: true });
+  google.mode = "http500";
+  const e = env();
+
+  await slots(e);
+  assert.equal(errorLines.length, 1);
+  assert.equal(google.eventListCalls().length, 1);
+  const errKey = [...kv.ttls.keys()].find((key) => key.startsWith("gcalbusy:v1:err:"));
+  assert.ok(errKey);
+  assert.equal(kv.ttls.get(errKey), 60);
+
+  mock.timers.tick(59000);
+  await slots(e);
+  assert.equal(google.eventListCalls().length, 1);
+  assert.equal(errorLines.length, 1);
+
+  mock.timers.tick(2000);
+  await slots(e);
+  assert.equal(google.eventListCalls().length, 2);
+  assert.equal(errorLines.length, 2);
+});
+
 test("an unreadable GOOGLE_SERVICE_ACCOUNT_JSON is the same fail-safe, not a 500", async () => {
   const list = await slots(env({ GOOGLE_SERVICE_ACCOUNT_JSON: "{not json" }));
   assert.ok(list.every((s) => s.state === "available"));
   assert.equal(errorLines.length, 1);
+});
+
+test("an unparseable service-account JSON has a fixed safe error message", async () => {
+  const list = await slots(env({ GOOGLE_SERVICE_ACCOUNT_JSON: '{"private_key": MIIEvQIBADANBgkqhki, "client_email": "x"}' }));
+  assert.equal(list.length, 8);
+  assert.ok(list.every((s) => s.state === "available"));
+  assert.equal(errorLines.length, 1);
+  assert.match(errorLines[0], /message=gcal_service_account_json_unparseable$/);
+  assert.ok(!errorLines.some((line) => /MIIEv|BADANBgkq|Unexpected token/.test(line)));
+  assert.equal((await book(env({ GOOGLE_SERVICE_ACCOUNT_JSON: '{"private_key": MIIEvQIBADANBgkqhki, "client_email": "x"}' }), "court-1", crAt(DAY, "10:00"))).status, 201);
+});
+
+test("a cache write failure logs only a generated id and resource id", async () => {
+  google.events[CAL] = [timed(DAY, "10:00", "11:30")];
+  const brokenKv = {
+    async get() { return null; },
+    async put() { throw new Error(`${CAL} SECRET-TEXT`); },
+  };
+  const list = await slots(env({ GCAL_BUSY_CACHE: brokenKv }));
+  assert.equal(stateAt(list, DAY, "10:00"), "blocked");
+  assert.equal(errorLines.length, 1);
+  assert.match(errorLines[0], /^gcal_busy_cache_write_failed error_id=[0-9a-f]{8} resource_id=court-1$/);
+  assert.ok(!errorLines[0].includes(CAL) && !errorLines[0].includes("gcalbusy:v1") && !errorLines[0].includes("SECRET-TEXT"));
 });
 
 test("a KV that throws is a cache miss, not a refusal", async () => {
@@ -277,6 +409,46 @@ test("the Google query covers one Costa Rica day: 06:00Z to 06:00Z next day, in 
   assert.equal(q.get("timeZone"), "America/Costa_Rica");
   assert.equal(q.get("singleEvents"), "true");
   assert.equal(CR_TIME_ZONE, "America/Costa_Rica");
+});
+
+test("dates before today or after the longest booking window do no Google or cache I/O", async () => {
+  google.events[CAL] = [timed("2026-10-04", "10:00", "11:30"), timed("2026-12-05", "10:00", "11:30")];
+  assert.equal((await slots(env(), "court-1", "2026-10-04")).length, 8);
+  assert.equal((await slots(env(), "court-1", "2026-12-05")).length, 8);
+  assert.equal(google.calls.length, 0);
+  assert.equal(kv.gets + kv.puts, 0);
+});
+
+test("today and the last allowed day both read Google and show their busy block", async () => {
+  google.events[CAL] = [timed(TODAY_CR, "10:00", "11:30"), timed(LAST_DAY_CR, "10:00", "11:30")];
+  assert.equal(stateAt(await slots(env(), "court-1", TODAY_CR), TODAY_CR, "10:00"), "blocked");
+  assert.equal(stateAt(await slots(env(), "court-1", LAST_DAY_CR), LAST_DAY_CR, "10:00"), "blocked");
+  assert.equal(google.eventListCalls().length, 2);
+});
+
+test("a window crossing the last day only reads that Costa Rica date", async () => {
+  google.events[CAL] = [timed(LAST_DAY_CR, "23:30", "23:59")];
+  const resource = { id: "court-1", google_calendar_id: CAL, member_window_days: 60, non_member_window_days: 60 };
+  const result = await busyIntervalsForWindow(env(), resource, crAt(LAST_DAY_CR, "23:30"), crAt("2026-12-05", "00:30"), { fresh: true });
+  assert.equal(result.state, "ok");
+  assert.equal(google.eventListCalls().length, 1);
+  const query = new URL(google.eventListCalls()[0].url).searchParams;
+  assert.equal(query.get("timeMin"), "2026-12-04T06:00:00.000Z");
+  assert.equal(query.get("timeMax"), "2026-12-05T06:00:00.000Z");
+});
+
+test("the busy read uses the resource's longest window, not the shorter one", async () => {
+  db.sqlite.prepare(`UPDATE resources SET member_window_days = 10, non_member_window_days = 20 WHERE id = 'court-1'`).run();
+  google.events[CAL] = [timed("2026-10-25", "10:00", "11:30"), timed("2026-10-26", "10:00", "11:30")];
+  assert.equal(stateAt(await slots(env(), "court-1", "2026-10-25"), "2026-10-25", "10:00"), "blocked");
+  assert.equal(stateAt(await slots(env(), "court-1", "2026-10-26"), "2026-10-26", "10:00"), "available");
+  assert.equal(google.eventListCalls().length, 1);
+});
+
+test("a booking past the resource window is refused before Google is read", async () => {
+  const refused = await book(env(), "court-1", crAt("2026-12-05", "10:00"));
+  assert.deepEqual([refused.status, refused.data.error], [409, "outside_window"]);
+  assert.equal(google.calls.length, 0);
 });
 
 test("an event stored with another zone's offset still lands on the right Costa Rica slot", () => {
@@ -308,7 +480,7 @@ test("midnight: an evening slot ending at 00:00 CR is blocked by an event that s
 });
 
 test("midnight: a booking whose end crosses midnight is re-checked against both Costa Rica days", async () => {
-  const calendar = { google_calendar_id: CAL, id: "court-1" };
+  const calendar = { google_calendar_id: CAL, id: "court-1", member_window_days: 60, non_member_window_days: 60 };
   google.events[CAL] = [{ start: { dateTime: crAt("2026-10-09", "00:00") }, end: { dateTime: crAt("2026-10-09", "01:00") } }];
   const result = await busyIntervalsForWindow(env(), calendar, crAt(DAY, "23:30"), crAt("2026-10-09", "00:30"), { fresh: true });
   assert.equal(result.state, "ok");

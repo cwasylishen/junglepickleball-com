@@ -91,7 +91,12 @@ function withTimeout(fetchImpl) {
 }
 
 async function listBusyForCrDate(env, calendarId, crDate, fetchImpl) {
-  const serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } catch {
+    throw new Error("gcal_service_account_json_unparseable");
+  }
   const timed = withTimeout(fetchImpl);
   const accessToken = await getGoogleAccessToken(serviceAccount, timed);
   const timeMin = crDateTimeToUtcIso(crDate, "00:00");
@@ -164,13 +169,14 @@ async function cacheGet(env, key) {
   }
 }
 
-async function cachePut(env, key, value, seconds) {
+async function cachePut(env, key, value, seconds, resourceId) {
   const store = cacheOf(env);
   if (!store) return;
   try {
     await store.put(key, value, { expirationTtl: seconds });
   } catch (err) {
-    console.error(`gcal_busy_cache_write_failed key=${key} message=${err && err.message}`);
+    const errorId = crypto.randomUUID().slice(0, 8);
+    console.error(`gcal_busy_cache_write_failed error_id=${errorId} resource_id=${resourceId}`);
   }
 }
 
@@ -182,6 +188,15 @@ async function cachePut(env, key, value, seconds) {
 export async function busyIntervalsForWindow(env, resource, startIso, endIso, { fresh = false, fetchImpl = (...args) => fetch(...args) } = {}) {
   if (!isGcalReadConfigured(env, resource)) return { state: "not_configured" };
   const calendarId = calendarIdOf(resource);
+  const today = crDateStringFromUtc(new Date());
+  const maxWindow = Math.max(resource.member_window_days, resource.non_member_window_days);
+  if (!Number.isInteger(resource.member_window_days) || resource.member_window_days < 0 || !Number.isInteger(resource.non_member_window_days) || resource.non_member_window_days < 0) {
+    return { state: "ok", intervals: [] };
+  }
+  const lastDay = addDaysToDateString(today, maxWindow);
+  // Keep this derived from the resource's longest portal booking window; no separate Google-read window exists.
+  const dates = crDatesCovering(startIso, endIso).filter((crDate) => crDate >= today && crDate <= lastDay);
+  if (dates.length === 0) return { state: "ok", intervals: [] };
 
   if (!fresh) {
     const recentErrorId = await cacheGet(env, errKey(calendarId));
@@ -190,7 +205,7 @@ export async function busyIntervalsForWindow(env, resource, startIso, endIso, { 
 
   const all = [];
   try {
-    for (const crDate of crDatesCovering(startIso, endIso)) {
+    for (const crDate of dates) {
       const cached = fresh ? null : await cacheGet(env, okKey(calendarId, crDate));
       let intervals = null;
       if (cached) {
@@ -202,14 +217,14 @@ export async function busyIntervalsForWindow(env, resource, startIso, endIso, { 
       }
       if (!intervals) {
         intervals = await listBusyForCrDate(env, calendarId, crDate, fetchImpl);
-        await cachePut(env, okKey(calendarId, crDate), JSON.stringify(intervals), OK_CACHE_SECONDS);
+        await cachePut(env, okKey(calendarId, crDate), JSON.stringify(intervals), OK_CACHE_SECONDS, resource.id);
       }
       all.push(...intervals);
     }
   } catch (err) {
     const errorId = crypto.randomUUID().slice(0, 8);
     console.error(`gcal_busy_unreadable error_id=${errorId} resource_id=${resource.id} message=${(err && err.message) || String(err)}`);
-    await cachePut(env, errKey(calendarId), errorId, ERROR_CACHE_SECONDS);
+    await cachePut(env, errKey(calendarId), errorId, ERROR_CACHE_SECONDS, resource.id);
     return { state: "unknown", errorId };
   }
   return { state: "ok", intervals: all.filter(([s, e]) => s < endIso && startIso < e) };
