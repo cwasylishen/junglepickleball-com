@@ -110,6 +110,8 @@ export function buildPortalEnv(env, envClass) {
     PORTAL_DEV_LOGIN: env.PORTAL_DEV_LOGIN,
     VAPID_PUBLIC_KEY: env.VAPID_PUBLIC_KEY,
     VAPID_SUBJECT: env.VAPID_SUBJECT,
+    // Optional KV-shaped cache for Google busy time (gcal-busy.js). Never EVENTS (CTL-ENV-03).
+    GCAL_BUSY_CACHE: env.GCAL_BUSY_CACHE,
     envClass,
   };
   let stripeKey = env.STRIPE_SECRET_KEY;

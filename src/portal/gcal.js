@@ -119,7 +119,8 @@ export function buildEventBody({ resourceName, startAt, endAt, bookingId }) {
     summary: `${resourceName}: booked`,
     start: { dateTime: startAt },
     end: { dateTime: endAt },
-    extendedProperties: { private: { booking_id: bookingId } },
+    // source=portal lets gcal-busy.js skip our own events when it reads the calendar.
+    extendedProperties: { private: { booking_id: bookingId, source: "portal" } },
   };
 }
 

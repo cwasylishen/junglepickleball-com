@@ -129,6 +129,7 @@ window.PortalApp.mergeStrings({
   "book.err_past": "That time has already passed.",
   "book.err_cap": "You've reached the limit of upcoming bookings for {resource}.",
   "book.err_blocked": "That time is closed.",
+  "book.err_calendar_busy": "That time is no longer available. Pick another.",
   "book.err_too_soon": "This needs at least {notice} notice. Pick a later time.",
   "book.err_not_bookable": "This can't be booked online right now. Please contact the club.",
   "book.err_credits": "Not enough credits for this booking.",
@@ -549,6 +550,7 @@ function memberBook() {
         outside_window: t("book.err_window"),
         in_past: t("book.err_past"),
         blocked: t("book.err_blocked"),
+        calendar_busy: t("book.err_calendar_busy"),
         cap_reached: t("book.err_cap", { n: "", resource: this.resource.name }),
         // C4-01: the server's own sentence, so the words live in one place.
         guest_cap_reached: res.data && res.data.message,
@@ -558,7 +560,7 @@ function memberBook() {
         not_bookable_online: t("book.err_not_bookable"),
       };
       this.confirmError = errMap[res.error] || t("state.error_body");
-      if (res.error === "slot_taken") this.loadSlots();
+      if (res.error === "slot_taken" || res.error === "calendar_busy") this.loadSlots();
     },
   };
 }

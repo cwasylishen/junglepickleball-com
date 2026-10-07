@@ -25,6 +25,7 @@ import { json, notConfigured } from "./http.js";
 import { newId, nowIso, runBatch } from "./db.js";
 import { resolveAudience, resolveEntitlement, audienceFor } from "./entitlement.js";
 import { isStripeConfigured, createBookingCheckout } from "./stripe.js";
+import { busyIntervalsForWindow, overlapsBusy } from "./gcal-busy.js";
 import {
   crDateStringFromUtc,
   crTimeStringFromUtcIso,
@@ -408,6 +409,11 @@ export async function availability(request, env, db, url, session, account, para
         .all()
     ).results || [];
 
+  // Roger's own events on this resource's Google calendar. "unknown" (Google
+  // unreadable) and "not_configured" both mean: no Google blocks, DB only.
+  const googleBusy = await busyIntervalsForWindow(env, resource, dayStartUtc, dayEndUtc);
+  const busyIntervals = googleBusy.state === "ok" ? googleBusy.intervals : [];
+
   const slots = grid.map((slot) => {
     if (slot.start <= nowIsoVal) return { start: slot.start, end: slot.end, state: "past" };
 
@@ -423,6 +429,7 @@ export async function availability(request, env, db, url, session, account, para
     if (overlapping.find((b) => b.account_id === account.id && b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held_mine" };
     if (overlapping.find((b) => b.status === "confirmed")) return { start: slot.start, end: slot.end, state: "taken" };
     if (overlapping.find((b) => b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held" };
+    if (overlapsBusy(busyIntervals, slot.start, slot.end)) return { start: slot.start, end: slot.end, state: "blocked" };
     if (mustGiveNotice && tooSoon(resource, Date.parse(slot.start), Date.now())) return { start: slot.start, end: slot.end, state: "too_soon" };
     return { start: slot.start, end: slot.end, state: "available" };
   });
@@ -557,6 +564,12 @@ export async function createBooking(request, env, db, url, session, account) {
   const endHHMM = crTimeStringFromUtcIso(endIso);
   const block = await isBlockedSlot(db, resourceId, crDateStr, startHHMM, endHHMM);
   if (block) return json({ error: "blocked" }, 409);
+
+  // Roger's own Google Calendar events: read fresh (not from the cache) at
+  // the moment of booking. If Google cannot be read this does not refuse
+  // the booking; the database's own guards still decide.
+  const googleBusy = await busyIntervalsForWindow(env, resource, startIso, endIso, { fresh: true });
+  if (googleBusy.state === "ok" && overlapsBusy(googleBusy.intervals, startIso, endIso)) return json({ error: "calendar_busy" }, 409);
 
   if (resource.max_active_per_account != null) {
     const countRow = await db
