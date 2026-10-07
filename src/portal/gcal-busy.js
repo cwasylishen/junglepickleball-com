@@ -185,17 +185,24 @@ async function cachePut(env, key, value, seconds, resourceId) {
 //   { state: "ok", intervals: [[startIso, endIso], ...] }   (all busy ranges overlapping the window)
 //   { state: "unknown", errorId }                           (Google could not be read; treat as no blocks)
 // `fresh: true` (the booking-time re-check) skips the cache read; it still writes the cache.
-export async function busyIntervalsForWindow(env, resource, startIso, endIso, { fresh = false, fetchImpl = (...args) => fetch(...args) } = {}) {
+// `clampToWindow: true` limits reads to today through the resource's longest
+// member/non-member window; it is false for callers with no booking window.
+export async function busyIntervalsForWindow(env, resource, startIso, endIso, { fresh = false, clampToWindow = false, fetchImpl = (...args) => fetch(...args) } = {}) {
   if (!isGcalReadConfigured(env, resource)) return { state: "not_configured" };
   const calendarId = calendarIdOf(resource);
-  const today = crDateStringFromUtc(new Date());
-  const maxWindow = Math.max(resource.member_window_days, resource.non_member_window_days);
-  if (!Number.isInteger(resource.member_window_days) || resource.member_window_days < 0 || !Number.isInteger(resource.non_member_window_days) || resource.non_member_window_days < 0) {
-    return { state: "ok", intervals: [] };
+  let dates = crDatesCovering(startIso, endIso);
+  if (clampToWindow) {
+    if (!Number.isInteger(resource.member_window_days) || resource.member_window_days < 0 || !Number.isInteger(resource.non_member_window_days) || resource.non_member_window_days < 0) {
+      const errorId = crypto.randomUUID().slice(0, 8);
+      console.error(`gcal_busy_window_invalid error_id=${errorId} resource_id=${resource.id}`);
+      return { state: "ok", intervals: [] };
+    }
+    const today = crDateStringFromUtc(new Date());
+    const maxWindow = Math.max(resource.member_window_days, resource.non_member_window_days);
+    const lastDay = addDaysToDateString(today, maxWindow);
+    // Keep this derived from the resource's longest portal booking window; no separate Google-read window exists.
+    dates = dates.filter((crDate) => crDate >= today && crDate <= lastDay);
   }
-  const lastDay = addDaysToDateString(today, maxWindow);
-  // Keep this derived from the resource's longest portal booking window; no separate Google-read window exists.
-  const dates = crDatesCovering(startIso, endIso).filter((crDate) => crDate >= today && crDate <= lastDay);
   if (dates.length === 0) return { state: "ok", intervals: [] };
 
   if (!fresh) {

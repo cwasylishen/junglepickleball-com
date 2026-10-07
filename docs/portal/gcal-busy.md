@@ -42,10 +42,12 @@ no cache read.
 
 ## Window
 
+The clamp applies to member and guest availability views and member/guest booking POSTs only:
 Google reads are clamped to today in Costa Rica through the longest of
 `member_window_days` and `non_member_window_days`. Outside that window Google is never
-called and slots are database-only; owners and staff with no window are included in the
-same clamp.
+called and slots are database-only. Owners and staff are never clamped; their booking POST
+re-checks Google fresh for any date. If a window field is invalid, a member/guest read logs
+`gcal_busy_window_invalid` and skips Google reads.
 
 ## Time
 

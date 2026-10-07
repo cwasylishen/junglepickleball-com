@@ -411,7 +411,7 @@ export async function availability(request, env, db, url, session, account, para
 
   // Roger's own events on this resource's Google calendar. "unknown" (Google
   // unreadable) and "not_configured" both mean: no Google blocks, DB only.
-  const googleBusy = await busyIntervalsForWindow(env, resource, dayStartUtc, dayEndUtc);
+  const googleBusy = await busyIntervalsForWindow(env, resource, dayStartUtc, dayEndUtc, { clampToWindow: mustGiveNotice });
   const busyIntervals = googleBusy.state === "ok" ? googleBusy.intervals : [];
 
   const slots = grid.map((slot) => {
@@ -568,7 +568,7 @@ export async function createBooking(request, env, db, url, session, account) {
   // Roger's own Google Calendar events: read fresh (not from the cache) at
   // the moment of booking. If Google cannot be read this does not refuse
   // the booking; the database's own guards still decide.
-  const googleBusy = await busyIntervalsForWindow(env, resource, startIso, endIso, { fresh: true });
+  const googleBusy = await busyIntervalsForWindow(env, resource, startIso, endIso, { fresh: true, clampToWindow: !isOwnerOrStaff });
   if (googleBusy.state === "ok" && overlapsBusy(googleBusy.intervals, startIso, endIso)) return json({ error: "calendar_busy" }, 409);
 
   if (resource.max_active_per_account != null) {
