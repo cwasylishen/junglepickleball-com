@@ -36,6 +36,7 @@ import {
   listOverlaps,
   listRefundsDue,
   markRefunded,
+  adjustCredits,
 } from "../owner.js";
 import { listDayExtensions, setDayExtension, clearDayExtension } from "../day-hours.js";
 import { staffCalendar } from "../staff.js";
@@ -89,6 +90,13 @@ async function getAccountById(ctx) {
   const detail = await getAccountDetail(ctx.db, ctx.params.id);
   if (!detail) return json({ error: "not_found" }, 404);
   return json(detail);
+}
+
+async function postCreditAdjustment(ctx) {
+  const body = await readJson(ctx.request);
+  const result = await adjustCredits(ctx.db, ctx.account.id, ctx.params.id, body.delta, body.note);
+  if (result.error) return errorResponse(result);
+  return json(result);
 }
 
 async function postGrant(ctx) {
@@ -292,6 +300,7 @@ export const ROUTES = [
 
   { method: "GET", path: "/api/portal/owner/accounts", class: "owner", handler: getAccounts },
   { method: "GET", path: "/api/portal/owner/accounts/:id", class: "owner", handler: getAccountById },
+  { method: "POST", path: "/api/portal/owner/accounts/:id/credits", class: "owner", handler: postCreditAdjustment },
   { method: "POST", path: "/api/portal/owner/accounts/:id/grant", class: "owner", handler: postGrant },
   { method: "POST", path: "/api/portal/owner/accounts/:id/grants/:grantId/end", class: "owner", handler: postEndGrant },
   { method: "POST", path: "/api/portal/owner/accounts/:id/household-link", class: "owner", handler: postHouseholdLink },

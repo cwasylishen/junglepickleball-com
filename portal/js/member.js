@@ -353,6 +353,7 @@ function memberBook() {
     quote: null,
     confirming: false,
     confirmError: "",
+    policyAcknowledged: false,
     done: false,
     doneAmountCents: null, // set when the booking was recorded as pay at the club (L4)
     features: {},
@@ -534,7 +535,7 @@ function memberBook() {
       if (!this.resource || !this.slot) return;
       this.confirming = true;
       this.confirmError = "";
-      var body = { resource_id: this.resource.id, start: this.slot.start, party_size: this.partySize };
+      var body = { resource_id: this.resource.id, start: this.slot.start, party_size: this.partySize, policy_acknowledged: this.policyAcknowledged };
       if (this.offering) body.offering_id = this.offering.id;
       var res = await PortalApi.post("/api/portal/bookings", body);
       this.confirming = false;
@@ -558,6 +559,7 @@ function memberBook() {
         price_not_set: t("book.err_price_not_set"),
         too_soon: t("book.err_too_soon", { notice: noticeWords(res.data && res.data.min_advance_minutes) }),
         not_bookable_online: t("book.err_not_bookable"),
+        policy_acknowledgement_required: "Please acknowledge the booking policy before continuing.",
       };
       this.confirmError = errMap[res.error] || t("state.error_body");
       if (res.error === "slot_taken" || res.error === "calendar_busy") this.loadSlots();

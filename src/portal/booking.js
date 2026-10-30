@@ -50,6 +50,8 @@ const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
 const GUEST_MAX_UPCOMING_COURT_BOOKINGS = 2;
 const GUEST_CAP_MESSAGE = `Guests can hold up to ${GUEST_MAX_UPCOMING_COURT_BOOKINGS} upcoming court bookings. Become a member for unlimited booking, or ask at the club.`;
 
+export const BOOKING_POLICY = "Bookings can be made up to 60 days ahead for members and 30 days ahead for non-members. Cancel more than 48 hours before your start time and the full amount returns as credit on your account for a future booking. Cancel within 48 hours and the booking is non-refundable. Credits do not expire unless the club says otherwise.";
+
 // The ONE definition of a "live" booking: one that occupies its court right
 // now. It is confirmed, or it is a payment hold that has not run out (a hold
 // with no expiry is still a hold). Every query in this file that asks "is
@@ -513,6 +515,7 @@ export async function createBooking(request, env, db, url, session, account) {
   // instead of the default credit spend. Omitted -> defaults to credits
   // when the balance covers it, else card. Logged in api.md's changelog.
   const paymentChoice = body && body.payment_choice === "card" ? "card" : body && body.payment_choice === "credits" ? "credits" : null;
+  if (!body || body.policy_acknowledged !== true) return json({ error: "policy_acknowledgement_required" }, 400);
 
   if (!resourceId || typeof startRaw !== "string") return json({ error: "invalid_request" }, 400);
   const startDate = parseInstantUtc(startRaw);
@@ -743,12 +746,9 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const nowDate = new Date();
   const nowIsoVal = nowDate.toISOString();
 
-  if (booking.status === "confirmed" && account.role !== "owner") {
-    const resource = await db.prepare(`SELECT cancel_cutoff_minutes FROM resources WHERE id = ?`).bind(booking.resource_id).first();
-    const cutoffMinutes = resource ? resource.cancel_cutoff_minutes : 0;
-    const cutoffMs = new Date(booking.start_at).getTime() - cutoffMinutes * 60000;
-    if (nowDate.getTime() > cutoffMs) return json({ error: "past_cutoff", cancel_cutoff_minutes: cutoffMinutes }, 409);
-  }
+  const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(booking.resource_id).first();
+  const cutoffMinutes = resource ? resource.cancel_cutoff_minutes : 2880;
+  const outsideCutoff = account.role === "owner" || nowDate.getTime() <= new Date(booking.start_at).getTime() - cutoffMinutes * 60000;
 
   const cancelledAt = nowIsoVal;
   const statements = [
@@ -760,7 +760,8 @@ export async function cancelBooking(request, env, db, url, session, account, par
     db
       .prepare(
         `UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, updated_at = ?,
-           refund_state = CASE WHEN status = 'confirmed' AND payment_mode = 'pay' AND payment_intent_id IS NOT NULL THEN 'due' ELSE refund_state END
+           policy_acknowledged_at = COALESCE(policy_acknowledged_at, policy_acknowledged_at),
+           refund_state = 'none'
            WHERE id = ? AND status IN ('confirmed', 'pending_payment')
            RETURNING *`
       )
@@ -770,6 +771,11 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const creditsReturned = booking.payment_mode === "credits" && booking.credits_spent > 0 ? booking.credits_spent : 0;
   if (creditsReturned > 0) {
     statements.push(...creditReturnStatements(db, { bookingId, accountId: booking.account_id, amount: creditsReturned, cancelledAt }));
+  }
+  if (outsideCutoff && booking.payment_mode === "pay" && booking.payment_intent_id) {
+    const offering = await db.prepare(`SELECT display_price_cents FROM offerings WHERE id = ?`).bind(booking.offering_id).first();
+    const amountPaid = (offering ? offering.display_price_cents : 0) * (resource && resource.price_mode === "per_player" ? booking.party_size : 1);
+    if (amountPaid > 0) statements.push(...creditReturnStatements(db, { bookingId, accountId: booking.account_id, amount: amountPaid, cancelledAt }));
   }
   if (booking.status === "confirmed") {
     statements.push(
@@ -781,7 +787,7 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const updatedRows = results[0].results || [];
   if (updatedRows.length === 0) return json({ error: "not_found" }, 404);
 
-  return json({ ok: true, credits_returned: creditsReturned });
+  return json({ ok: true, credits_returned: creditsReturned, credit_amount_cents: outsideCutoff && booking.payment_mode === "pay" ? (creditsReturned || 0) : 0 });
 }
 
 // ---------------------------------------------------------------------

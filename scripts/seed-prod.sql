@@ -41,10 +41,10 @@ INSERT OR IGNORE INTO resources
    member_window_days, non_member_window_days, cancel_cutoff_minutes, min_advance_minutes,
    max_active_per_account, member_included, price_mode, is_demo, unconfirmed_fields, created_at, updated_at)
 VALUES
-  ('court-1',      'court',   'Court 1',                 NULL, '07:00', '19:00', 90, 0, 60, 60, 1440,    0, NULL, 1, 'per_player',  0, '[]', datetime('now'), datetime('now')),
-  ('court-2',      'court',   'Court 2',                 NULL, '07:00', '19:00', 90, 0, 60, 60, 1440,    0, NULL, 1, 'per_player',  0, '[]', datetime('now'), datetime('now')),
-  ('court-3',      'court',   'Court 3',                 NULL, '07:00', '19:00', 90, 0, 60, 60, 1440,    0, NULL, 1, 'per_player',  0, '[]', datetime('now'), datetime('now')),
-  ('court-4',      'court',   'Court 4',                 NULL, '07:00', '19:00', 90, 0, 60, 60, 1440,    0, NULL, 1, 'per_player',  0, '[]', datetime('now'), datetime('now')),
+  ('court-1',      'court',   'A',                         NULL, '07:00', '19:00', 90, 0, 60, 30, 2880,    0, NULL, 1, 'per_player',  0, '["name","open_time","close_time","slot_minutes","buffer_minutes","non_member_price","cancel_cutoff_minutes"]', datetime('now'), datetime('now')),
+  ('court-2',      'court',   'B',                         NULL, '07:00', '19:00', 90, 0, 60, 30, 2880,    0, NULL, 1, 'per_player',  0, '["name","open_time","close_time","slot_minutes","buffer_minutes","non_member_price","cancel_cutoff_minutes"]', datetime('now'), datetime('now')),
+  ('court-3',      'court',   'C',                         NULL, '07:00', '19:00', 90, 0, 60, 30, 2880,    0, NULL, 1, 'per_player',  0, '["name","open_time","close_time","slot_minutes","buffer_minutes","non_member_price","cancel_cutoff_minutes"]', datetime('now'), datetime('now')),
+  ('court-4',      'court',   'D',                         NULL, '07:00', '19:00', 90, 0, 60, 30, 2880,    0, NULL, 1, 'per_player',  0, '["name","open_time","close_time","slot_minutes","buffer_minutes","non_member_price","cancel_cutoff_minutes"]', datetime('now'), datetime('now')),
   ('massage-samy', 'massage', 'Massage Therapy by Samy', NULL, '07:00', '19:00', 60, 0, 60, 60, 1440,    0,    1, 0, 'per_booking', 0, '["open_time","close_time","max_active_per_account"]', datetime('now'), datetime('now')),
   ('cold-plunge',  'plunge',  'Cold Plunge',             NULL, '07:00', '19:00', 20, 0, 60, 60, 1440, 1440,    1, 1, 'per_booking', 0, '["open_time","close_time","max_active_per_account"]', datetime('now'), datetime('now'));
 

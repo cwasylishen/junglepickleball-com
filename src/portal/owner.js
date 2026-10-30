@@ -46,13 +46,27 @@ function crWeekday(utcIso) {
 // ---------- accounts ----------
 
 export async function listAccounts(db) {
-  const rows = (await db.prepare(`SELECT id, email, role, display_name, is_demo FROM accounts ORDER BY email`).all()).results || [];
+  const rows = (await db.prepare(`SELECT a.id, a.email, a.role, a.display_name, a.is_demo, COALESCE(c.balance, 0) AS credits FROM accounts a LEFT JOIN credits c ON c.account_id = a.id ORDER BY a.email`).all()).results || [];
   const out = [];
   for (const r of rows) {
     const ent = await resolveEntitlement(db, r.id);
     out.push({ ...r, entitlement: { tier: ent.tier, overlap: ent.overlap } });
   }
   return out;
+}
+
+export async function adjustCredits(db, actorId, accountId, delta, note) {
+  const amount = Number(delta);
+  if (!Number.isInteger(amount) || !note || !String(note).trim()) return { error: "invalid_credit_adjustment" };
+  const account = await db.prepare(`SELECT id FROM accounts WHERE id = ?`).bind(accountId).first();
+  if (!account) return { error: "not_found" };
+  const now = nowIso();
+  const ledgerId = newId();
+  const ledger = db.prepare(`INSERT INTO credits_ledger (id, account_id, delta, reason, created_at) VALUES (?, ?, ?, ?, ?)`).bind(ledgerId, accountId, amount, `owner_adjustment: ${String(note).trim().slice(0, 240)}`, now);
+  const balance = db.prepare(`INSERT INTO credits (account_id, balance, updated_at) VALUES (?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET balance = balance + ?, updated_at = ?`).bind(accountId, Math.max(0, amount), now, amount, now);
+  const audit = auditStatement(db, { actor: actorId, action: "credit_adjustment", targetType: "account", targetId: accountId, after: { delta: amount, note: String(note).trim() } });
+  await db.batch([ledger, balance, audit]);
+  return { balance: await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(accountId).first() };
 }
 
 export async function getAccountDetail(db, accountId) {
@@ -62,6 +76,8 @@ export async function getAccountDetail(db, accountId) {
   const asPayer = await db.prepare(`SELECT * FROM households WHERE payer_account_id = ? AND status != 'unlinked'`).bind(accountId).first();
   const asPartner = await db.prepare(`SELECT * FROM households WHERE partner_account_id = ? AND status != 'unlinked'`).bind(accountId).first();
   const dependants = (await db.prepare(`SELECT id, first_name, birth_year FROM dependants WHERE household_account_id = ? ORDER BY birth_year DESC`).bind(accountId).all()).results || [];
+  const credits = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(accountId).first();
+  const creditLedger = (await db.prepare(`SELECT id, delta, reason, booking_id, created_at FROM credits_ledger WHERE account_id = ? ORDER BY created_at DESC LIMIT 100`).bind(accountId).all()).results || [];
   const bookings = (await db
     .prepare(`SELECT id, resource_id, start_at, end_at, status, payment_mode, party_size, walk_in_name FROM bookings WHERE account_id = ? ORDER BY start_at DESC LIMIT 50`)
     .bind(accountId)
@@ -71,6 +87,8 @@ export async function getAccountDetail(db, accountId) {
     grants,
     households: [asPayer, asPartner].filter(Boolean),
     dependants,
+    credits: credits ? credits.balance : 0,
+    credit_ledger: creditLedger,
     bookings,
   };
 }
