@@ -515,7 +515,7 @@ export async function createBooking(request, env, db, url, session, account) {
   // instead of the default credit spend. Omitted -> defaults to credits
   // when the balance covers it, else card. Logged in api.md's changelog.
   const paymentChoice = body && body.payment_choice === "card" ? "card" : body && body.payment_choice === "credits" ? "credits" : null;
-  if (!body || body.policy_acknowledged !== true) return json({ error: "policy_acknowledgement_required" }, 400);
+  if (!body) return json({ error: "invalid_request" }, 400);
 
   if (!resourceId || typeof startRaw !== "string") return json({ error: "invalid_request" }, 400);
   const startDate = parseInstantUtc(startRaw);
@@ -590,6 +590,8 @@ export async function createBooking(request, env, db, url, session, account) {
   // keeps two simultaneous requests from both getting through it.
   const guestCourtCap = resource.kind === "court" && entitlement && !entitlement.entitled ? GUEST_MAX_UPCOMING_COURT_BOOKINGS : null;
   if (guestCourtCap != null && (await countUpcomingCourtBookings(db, account.id, nowIsoVal)) >= guestCourtCap) return guestCapReached();
+
+  if (body.policy_acknowledged !== true) return json({ error: "policy_acknowledgement_required" }, 400);
 
   let paymentMode;
   let payAtClub = false;
