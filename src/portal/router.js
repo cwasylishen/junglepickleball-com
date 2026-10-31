@@ -148,6 +148,7 @@ async function handleMe(request, env, db, url, session, account) {
   // UI finding (screens.md §0.2's boot sequence, M1's credits line) --
   // the balance row the same way booking.js/owner.js already read it.
   const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
+  const accountCredit = Number(account.account_credit_cents || 0);
   return json({
     authenticated: true,
     features,
@@ -155,6 +156,7 @@ async function handleMe(request, env, db, url, session, account) {
     account: publicAccount(account),
     entitlement: { entitled: entitlement.entitled, tier: entitlement.tier, overlap: entitlement.overlap },
     credits: creditsRow ? creditsRow.balance : 0,
+    account_credit_cents: accountCredit,
   });
 }
 

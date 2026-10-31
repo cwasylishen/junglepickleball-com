@@ -22,6 +22,14 @@ Production confirmation: no production Worker version was uploaded, no productio
 
 ## Round 3
 
+## Round 5
+
+Implemented the shared mobile portal bottom clearance with safe area padding, so the fixed navigation cannot cover content on any portal page. Added a separate dollar account credit balance, populated by eligible paid cancellations more than 48 hours ahead, displayed distinctly from court credits, and applied automatically to the next paid checkout.
+
+The full local suite ran to completion with 626 tests, 572 passed, 12 failed, and 42 skipped. The additional failure beyond the recorded baseline was the service worker cache guard before the build ID bump. The remaining failures are environment or pre existing checks, including missing Puppeteer and the missing ignore module. The portal build completed, and the cache build ID is now `2026-10-30.1`.
+
+A Preview deployment and the requested screenshots could not be completed from this worktree. The checked in Wrangler configuration binds `PORTAL_DB` to the production database and has no Preview environment or safe Preview binding. No deployment command was run, so production was not deployed or migrated. The configured Puppeteer dependency is also unavailable in this environment. The requested screenshot files remain outstanding.
+
 Baseline counts: 626 tests, 573 passed, 11 failed, and 42 skipped on clean `gcal-busy` commit `8b1c3ee`. Pre-existing failures by file: `tests/foundation/assets-private.test.mjs:97`, first error `ERR_MODULE_NOT_FOUND` for `ignore/index.js`; `tests/foundation/gallery-header-edge.test.mjs:42`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/portal-nav-edge-margin.test.mjs:15`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/public-footer-contrast.test.mjs:82`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/public-page-contrast.test.mjs:202`, first error `puppeteer-core not found under NODE_PATH`.
 
 Branch counts: 626 tests, 573 passed, 11 failed, and 42 skipped. Regressions fixed: policy acknowledgement fixtures, 30 day guest windows, 48 hour credit cancellation assertions, updated seed assertions, and the old refund fixture.

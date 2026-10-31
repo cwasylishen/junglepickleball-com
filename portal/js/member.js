@@ -69,6 +69,7 @@ if (!window.chipClass) {
 
 window.PortalApp.mergeStrings({
   "home.hello": "Hi, {first_name}",
+  "book.pay_with_credit": "Account credit {credit} applied, you pay {amount}",
   "home.next_label": "Next up",
   "home.players": "{n} players",
   "home.hold_title": "Finish paying for {resource}, {date} {time}",
@@ -518,6 +519,7 @@ function memberBook() {
       if (this.quote.mode === "included") return t("book.cost_included");
       if (this.quote.mode === "credits") return t("book.pay_credits", { n: this.quote.credits_needed, left: this.quote.credits_have - this.quote.credits_needed });
       if (this.quote.pay_at_club) return t("book.pay_at_club", { amount: money(this.quote.total_cents) });
+      if (this.quote.account_credit_cents > 0) return t("book.pay_with_credit", { credit: money(this.quote.account_credit_cents), amount: money(this.quote.payable_cents) });
       return money(this.quote.total_cents);
     },
     cutoffLabel() {

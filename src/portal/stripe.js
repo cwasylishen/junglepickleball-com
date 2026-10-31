@@ -63,7 +63,9 @@ export function buildCheckoutParams({ mode, customerId, clientReferenceId, booki
     client_reference_id: clientReferenceId,
     success_url: successUrl,
     cancel_url: cancelUrl,
-    line_items: lineItems.map((li) => ({ price: li.price, quantity: li.quantity })),
+    line_items: lineItems.map((li) => li.price_data
+      ? { price_data: li.price_data, quantity: li.quantity }
+      : { price: li.price, quantity: li.quantity }),
     metadata: {
       booking_id: bookingId || "",
       lookup_keys: lineItems.map((li) => li.lookup_key).filter(Boolean).join(","),
@@ -165,7 +167,15 @@ export async function createBookingCheckout(env, { account, bookingId, lineItems
     if (li.expected_unit_cents != null && price.unit_amount !== li.expected_unit_cents) {
       throw { code: "price_mismatch" };
     }
-    resolvedLineItems.push({ price: price.id, quantity: li.quantity, lookup_key: li.lookup_key });
+    if (li.unit_amount_override_cents != null) {
+      resolvedLineItems.push({
+        price_data: { currency: price.currency || "usd", unit_amount: li.unit_amount_override_cents, product_data: { name: price.product_name || li.lookup_key } },
+        quantity: li.quantity,
+        lookup_key: li.lookup_key,
+      });
+    } else {
+      resolvedLineItems.push({ price: price.id, quantity: li.quantity, lookup_key: li.lookup_key });
+    }
   }
 
   const customerId = await ensureCustomer(env, account);

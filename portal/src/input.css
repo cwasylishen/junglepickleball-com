@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .portal-content {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom) + 1rem);
+  }
+}
+
 /* Design rule (Amendment 4): no thick one-sided accent borders on cards
    (e.g. border-left: 4px). Use a subtle full border or a background
    tint instead -- applies to every card/alert/status pill in the

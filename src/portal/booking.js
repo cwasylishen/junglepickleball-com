@@ -457,6 +457,7 @@ export async function quote(request, env, db, url, session, account, params) {
 
   const unitCents = audience.unit_cents || 0;
   const totalCents = bookingTotalCents(resource, audience, partySize);
+  const accountCredit = Number(account.account_credit_cents || 0);
   const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
   const creditsHave = creditsRow ? creditsRow.balance : 0;
   const creditsNeeded = resource.kind === "court" && audience.mode === "pay" ? partySize : 0;
@@ -471,6 +472,8 @@ export async function quote(request, env, db, url, session, account, params) {
     unit_cents: unitCents,
     party_size: partySize,
     total_cents: totalCents,
+    account_credit_cents: Math.min(accountCredit, totalCents),
+    payable_cents: Math.max(0, totalCents - Math.min(accountCredit, totalCents)),
     credits_needed: creditsNeeded,
     credits_have: creditsHave,
     pay_at_club: payAtClub,
@@ -596,6 +599,8 @@ export async function createBooking(request, env, db, url, session, account) {
   let paymentMode;
   let payAtClub = false;
   let creditsSpent = 0;
+  const paidTotalCents = bookingTotalCents(resource, audience, partySize);
+  const dollarCreditCents = paymentMode === "pay" ? Math.min(Number(account.account_credit_cents || 0), paidTotalCents) : 0;
   if (audience.mode === "included") {
     paymentMode = "included";
   } else {
@@ -683,7 +688,7 @@ export async function createBooking(request, env, db, url, session, account) {
         // request so stripe.js can refuse a live Price that no longer
         // matches what the portal showed, instead of charging whatever
         // Stripe currently has on file.
-        lineItems: [{ lookup_key: audience.lookup_key, quantity, expected_unit_cents: audience.unit_cents }],
+        lineItems: [{ lookup_key: audience.lookup_key, quantity: dollarCreditCents > 0 ? 1 : quantity, expected_unit_cents: audience.unit_cents, unit_amount_override_cents: dollarCreditCents > 0 ? paidTotalCents - dollarCreditCents : undefined }],
         expiresAt: Math.floor(nowDate.getTime() / 1000) + CHECKOUT_MINUTES * 60,
         successUrl: `${url.origin}/portal/#/bookings/${id}?paid=1`,
         cancelUrl: `${url.origin}/portal/#/bookings/${id}?cancelled=1`,
@@ -702,6 +707,7 @@ export async function createBooking(request, env, db, url, session, account) {
       throw err;
     }
     await db.prepare(`UPDATE bookings SET checkout_session_id = ? WHERE id = ?`).bind(checkout.sessionId, id).run();
+    if (dollarCreditCents > 0) await db.prepare(`UPDATE accounts SET account_credit_cents = account_credit_cents - ?, updated_at = ? WHERE id = ? AND account_credit_cents >= ?`).bind(dollarCreditCents, createdAt, account.id, dollarCreditCents).run();
     return json({ booking: { id, status: row.status, payment_mode: paymentMode, hold_expires_at: holdExpiresAt, checkout_url: checkout.url } }, 201);
   }
 
@@ -777,7 +783,7 @@ export async function cancelBooking(request, env, db, url, session, account, par
   if (outsideCutoff && booking.payment_mode === "pay" && booking.payment_intent_id) {
     const offering = await db.prepare(`SELECT display_price_cents FROM offerings WHERE id = ?`).bind(booking.offering_id).first();
     const amountPaid = (offering ? offering.display_price_cents : 0) * (resource && resource.price_mode === "per_player" ? booking.party_size : 1);
-    if (amountPaid > 0) statements.push(...creditReturnStatements(db, { bookingId, accountId: booking.account_id, amount: amountPaid, cancelledAt }));
+    if (amountPaid > 0) statements.push(db.prepare(`UPDATE accounts SET account_credit_cents = account_credit_cents + ?, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'cancelled' AND cancelled_at = ?)`).bind(amountPaid, cancelledAt, booking.account_id, bookingId, cancelledAt));
   }
   if (booking.status === "confirmed") {
     statements.push(
@@ -789,7 +795,8 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const updatedRows = results[0].results || [];
   if (updatedRows.length === 0) return json({ error: "not_found" }, 404);
 
-  return json({ ok: true, credits_returned: creditsReturned, credit_amount_cents: outsideCutoff && booking.payment_mode === "pay" ? (creditsReturned || 0) : 0 });
+  const dollarCreditReturned = outsideCutoff && booking.payment_mode === "pay" ? ((await db.prepare(`SELECT account_credit_cents FROM accounts WHERE id = ?`).bind(booking.account_id).first())?.account_credit_cents || 0) : 0;
+  return json({ ok: true, credits_returned: creditsReturned, credit_amount_cents: dollarCreditReturned });
 }
 
 // ---------------------------------------------------------------------
