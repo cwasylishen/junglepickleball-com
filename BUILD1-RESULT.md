@@ -20,6 +20,18 @@ Production confirmation: no production Worker version was uploaded, no productio
 
 ## Round 2
 
+## Round 3
+
+Baseline counts: 626 tests, 573 passed, 11 failed, and 42 skipped on clean `gcal-busy` commit `8b1c3ee`. Pre-existing failures by file: `tests/foundation/assets-private.test.mjs:97`, first error `ERR_MODULE_NOT_FOUND` for `ignore/index.js`; `tests/foundation/gallery-header-edge.test.mjs:42`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/portal-nav-edge-margin.test.mjs:15`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/public-footer-contrast.test.mjs:82`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/public-page-contrast.test.mjs:202`, first error `puppeteer-core not found under NODE_PATH`.
+
+Branch counts: 626 tests, 573 passed, 11 failed, and 42 skipped. Regressions fixed: policy acknowledgement fixtures, 30 day guest windows, 48 hour credit cancellation assertions, updated seed assertions, and the old refund fixture.
+
+Preview URL: `https://cf45b72c-junglepickleball-com.cwasylishen.workers.dev`. Version ID: `cf45b72c-b49e-4899-aae1-b0deb5d5468c`. Preview D1: `junglepickleball-portal-preview`, ID `ca34a6c4-47e9-4e0e-baa5-8dd816700ca3`. Curl returned 200 for `/portal/policy`, `/portal/`, and `/api/portal/me`.
+
+Screenshot paths: none. No browser executable or Puppeteer installation is available in this environment, so the two 390 pixel screenshots could not be generated honestly.
+
+Production re-read: version `d7d44d86-f249-48b4-929f-e24e74abd121`, D1 `junglepickleball-portal`, ID `d7daeb61-9843-4fa5-86a2-a3134e777ea7`. Production was not deployed or migrated.
+
 Branch and commit at the start of this round: `rules-1030`, `5c45f8b`.
 
 The port was not occupied. `ss -ltnp` showed no listener on 8799, and the harness was rerun on free ports 8817 and 9237. The actual Wrangler startup failure was a missing local `node_modules` directory, which made Wrangler fail to resolve `@simplewebauthn/server`, `@simplewebauthn/server/helpers`, and `@block65/webcrypto-web-push`. Installing the declared dependencies allowed Wrangler to bind and serve.

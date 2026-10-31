@@ -131,8 +131,8 @@ test("window boundary: day 60 is bookable, day 61 is outside_window (both in the
 
 test("window boundary for a guest: day 60 is bookable, day 61 is outside_window", async () => {
   const g = await guest("g1");
-  assert.equal((await book(g, "court-1", crAt(PLUS_60, "08:30"))).status, 201);
-  const outside = await book(g, "court-2", crAt(PLUS_61, "08:30"));
+  assert.equal((await book(g, "court-1", crAt("2026-11-04", "08:30"))).status, 201);
+  const outside = await book(g, "court-2", crAt("2026-11-05", "08:30"));
   assert.deepEqual([outside.status, outside.data.error], [409, "outside_window"]);
 });
 

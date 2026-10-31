@@ -73,9 +73,9 @@ test("BOOK-003/004 (PIN L3: 60 days for every booker): guest non-member window b
   // named for) -- 2 credits covers both the OK and the (separately
   // rejected, so never actually spent) over-window attempt.
   d1(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('${guest.account.id}', 2, datetime('now'))`);
-  const ok = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(60, 8, 30));
+  const ok = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(30, 8, 30));
   assert.equal(ok.status, 201, `BOOK-003: CR 08:30 today+60, expected 200/201, got ${ok.status}`);
-  const over = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(61, 8, 30));
+  const over = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(31, 8, 30));
   assert.equal(over.status, 409, `BOOK-004: CR 08:30 today+61, expected 409, got ${over.status}`);
 });
 

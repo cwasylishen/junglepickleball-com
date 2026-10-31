@@ -101,7 +101,7 @@ test("the seed refuses a database whose marker is 'preview' and writes no resour
   assert.equal(db.sqlite.prepare(`SELECT env FROM portal_meta WHERE id = 1`).get().env, "preview", "the marker is left as it was");
 });
 
-test("PIN L3 rules as seeded: courts 07:00-19:00, 90 min, window 60 for everyone, no cap, cancel 24 h", () => {
+test("booking rules as seeded: courts 07:00-19:00, 90 min, member window 60, guest window 30, no cap, cancel 48 h", () => {
   const db = seededDb();
   const courts = db.sqlite.prepare(`SELECT * FROM resources WHERE kind = 'court' ORDER BY id`).all();
   assert.deepEqual(courts.map((c) => c.id), ["court-1", "court-2", "court-3", "court-4"]);
@@ -111,9 +111,9 @@ test("PIN L3 rules as seeded: courts 07:00-19:00, 90 min, window 60 for everyone
     assert.equal(c.slot_minutes, 90);
     assert.equal(c.buffer_minutes, 0);
     assert.equal(c.member_window_days, 60);
-    assert.equal(c.non_member_window_days, 60);
+    assert.equal(c.non_member_window_days, 30);
     assert.equal(c.max_active_per_account, null, "members have no cap on upcoming court bookings");
-    assert.equal(c.cancel_cutoff_minutes, 1440);
+    assert.equal(c.cancel_cutoff_minutes, 2880);
     assert.equal(c.min_advance_minutes, 0);
   }
 });
