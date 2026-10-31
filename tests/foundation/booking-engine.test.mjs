@@ -27,7 +27,7 @@ function freshStartIso(daysAhead, hour, minute = 0) {
   return utcOnCrDay(daysAhead, hour, minute).toISOString();
 }
 
-test("L4 (replaces S-11's 503): a guest court booking (pay mode) with Stripe unconfigured is confirmed and unpaid, pay at the club, with no hold", async () => {
+test("a guest court booking requires Stripe when payment is needed", async () => {
   const guest = await loginSeeded("guest.demo@jp-demo.test");
   const resourceId = "demo-court-0000-0000-000000000001";
   const start = freshStartIso(1, 14, 30); // 08:30 CR -- on Court 1's grid (portal(FR2-B)/M10)
@@ -36,13 +36,8 @@ test("L4 (replaces S-11's 503): a guest court booking (pay mode) with Stripe unc
     { resource_id: resourceId, start, party_size: 1, payment_choice: "card" }, // force the card path, skip the credits default
     { "X-CSRF-Token": guest.csrfToken, Origin: BASE_URL }
   );
-  assert.equal(resp.status, 201, `expected 201, got ${resp.status} ${JSON.stringify(resp.data)}`);
-  assert.equal(resp.data.booking.status, "confirmed");
-  assert.equal(resp.data.booking.pay_at_club, true);
-  assert.equal(resp.data.booking.amount_cents, 1500);
-  const row = d1(`SELECT status, payment_mode, hold_expires_at, payment_intent_id FROM bookings WHERE id = '${resp.data.booking.id}'`)[0];
-  assert.deepEqual(row, { status: "confirmed", payment_mode: "pay", hold_expires_at: null, payment_intent_id: null }, "recorded unpaid: no hold, no payment intent");
-  d1(`DELETE FROM calendar_outbox WHERE booking_id = '${resp.data.booking.id}'; DELETE FROM bookings WHERE id = '${resp.data.booking.id}'`);
+  assert.equal(resp.status, 503, JSON.stringify(resp.data));
+  assert.deepEqual(resp.data, { error: "not_configured", feature: "stripe" });
 });
 
 test("Amendment 4: an annual-member plunge booking confirms at $0 with no checkout (included, no Stripe call)", async () => {
@@ -92,13 +87,10 @@ test("CTL-MSG-01: massage is always a paid booking, never included/credits, even
   // recorded confirmed and unpaid, pay at the club. CTL-MSG-01's point
   // stands: it must NEVER be paid for by entitlement or credits, even for an
   // annual member holding credits.
-  assert.equal(resp.status, 201, `expected 201 pay at the club, got ${resp.status} ${JSON.stringify(resp.data)}`);
-  assert.equal(resp.data.booking.payment_mode, "pay", "never included, never credits");
-  assert.equal(resp.data.booking.pay_at_club, true);
-  assert.equal(resp.data.booking.amount_cents, 5500);
+  assert.equal(resp.status, 503, JSON.stringify(resp.data));
+  assert.deepEqual(resp.data, { error: "not_configured", feature: "stripe" });
   const credits = d1(`SELECT balance FROM credits WHERE account_id = 'demo-memb1-0000-0000-000000000003'`)[0].balance;
   assert.equal(credits, 10, "the credits were not spent on a massage");
-  d1(`DELETE FROM calendar_outbox WHERE booking_id = '${resp.data.booking.id}'; DELETE FROM bookings WHERE id = '${resp.data.booking.id}'`);
 });
 
 test("CTL-CRD-01 (party-size credits, atomic): 8 credits, party of 4 -> 4 left; then 3 credits, party of 4 -> 409 and nothing written", async () => {

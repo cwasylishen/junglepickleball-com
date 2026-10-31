@@ -85,75 +85,49 @@ test("L4 /api/checkout: GET is the payments flag (off), and a POST that arrives 
   }
 });
 
-test("L4 booking: a paid court booking is recorded confirmed and unpaid, with the amount, and no Stripe call or hold", async () => {
+test("paid court booking is refused when Stripe is not configured, with no booking row", async () => {
   const guest = await guestSession();
   // Three days out, so the cancel at the end is outside the 24 h cutoff (PIN L3) whatever the time of day.
   const start = crDateAt(3, 14, 30); // 14:30 CR, on Court 3's 90-minute grid
   const quote = await guest.client.get(`/api/portal/resources/${COURT_3}/quote?start=${encodeURIComponent(start)}&party_size=2`);
   assert.equal(quote.status, 200, JSON.stringify(quote.data));
-  assert.equal(quote.data.pay_at_club, true);
+  assert.equal(quote.data.pay_at_club, undefined);
   assert.equal(quote.data.total_cents, 3000, "2 players at $15 each");
 
   const res = await guest.client.post("/api/portal/bookings", { resource_id: COURT_3, start, party_size: 2, payment_choice: "card" }, csrf(guest));
-  assert.equal(res.status, 201, JSON.stringify(res.data));
-  const booking = res.data.booking;
-  try {
-    assert.equal(booking.status, "confirmed");
-    assert.equal(booking.payment_mode, "pay");
-    assert.equal(booking.pay_at_club, true);
-    assert.equal(booking.amount_cents, 3000);
-    assert.equal(booking.checkout_url, undefined, "no checkout when payments are off");
-
-    const row = d1(`SELECT status, payment_mode, hold_expires_at, checkout_session_id, payment_intent_id FROM bookings WHERE id = '${booking.id}'`)[0];
-    assert.deepEqual(row, { status: "confirmed", payment_mode: "pay", hold_expires_at: null, checkout_session_id: null, payment_intent_id: null });
-    const outbox = d1(`SELECT COUNT(*) AS n FROM calendar_outbox WHERE booking_id = '${booking.id}'`)[0].n;
-    assert.equal(outbox, 1, "a confirmed booking queues its calendar event like any other");
-
-    const list = await guest.client.get("/api/portal/bookings");
-    assert.equal(list.status, 200);
-    const listed = list.data.find((b) => b.id === booking.id);
-    assert.equal(listed.pay_at_club, true);
-    assert.equal(listed.amount_cents, 3000);
-
-    // Run it twice: the same slot cannot be booked again, and says so with a 409, not a 5xx.
-    const again = await guest.client.post("/api/portal/bookings", { resource_id: COURT_3, start, party_size: 2, payment_choice: "card" }, csrf(guest));
-    assert.equal(again.status, 409);
-    assert.equal(again.data.error, "slot_taken");
-
-    // Cancelling an unpaid booking owes no refund.
-    const cancel = await guest.client.post(`/api/portal/bookings/${booking.id}/cancel`, {}, csrf(guest));
-    assert.equal(cancel.status, 200, JSON.stringify(cancel.data));
-    assert.equal(d1(`SELECT refund_state FROM bookings WHERE id = '${booking.id}'`)[0].refund_state, "none");
-  } finally {
-    removeBooking(booking.id);
-  }
+  assert.equal(res.status, 503, JSON.stringify(res.data));
+  assert.deepEqual(res.data, { error: "not_configured", feature: "stripe" });
+  assert.equal(d1(`SELECT COUNT(*) AS n FROM bookings WHERE account_id = '${guest.account.id}' AND start_at = '${start}'`)[0].n, 0);
 });
 
-test("L4 booking: a non-member cold plunge booking is recorded the same way, at the guest price", async () => {
+test("a paid cold plunge booking is also refused when Stripe is not configured", async () => {
   const guest = await guestSession();
   const start = crDateAt(2, 10, 20); // the day after tomorrow 10:20 CR: on the plunge's 20-minute grid, over 24 h ahead
   const res = await guest.client.post("/api/portal/bookings", { resource_id: PLUNGE, offering_id: "demo-off-00000-0000-000000000009", start, party_size: 1 }, csrf(guest));
-  assert.equal(res.status, 201, JSON.stringify(res.data));
-  const booking = res.data.booking;
-  try {
-    assert.equal(booking.status, "confirmed");
-    assert.equal(booking.pay_at_club, true);
-    assert.equal(booking.amount_cents, 1500, "per booking, not per player");
-    assert.equal(booking.checkout_url, undefined);
-  } finally {
-    removeBooking(booking.id);
-  }
+  assert.equal(res.status, 503, JSON.stringify(res.data));
+  assert.deepEqual(res.data, { error: "not_configured", feature: "stripe" });
 });
 
-test("L4: the member booking screen and bookings list carry the pay-at-club wording, and no em dash", async () => {
+test("account credit covers a paid booking without Stripe and confirms it", async () => {
+  const guest = await guestSession();
+  d1(`UPDATE accounts SET account_credit_cents = 1500 WHERE id = '${guest.account.id}'`);
+  const start = crDateAt(4, 11, 0);
+  const res = await guest.client.post("/api/portal/bookings", { resource_id: PLUNGE, offering_id: "demo-off-00000-0000-000000000009", start, party_size: 1 }, csrf(guest));
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  assert.deepEqual(res.data.booking, { id: res.data.booking.id, status: "confirmed", payment_mode: "pay" });
+  assert.equal(d1(`SELECT account_credit_cents FROM accounts WHERE id = '${guest.account.id}'`)[0].account_credit_cents, 0);
+  removeBooking(res.data.booking.id);
+});
+
+test("the member booking screen offers Pay and book, and has no pay-at-the-club wording", async () => {
   for (const path of ["/portal/js/member.js", "/portal/views/member-book.html", "/portal/views/member-bookings.html"]) {
     const res = await fetch(`${BASE_URL}${path}`);
     assert.equal(res.status, 200, path);
     const text = await res.text();
     assert.ok(!text.includes(EM_DASH), `${path}: no em dash`);
     if (path.endsWith("member.js")) {
-      assert.match(text, /"book\.pay_at_club": "Pay at the club: \{amount\}"/);
-      assert.match(text, /"book\.confirm_pay_club": "Book now, pay at the club"/);
+      assert.match(text, /"book\.pay_and_book": "Pay and book"/);
+      assert.doesNotMatch(text, /pay_at_club|Pay at the club|Pay at club/);
       assert.ok(!text.includes("needsStripeAndOff"), "the dead-end 'not switched on' booking block is gone");
     }
   }

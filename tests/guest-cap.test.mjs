@@ -23,9 +23,10 @@ beforeEach(() => {
 });
 afterEach(() => mock.timers.reset());
 
-// A guest with no membership and no credits: a court booking is pay-at-the-club.
+// Court-cap tests use credits so they do not depend on Stripe configuration.
 async function guest(id) {
   addAccount(db, { id, email: `${id}@example.com`, role: "guest" });
+  db.sqlite.prepare(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES (?, 20, 'x')`).run(id);
   return sessionFor(db, id);
 }
 async function member(id) {
@@ -35,11 +36,12 @@ async function member(id) {
 async function personWithRole(id, role) {
   // The router re-derives the owner role from OWNER_EMAILS on every request.
   addAccount(db, { id, email: role === "owner" ? "roger@example.com" : `${id}@example.com`, role });
+  db.sqlite.prepare(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES (?, 20, 'x')`).run(id);
   return sessionFor(db, id);
 }
 
 const book = (session, resource_id, start, extra = {}) =>
-  callPortal(db, ENV, { method: "POST", path: "/api/portal/bookings", session, body: { resource_id, start, party_size: 2, ...extra } });
+  callPortal(db, ENV, { method: "POST", path: "/api/portal/bookings", session, body: { resource_id, start, party_size: 2, payment_choice: "credits", ...extra } });
 const cancel = (session, id) => callPortal(db, ENV, { method: "POST", path: `/api/portal/bookings/${id}/cancel`, session, body: {} });
 const liveCount = (accountId) =>
   db.sqlite.prepare(`SELECT COUNT(*) AS n FROM bookings WHERE account_id = ? AND status IN ('confirmed','pending_payment')`).get(accountId).n;
@@ -90,12 +92,12 @@ const SLOT_A = ["court-1", crAt("2026-10-08", "08:30")];
 const SLOT_B = ["court-2", crAt("2026-10-09", "10:00")];
 const SLOT_C = ["court-3", crAt("2026-10-10", "13:00")];
 
-test("a guest's 3rd upcoming court booking, on a third court, is refused with a clear message; the first two are pay-at-the-club", async () => {
+test("a guest's 3rd upcoming court booking, on a third court, is refused with a clear message", async () => {
   const g = await guest("g1");
   const first = await book(g, ...SLOT_A);
   const second = await book(g, ...SLOT_B);
-  assert.deepEqual([first.status, first.data.booking.pay_at_club, first.data.booking.status], [201, true, "confirmed"]);
-  assert.deepEqual([second.status, second.data.booking.pay_at_club, second.data.booking.status], [201, true, "confirmed"]);
+  assert.deepEqual([first.status, first.data.booking.payment_mode, first.data.booking.status], [201, "credits", "confirmed"]);
+  assert.deepEqual([second.status, second.data.booking.payment_mode, second.data.booking.status], [201, "credits", "confirmed"]);
 
   const third = await book(g, ...SLOT_C);
   assert.deepEqual([third.status, third.data.error], [409, "guest_cap_reached"]);
@@ -211,21 +213,20 @@ test("plunge and massage unchanged: they do not count toward the court cap, and 
   const g = await guest("g1");
   await book(g, ...SLOT_A);
   await book(g, ...SLOT_B);
-  // At the court cap, a Cold Plunge booking is still allowed...
+  // A paid Cold Plunge now requires Stripe.
   const plunge = await book(g, "cold-plunge", crAt("2026-10-08", "10:00"), { party_size: 1 });
-  assert.deepEqual([plunge.status, plunge.data.error], [201, undefined]);
-  // ...up to its own cap of one, with the old code.
+  assert.deepEqual([plunge.status, plunge.data.error], [503, "not_configured"]);
   const plunge2 = await book(g, "cold-plunge", crAt("2026-10-09", "10:00"), { party_size: 1 });
-  assert.deepEqual([plunge2.status, plunge2.data.error], [409, "cap_reached"]);
+  assert.deepEqual([plunge2.status, plunge2.data.error], [503, "not_configured"]);
   // Massage stays off online.
   const massage = await book(g, "massage-samy", crAt("2026-10-08", "12:00"), { offering_id: "massage-60", party_size: 1 });
   assert.deepEqual([massage.status, massage.data.error], [409, "not_bookable_online"]);
-  assert.equal(liveCount("g1"), 3);
+  assert.equal(liveCount("g1"), 2);
 });
 
 test("a plunge booking does not use up a guest's court places", async () => {
   const g = await guest("g1");
-  assert.equal((await book(g, "cold-plunge", crAt("2026-10-08", "10:00"), { party_size: 1 })).status, 201);
+  assert.equal((await book(g, "cold-plunge", crAt("2026-10-08", "10:00"), { party_size: 1 })).status, 503);
   assert.equal((await book(g, ...SLOT_A)).status, 201);
   assert.equal((await book(g, ...SLOT_B)).status, 201);
   assert.equal((await book(g, ...SLOT_C)).data.error, "guest_cap_reached");
@@ -267,7 +268,7 @@ test("three simultaneous guest requests from none held: at most two succeed", as
 
 test("a refused guest booking leaves no outbox row and no credit movement", async () => {
   const g = await guest("g1");
-  db.sqlite.prepare(`INSERT INTO credits (account_id, balance, updated_at) VALUES ('g1', 5, 'x')`).run();
+  db.sqlite.prepare(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES ('g1', 5, 'x')`).run();
   await book(g, ...SLOT_A, { payment_choice: "credits" });
   await book(g, ...SLOT_B, { payment_choice: "credits" });
   const before = {

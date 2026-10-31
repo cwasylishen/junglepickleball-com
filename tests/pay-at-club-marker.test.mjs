@@ -44,20 +44,14 @@ const book = (session, resource_id, start, extra = {}) =>
 const ownerToday = (session) => callPortal(db, ENV, { path: `/api/portal/owner/today?date=${DAY}`, session });
 const staffDay = (session) => callPortal(db, ENV, { path: `/api/portal/staff/calendar?date=${DAY}`, session });
 
-test("owner Today marks a pay-at-the-club booking with the amount the engine computed for it", async () => {
+test("owner Today does not mark a new paid booking when Stripe is unavailable", async () => {
   const g = await guest("g1");
   const o = await ownerSession();
   const made = await book(g, "court-1", crAt(DAY, "08:30")); // 2 players x $15.00
-  assert.equal(made.status, 201);
-  assert.equal(made.data.booking.amount_cents, 3000);
+  assert.equal(made.status, 503);
 
   const today = await ownerToday(o);
-  const item = today.data.items.find((i) => i.id === made.data.booking.id);
-  assert.deepEqual([item.pay_at_club, item.amount_cents], [true, 3000]);
-
-  // The same number My Bookings shows the guest, and the number the booking itself returned.
-  const mine = await callPortal(db, ENV, { path: "/api/portal/bookings", session: g });
-  assert.equal(mine.data.find((b) => b.id === made.data.booking.id).amount_cents, item.amount_cents);
+  assert.equal(today.data.items.some((i) => i.pay_at_club), false);
 });
 
 test("owner Today marks nothing for a member's included booking, a walk-in, a paid booking or a payment hold", async () => {
@@ -81,13 +75,12 @@ test("owner Today marks nothing for a member's included booking, a walk-in, a pa
   assert.ok(items.some((i) => i.id === included.data.booking.id));
 });
 
-test("owner Today: a pay-at-the-club booking cancelled by the guest is no longer marked (it is no longer owed)", async () => {
+test("a paid guest booking is not created while Stripe is unavailable", async () => {
   const g = await guest("g1");
   const o = await ownerSession();
   const made = await book(g, "court-1", crAt(DAY, "08:30"));
-  await callPortal(db, ENV, { method: "POST", path: `/api/portal/bookings/${made.data.booking.id}/cancel`, session: g, body: {} });
-  const items = (await ownerToday(o)).data.items;
-  assert.equal(items.find((i) => i.id === made.data.booking.id), undefined);
+  assert.equal(made.status, 503);
+  assert.equal((await ownerToday(o)).data.items.some((i) => i.pay_at_club), false);
 });
 
 test("staff calendar marks a pay-at-the-club booking with 'Pay at club' and carries no amount or other price field", async () => {
@@ -103,12 +96,12 @@ test("staff calendar marks a pay-at-the-club booking with 'Pay at club' and carr
   assert.equal(day.status, 200);
   const owedEvent = day.data.find((e) => e.start === crAt(DAY, "08:30"));
   const includedEvent = day.data.find((e) => e.start === crAt(DAY, "10:00"));
-  assert.deepEqual(Object.keys(owedEvent).sort(), ["display_name", "end", "pay_at_club", "resource", "start", "state"]);
-  assert.equal(owedEvent.pay_at_club, true);
+  assert.equal(owed.status, 503);
+  assert.equal(owedEvent, undefined);
   assert.deepEqual(Object.keys(includedEvent).sort(), ["display_name", "end", "resource", "start", "state"], "an included booking carries no marker");
   const text = JSON.stringify(day.data);
   for (const forbidden of ["amount", "price", "cents", "payment_intent", "email"]) assert.ok(!text.includes(forbidden), `staff body must not contain "${forbidden}"`);
-  assert.equal(owed.status, 201);
+  assert.equal(owed.status, 503);
 });
 
 // The screens. The API cases above prove what the server sends; these prove

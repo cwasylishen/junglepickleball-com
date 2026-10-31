@@ -50,7 +50,7 @@ const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
 const GUEST_MAX_UPCOMING_COURT_BOOKINGS = 2;
 const GUEST_CAP_MESSAGE = `Guests can hold up to ${GUEST_MAX_UPCOMING_COURT_BOOKINGS} upcoming court bookings. Become a member for unlimited booking, or ask at the club.`;
 
-export const BOOKING_POLICY = "Bookings can be made up to 60 days ahead for members and 30 days ahead for non-members. Cancel more than 48 hours before your start time and the full amount returns as credit on your account for a future booking. Cancel within 48 hours and the booking is non-refundable. Credits do not expire unless the club says otherwise.";
+export const BOOKING_POLICY = "Bookings can be made up to 60 days ahead for members and 30 days ahead for non-members. Any price is paid online by card through the club's Stripe checkout before the booking is confirmed. Account credit applies first. Cancel more than 48 hours before your start time and the full amount returns as credit on your account for a future booking. Cancel within 48 hours and the booking is non-refundable. Credits do not expire unless the club says otherwise.";
 
 // The ONE definition of a "live" booking: one that occupies its court right
 // now. It is confirmed, or it is a payment hold that has not run out (a hold
@@ -461,11 +461,6 @@ export async function quote(request, env, db, url, session, account, params) {
   const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
   const creditsHave = creditsRow ? creditsRow.balance : 0;
   const creditsNeeded = resource.kind === "court" && audience.mode === "pay" ? partySize : 0;
-  // L4: with Stripe off, a paid booking is recorded unpaid, to pay at the
-  // club. Credits still win when they cover a court (createBooking's own
-  // default), so they are not "pay at the club".
-  const creditsCover = creditsNeeded > 0 && creditsHave >= partySize;
-  const payAtClub = audience.mode === "pay" && !creditsCover && !isStripeConfigured(env);
 
   return json({
     mode: audience.mode,
@@ -476,7 +471,6 @@ export async function quote(request, env, db, url, session, account, params) {
     payable_cents: Math.max(0, totalCents - Math.min(accountCredit, totalCents)),
     credits_needed: creditsNeeded,
     credits_have: creditsHave,
-    pay_at_club: payAtClub,
     cancel_cutoff_minutes: resource.cancel_cutoff_minutes,
   });
 }
@@ -494,7 +488,6 @@ function bookingTotalCents(resource, audience, partySize) {
 // §3 POST /api/portal/bookings
 //
 // L4 (replaces S-11's 503): with Stripe off, a paid booking is written
-// confirmed and unpaid ("pay at the club") with the amount in the reply.
 // No hold, no checkout, never a 503. With Stripe on, the paid path inserts
 // a pending_payment hold and returns the Checkout URL, as before.
 // CTL-CRD-01: credit sufficiency is part of the SAME atomic INSERT
@@ -597,10 +590,8 @@ export async function createBooking(request, env, db, url, session, account) {
   if (body.policy_acknowledged !== true) return json({ error: "policy_acknowledgement_required" }, 400);
 
   let paymentMode;
-  let payAtClub = false;
   let creditsSpent = 0;
   const paidTotalCents = bookingTotalCents(resource, audience, partySize);
-  const dollarCreditCents = paymentMode === "pay" ? Math.min(Number(account.account_credit_cents || 0), paidTotalCents) : 0;
   if (audience.mode === "included") {
     paymentMode = "included";
   } else {
@@ -622,13 +613,15 @@ export async function createBooking(request, env, db, url, session, account) {
       creditsSpent = partySize;
     } else {
       paymentMode = "pay";
-      payAtClub = !isStripeConfigured(env); // L4
     }
   }
 
-  // A card payment needs a Checkout session and a hold on the slot until it
-  // is paid. A pay-at-club booking needs neither: it is confirmed now.
-  const needsCheckout = paymentMode === "pay" && !payAtClub;
+  const currentAccount = await db.prepare(`SELECT account_credit_cents FROM accounts WHERE id = ?`).bind(account.id).first();
+  const dollarCreditCents = paymentMode === "pay" ? Math.min(Number(currentAccount?.account_credit_cents || 0), paidTotalCents) : 0;
+  const remainingCents = Math.max(0, paidTotalCents - dollarCreditCents);
+  const fullyCoveredByAccountCredit = paymentMode === "pay" && remainingCents === 0;
+  const needsCheckout = paymentMode === "pay" && !fullyCoveredByAccountCredit;
+  if (needsCheckout && !isStripeConfigured(env)) return notConfigured("stripe");
   const createdAt = nowIsoVal;
   const holdExpiresAt = needsCheckout ? new Date(nowDate.getTime() + (CHECKOUT_MINUTES + HOLD_EXTRA_MINUTES) * 60000).toISOString() : null;
   const status = needsCheckout ? "pending_payment" : "confirmed";
@@ -711,8 +704,9 @@ export async function createBooking(request, env, db, url, session, account) {
     return json({ booking: { id, status: row.status, payment_mode: paymentMode, hold_expires_at: holdExpiresAt, checkout_url: checkout.url } }, 201);
   }
 
-  if (payAtClub) {
-    return json({ booking: { id, status: row.status, payment_mode: paymentMode, pay_at_club: true, amount_cents: bookingTotalCents(resource, audience, partySize) } }, 201);
+  if (fullyCoveredByAccountCredit) {
+    await db.prepare(`UPDATE bookings SET payment_intent_id = 'account_credit' WHERE id = ? AND status = 'confirmed'`).bind(id).run();
+    await db.prepare(`UPDATE accounts SET account_credit_cents = account_credit_cents - ?, updated_at = ? WHERE id = ? AND account_credit_cents >= ?`).bind(dollarCreditCents, createdAt, account.id, dollarCreditCents).run();
   }
   return json({ booking: { id, status: row.status, payment_mode: paymentMode } }, 201);
 }

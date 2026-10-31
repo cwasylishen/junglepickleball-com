@@ -31,6 +31,7 @@ afterEach(() => mock.timers.reset());
 
 async function guest(id) {
   addAccount(db, { id, email: `${id}@example.com`, role: "guest" });
+  db.sqlite.prepare(`INSERT OR REPLACE INTO credits (account_id, balance, updated_at) VALUES (?, 5, 'x')`).run(id);
   return sessionFor(db, id);
 }
 async function member(id) {

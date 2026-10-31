@@ -185,11 +185,6 @@ test("BOOK-012: entitled member goes straight to confirmed/no-checkout at CR 08:
   // (sandboxed) Stripe key to ever be observed and is out of this suite's reach.
   const guest = await loginDemo(poolEmail());
   const guestResp = await book(guest.client, guest.csrfToken, "demo-court-0000-0000-000000000002", crDateAt(1, 8, 30));
-  assert.equal(guestResp.status, 201, `L4: payment needed + Stripe unset must be pay at the club, got ${guestResp.status}`);
-  assert.equal(guestResp.data.booking.status, "confirmed");
-  assert.equal(guestResp.data.booking.pay_at_club, true);
-  assert.equal(guestResp.data.booking.amount_cents, 1500);
-  assert.ok(!guestResp.data.booking.checkout_url);
-  // Leave the slot free: this row exists only to prove the path.
-  d1(`DELETE FROM calendar_outbox WHERE booking_id = '${guestResp.data.booking.id}'; DELETE FROM bookings WHERE id = '${guestResp.data.booking.id}'`);
+  assert.equal(guestResp.status, 503, `paid booking without Stripe must refuse, got ${guestResp.status}`);
+  assert.equal(guestResp.data.error, "not_configured");
 });

@@ -117,13 +117,9 @@ window.PortalApp.mergeStrings({
   "book.confirm_top": "Check and confirm",
   "book.cancel_rule": "You can cancel online until {cutoff} before the start.",
   "book.confirm": "Confirm booking",
-  "book.to_payment": "Continue to payment",
+  "book.pay_and_book": "Pay and book",
   "book.opening_payment": "Booking…",
   "book.use_credits_instead": "Use credits instead",
-  "book.pay_at_club": "Pay at the club: {amount}",
-  "book.confirm_pay_club": "Book now, pay at the club",
-  "book.done_pay_club": "Pay {amount} at the club.",
-  "bookings.pay_club": "Pay at the club: {amount}",
   "book.done_title": "You're booked",
   "book.err_taken": "Someone just took that time. Pick another.",
   "book.err_window": "That date isn't open for booking yet.",
@@ -356,7 +352,7 @@ function memberBook() {
     confirmError: "",
     policyAcknowledged: false,
     done: false,
-    doneAmountCents: null, // set when the booking was recorded as pay at the club (L4)
+    doneAmountCents: null,
     features: {},
     entitled: false,
     t: window.t,
@@ -518,7 +514,6 @@ function memberBook() {
       if (!this.quote) return "";
       if (this.quote.mode === "included") return t("book.cost_included");
       if (this.quote.mode === "credits") return t("book.pay_credits", { n: this.quote.credits_needed, left: this.quote.credits_have - this.quote.credits_needed });
-      if (this.quote.pay_at_club) return t("book.pay_at_club", { amount: money(this.quote.total_cents) });
       if (this.quote.account_credit_cents > 0) return t("book.pay_with_credit", { credit: money(this.quote.account_credit_cents), amount: money(this.quote.payable_cents) });
       return money(this.quote.total_cents);
     },
@@ -530,7 +525,7 @@ function memberBook() {
     // booking, payments on, and credits not covering it.
     quoteNeedsCard() {
       var q = this.quote;
-      return !!q && q.mode === "pay" && !q.pay_at_club && !(q.credits_needed > 0 && q.credits_have >= q.credits_needed);
+      return !!q && q.mode === "pay" && q.payable_cents > 0 && !(q.credits_needed > 0 && q.credits_have >= q.credits_needed);
     },
     watchPartySize: null,
     async confirm() {
@@ -544,7 +539,7 @@ function memberBook() {
       if (res.ok && res.data && res.data.booking) {
         var b = res.data.booking;
         if (b.checkout_url) { window.location.assign(b.checkout_url); return; }
-        this.doneAmountCents = b.pay_at_club ? b.amount_cents : null;
+        this.doneAmountCents = null;
         this.done = true;
         return;
       }
