@@ -5,3 +5,13 @@ Thumbs.db
 __pycache__/
 reviews/
 .wrangler/
+
+# Portal secrets (CTL-SEC-01/S-8). Real secrets never enter the repo;
+# whsec_local_test_only (S-13) is a literal with no reach and may stay
+# in scripts/test.sh.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+*.pem
+*.key

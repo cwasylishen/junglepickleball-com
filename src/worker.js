@@ -2,6 +2,10 @@
 // Assets are served by the assets layer first; this script only receives
 // requests that match no static file (i.e. /api/* and true 404s).
 
+import { handlePortalRequest, handlePortalShellFallback, handlePortalStripeEvent, resolveScheduledEnvironmentClass, buildPortalEnv } from "./portal/router.js";
+import { verifyStripeSignature as verifyStripeSignatureWithTolerance } from "./portal/stripe.js";
+import { runScheduled } from "./portal/cron.js";
+
 const SESSION_COOKIE = "jp_admin";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 const SITE_ID = "junglepickleball"; // wizardweb analytics site_id
@@ -282,15 +286,23 @@ async function verifyStripeSignature(rawBody, header, secret) {
 // to the webhook. Repeatable: marking an already-paid signup paid again
 // with the same session id leaves the list unchanged (the run-it-twice
 // case the webhook itself can trigger if Stripe retries delivery).
+//
+// Returns { found, transitioned, signup }. `transitioned` is true only when
+// the row's status before this call was not "paid" and this call wrote it as
+// "paid": that is the one moment the owner's paid email is sent, so a retry,
+// or a second session id on an already-paid row, never mails again.
 async function markGlowSignupPaid(env, signupId, amountCents, stripeSessionId) {
   const list = await getGlowSignups(env);
   const idx = list.findIndex((s) => s.id === signupId);
-  if (idx === -1) return false;
+  if (idx === -1) return { found: false, transitioned: false, signup: null };
   const current = list[idx];
-  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) return true;
+  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) {
+    return { found: true, transitioned: false, signup: current };
+  }
+  const wasPaid = current.status === "paid";
   list[idx] = { ...current, status: "paid", amountCents, currency: GLOW_CURRENCY, stripeSessionId };
   await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
-  return true;
+  return { found: true, transitioned: !wasPaid, signup: list[idx] };
 }
 
 async function getGlowSignups(env) {
@@ -360,42 +372,128 @@ async function setGlowSignupStripeSession(env, signupId, stripeSessionId) {
   return true;
 }
 
-async function notifyGlowSignup(env, signup) {
-  if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
-    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set)." };
-  }
+// Who hears about every Glow signup and every Glow payment (owner's order,
+// Clinton 2026-10-05: Roger gets them too). One /send POST per address,
+// because ward-mail hands `to` straight to env.EMAIL.send as one string.
+const GLOW_NOTIFY_RECIPIENTS = ["cwasylishen@gmail.com", "rogerworsham.cr@gmail.com"];
+
+// Pin PIN-NOADDR (2026-10-05): no recipient address appears in any HTTP
+// response body or any console log line. Results and log lines name a
+// recipient by its place in the list ("recipient 1"); the address is only ever
+// the `to` of the outbound /send request.
+function glowRecipientLabel(index) {
+  return `recipient ${index + 1}`;
+}
+
+// Text that came back from a failed send (an error message from the service
+// binding can echo the address it was given) is cleaned before it is stored,
+// returned or logged: each address becomes its label.
+function scrubGlowAddresses(text) {
+  let clean = String(text);
+  GLOW_NOTIFY_RECIPIENTS.forEach((address, index) => {
+    clean = clean.split(address).join(glowRecipientLabel(index));
+    clean = clean.split(address.toLowerCase()).join(glowRecipientLabel(index));
+  });
+  return clean;
+}
+
+const GLOW_STATUS_LABELS = {
+  pending_payment: "Not paid yet (sent to Stripe checkout)",
+  pay_at_event: "Pay at the event",
+  free: "Free",
+};
+
+// Each ward-mail /send call is bounded (pin PIN-TIMEOUT, 2026-10-05): 5000 ms,
+// env.GLOW_MAIL_TIMEOUT_MS may only shorten it (so a test can run fast); a
+// value that is not a number, not above zero, or above 5000 is ignored and the
+// bound stays 5000. A call that has not answered by then counts as a failed
+// send for that recipient.
+const GLOW_MAIL_TIMEOUT_MS = 5000;
+
+function glowMailTimeoutMs(env) {
+  const ms = Number(env.GLOW_MAIL_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 && ms <= GLOW_MAIL_TIMEOUT_MS ? ms : GLOW_MAIL_TIMEOUT_MS;
+}
+
+// One /send POST, raced against a timer. The race works whether or not the
+// service binding honours an AbortSignal. The timer is always cleared, so a
+// quick answer leaves nothing running.
+async function sendOneGlowMail(env, index, subject, text) {
+  const to = GLOW_NOTIFY_RECIPIENTS[index];
+  const recipient = glowRecipientLabel(index);
+  const limitMs = glowMailTimeoutMs(env);
+  let timer;
+  const timedOut = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`ward-mail did not answer within ${limitMs} ms`)), limitMs);
+  });
   try {
-    const res = await env.WARD_MAIL.fetch("https://ward-mail/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
-      body: JSON.stringify({
-        to: "cwasylishen@gmail.com",
-        from: "ward@wizardweb.ca",
-        subject: `Glow Tournament signup: ${signup.name}`,
-        text: [
-          `New Glow in the Dark Fun Tournament signup.`,
-          ``,
-          `Name: ${signup.name}`,
-          `Phone/WhatsApp: ${signup.phone}`,
-          `Email: ${signup.email || "(none)"}`,
-          `Member: ${signup.member ? "Yes" : "No"}`,
-          `Role: ${signup.role}`,
-          signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
-          `Partner: ${signup.partnerName || "(none)"}`,
-          `People: ${signup.people}`,
-          `Notes: ${signup.notes || "(none)"}`,
-          `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
-          `Payment status: ${signup.status}`,
-          ``,
-          GLOW_PRICE_NOTE,
-        ].filter(Boolean).join("\n"),
+    const res = await Promise.race([
+      env.WARD_MAIL.fetch("https://ward-mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
+        body: JSON.stringify({ to, from: "ward@wizardweb.ca", subject, text }),
       }),
-    });
-    if (!res.ok) return { sent: false, reason: `ward-mail returned ${res.status}` };
-    return { sent: true };
+      timedOut,
+    ]);
+    return res.ok ? { recipient, sent: true } : { recipient, sent: false, reason: `ward-mail returned ${res.status}` };
   } catch (err) {
-    return { sent: false, reason: String((err && err.message) || err).slice(0, 200) };
+    return { recipient, sent: false, reason: scrubGlowAddresses(String((err && err.message) || err).slice(0, 200)) };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+// Sends one Glow email to every recipient. Never throws, and one recipient's
+// failure never stops the other's send. The recipients are sent at the same
+// time, so the whole call is bounded by one timeout, not one per address
+// (the paid email is awaited before the webhook answers Stripe).
+// Result: { sent, reason?, recipients } where `sent` is true only if every
+// recipient's send succeeded, `reason` names each failure by label ("recipient
+// 2: ..."), and `recipients` holds { recipient, sent, reason? } per label.
+// This result goes to the browser and to the logs, so it carries no address.
+async function sendGlowMail(env, subject, text) {
+  if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
+    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set).", recipients: [] };
+  }
+  const recipients = await Promise.all(GLOW_NOTIFY_RECIPIENTS.map((address, index) => sendOneGlowMail(env, index, subject, text)));
+  const failed = recipients.filter((r) => !r.sent);
+  if (failed.length === 0) return { sent: true, recipients };
+  return { sent: false, reason: failed.map((r) => `${r.recipient}: ${r.reason}`).join("; "), recipients };
+}
+
+async function notifyGlowSignup(env, signup) {
+  return sendGlowMail(env, `Glow Tournament signup: ${signup.name}`, [
+    `New Glow in the Dark Fun Tournament signup.`,
+    ``,
+    `Name: ${signup.name}`,
+    `Phone/WhatsApp: ${signup.phone}`,
+    `Email: ${signup.email || "(none)"}`,
+    `Member: ${signup.member ? "Yes" : "No"}`,
+    `Role: ${signup.role}`,
+    signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
+    `Partner: ${signup.partnerName || "(none)"}`,
+    `People: ${signup.people}`,
+    `Notes: ${signup.notes || "(none)"}`,
+    `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
+    `Payment status: ${GLOW_STATUS_LABELS[signup.status] || signup.status}`,
+    ``,
+    GLOW_PRICE_NOTE,
+  ].filter(Boolean).join("\n"));
+}
+
+// Sent once per signup, when the webhook moves it to "paid" (see
+// markGlowSignupPaid's `transitioned`). Attempted after the KV write.
+async function notifyGlowPaid(env, signup) {
+  const amount = `$${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`;
+  return sendGlowMail(env, `PAID: Glow Tournament - ${signup.name}, ${amount}`, [
+    `A Glow in the Dark Fun Tournament signup has been paid.`,
+    ``,
+    `Name: ${signup.name}`,
+    `People: ${signup.people}`,
+    `Partner: ${signup.partnerName || "(none)"}`,
+    `Amount: ${amount}`,
+    `Stripe session: ${signup.stripeSessionId}`,
+  ].join("\n"));
 }
 
 async function handleGlowSignup(request, env) {
@@ -511,15 +609,86 @@ async function handleGlowStripeWebhook(request, env) {
 
   let event;
   try { event = JSON.parse(rawBody); } catch { return json({ error: "Invalid payload." }, 400); }
+  return applyGlowStripeEvent(event, env);
+}
 
+// The part of the Glow webhook that runs after the signature is verified.
+// Split out so the one-endpoint dispatcher (handleStripeWebhook below) can
+// verify once and then hand a Glow event here. Behaviour is unchanged.
+async function applyGlowStripeEvent(event, env) {
   if (event.type === "checkout.session.completed") {
     const session = event.data && event.data.object;
     const signupId = session && session.metadata && session.metadata.signup_id;
     if (!signupId) return json({ error: "Missing signup_id metadata on session." }, 400);
-    const ok = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
-    if (!ok) return json({ error: `No signup found for id ${signupId}.` }, 404);
+    const marked = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
+    if (!marked.found) return json({ error: `No signup found for id ${signupId}.` }, 404);
+    if (marked.transitioned) {
+      // The row is already written. Mail trouble is logged with the signup id
+      // and never changes the answer Stripe gets, so Stripe does not retry.
+      try {
+        const mail = await notifyGlowPaid(env, marked.signup);
+        if (!mail.sent) console.log(`glow_paid_mail_failed signup=${signupId} reason=${mail.reason}`);
+      } catch (mailErr) {
+        console.log(`glow_paid_mail_failed signup=${signupId} reason=${scrubGlowAddresses(String((mailErr && mailErr.message) || mailErr).slice(0, 200))}`);
+      }
+    }
   }
   return json({ received: true });
+}
+
+// ---------- one Stripe webhook for Glow and the portal (pin L6, ruling E1-11) ----------
+//
+// Glow and the portal share one Stripe account and one endpoint URL, so
+// POST /api/stripe/webhook verifies the signature once and then decides who
+// owns the event:
+//   glow    a checkout.session.* event whose metadata has `signup_id`, which
+//           is what createGlowCheckoutSession sets (and nothing else does)
+//   portal  every non-checkout event (subscriptions, refunds, disputes), a
+//           checkout session with any of the portal's own metadata keys
+//           (`kind`, `booking_id`, `lookup_keys`), and a checkout session
+//           with no metadata at all (the /api/checkout membership flow sets none)
+//   unknown a checkout session whose metadata has keys but none of the above
+//           (some other product on the same Stripe account): answered 200 and
+//           logged, never a 400, so Stripe does not retry another product's event.
+// The Glow handler is the same code the Glow tests exercise directly; the
+// portal handler keeps its own claim-and-release logic (N1).
+const PORTAL_CHECKOUT_METADATA_KEYS = ["kind", "booking_id", "lookup_keys"];
+
+function stripeEventOwner(event) {
+  if (!event.type.startsWith("checkout.session.")) return { owner: "portal" };
+  const metadata = (event.data && event.data.object && event.data.object.metadata) || {};
+  if (metadata.signup_id) return { owner: "glow" };
+  const keys = Object.keys(metadata);
+  if (keys.length === 0) return { owner: "portal" };
+  if (PORTAL_CHECKOUT_METADATA_KEYS.some((k) => keys.includes(k))) return { owner: "portal" };
+  return { owner: "unknown", metadataKeys: keys };
+}
+
+async function handleStripeWebhook(request, env, url) {
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    return json({ error: "Webhook not configured. Set STRIPE_WEBHOOK_SECRET on the Worker." }, 503);
+  }
+  // Stripe signs the raw body: read the text, verify, and only then parse.
+  const rawBody = await request.text();
+  const verified = await verifyStripeSignatureWithTolerance(
+    env.STRIPE_WEBHOOK_SECRET, rawBody, request.headers.get("Stripe-Signature"));
+  if (!verified.ok) {
+    // Only the outcome is logged, never the body or any email (CTL-STR-04).
+    console.log(`stripe_webhook_rejected reason=${verified.reason}`);
+    return json({ error: "bad_signature" }, 400);
+  }
+  let event;
+  try { event = JSON.parse(rawBody); } catch { return json({ error: "bad_signature" }, 400); }
+  if (!event || typeof event.id !== "string" || typeof event.type !== "string") {
+    return json({ error: "bad_signature" }, 400);
+  }
+
+  const route = stripeEventOwner(event);
+  if (route.owner === "glow") return applyGlowStripeEvent(event, env);
+  if (route.owner === "portal") return handlePortalStripeEvent(event, env, url);
+  // Metadata key names only: values can carry a person's details.
+  console.log(`stripe_webhook_ignored id=${event.id} type=${event.type} reason=unknown_metadata keys=${route.metadataKeys.join(",")}`);
+  return json({ received: true, ignored: true });
 }
 
 // ---------- D1 schema (self-provisioning) ----------
@@ -861,6 +1030,79 @@ async function adminSettings(request, env) {
   return json({ error: "Method not allowed." }, 405);
 }
 
+// ---------- Stripe checkout (memberships + pay-to-play) ----------
+//
+// NOTE ON PLACEMENT: this project ships as a single Worker (main =
+// src/worker.js); the functions/ directory is dead code here — it is
+// listed in .assetsignore and never runs (see README "Events admin" and
+// the dormant functions/_shared.js). So the checkout route lives next to
+// every other /api/* handler in this file, not as a second, unexecuted
+// copy under functions/api/checkout.js.
+//
+// Prices are looked up by Stripe's `lookup_key` so no price ID or dollar
+// amount is hardcoded here — scripts/stripe-setup.mjs is what creates the
+// actual products/prices in Stripe with amounts matching the posted sign.
+
+// STRIPE_API, stripeForm and stripeRequest are defined once above, in the
+// Glow section; this checkout reuses them.
+
+// lookup_key -> Checkout Session mode. Subscription intervals (month/year,
+// interval_count) live on the Stripe Price itself, not here.
+const CHECKOUT_ITEMS = {
+  jp_1m_single: { mode: "subscription" },
+  jp_3m_single: { mode: "subscription" },
+  jp_3m_couples: { mode: "subscription" },
+  jp_6m_single: { mode: "subscription" },
+  jp_6m_couples: { mode: "subscription" },
+  jp_annual_single: { mode: "subscription" },
+  jp_annual_couples: { mode: "subscription" },
+  jp_session_single: { mode: "payment" },
+  jp_session_pack8: { mode: "payment" },
+};
+
+// L4: with STRIPE_SECRET_KEY unset the membership page shows "Payments are
+// not switched on yet" and no buy button. GET /api/checkout is the flag the
+// page reads. A POST that arrives anyway gets the same answer with a message,
+// as a 200: it is an expected state, never a server error.
+const PAYMENTS_OFF_MESSAGE = "Payments are not switched on yet. To join, come by the club or message Roger on WhatsApp (+506 8989 3111, text only) and he will sign you up in person.";
+
+function paymentsEnabled(env) {
+  return Boolean(env.STRIPE_SECRET_KEY);
+}
+
+function checkoutFlag(env) {
+  return json({ enabled: paymentsEnabled(env) });
+}
+
+async function handleCheckout(request, env, url) {
+  if (!paymentsEnabled(env)) {
+    return json({ enabled: false, message: PAYMENTS_OFF_MESSAGE });
+  }
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid request." }, 400); }
+  const lookupKey = String(body.lookupKey || "").trim();
+  const item = CHECKOUT_ITEMS[lookupKey];
+  if (!item) return json({ error: `Unknown membership or pass: ${lookupKey}` }, 400);
+
+  try {
+    const prices = await stripeRequest(
+      env, "GET", `/prices?active=true&limit=1&lookup_keys[]=${encodeURIComponent(lookupKey)}`
+    );
+    const price = prices.data && prices.data[0];
+    if (!price) return json({ error: `No Stripe price is set up yet for ${lookupKey}.` }, 503);
+
+    const session = await stripeRequest(env, "POST", "/checkout/sessions", {
+      mode: item.mode,
+      line_items: [{ price: price.id, quantity: 1 }],
+      success_url: `${url.origin}/membership-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${url.origin}/membership-cancel`,
+    });
+    return json({ url: session.url });
+  } catch (err) {
+    return json({ error: `Stripe error: ${String((err && err.message) || err).slice(0, 200)}` }, 502);
+  }
+}
+
 // ---------- legacy redirects (belt and suspenders for the worker path) ----------
 
 const REDIRECTS = { "/index.php": "/", "/home": "/", "/wp-login.php": "/", "/wp-admin": "/" };
@@ -880,6 +1122,19 @@ export default {
     const p = url.pathname;
 
     try {
+      // Portal (PIN-4): dispatched to src/portal/router.js before any
+      // existing route is considered, so the portal can never shadow an
+      // existing path and an existing path can never reach the portal's
+      // own dispatch. Everything else below this block is byte-for-byte
+      // the pre-portal behaviour.
+      if (p.startsWith("/api/portal/")) {
+        const portalResponse = await handlePortalRequest(request, env, url);
+        if (portalResponse) return portalResponse;
+      } else if (p.startsWith("/portal")) {
+        const portalShell = await handlePortalShellFallback(request, env, url);
+        if (portalShell) return portalShell;
+      }
+
       if (p.startsWith("/api/")) {
         // public endpoints
         if (p === "/api/events" && request.method === "GET") return publicEvents(env);
@@ -887,10 +1142,12 @@ export default {
         if (p === "/api/glow/list" && (request.method === "GET" || request.method === "DELETE")) {
           return handleGlowList(request, env, url);
         }
-        if (p === "/api/stripe/webhook" && request.method === "POST") return handleGlowStripeWebhook(request, env);
+        if (p === "/api/stripe/webhook" && request.method === "POST") return handleStripeWebhook(request, env, url);
         if (p === "/api/config" && request.method === "GET") {
           return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || "" });
         }
+        if (p === "/api/checkout" && request.method === "GET") return checkoutFlag(env);
+        if (p === "/api/checkout" && request.method === "POST") return handleCheckout(request, env, url);
         if (p === "/api/login" && request.method === "POST") return handleLogin(request, env);
         if (p === "/api/logout" && request.method === "POST") {
           return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });
@@ -937,5 +1194,23 @@ export default {
     } catch (err) {
       return json({ error: "Server error.", detail: String(err && err.message || err).slice(0, 200) }, 500);
     }
+  },
+
+  // Cron Trigger entry (PIN-14). The body lives in src/portal/cron.js,
+  // owned by B2e; this export is the shell B1 adds, which (M9,
+  // CTL-ENV-01(a)/(f)/CTL-ENV-03) never hands cron.js the raw env: a
+  // cron trigger carries no hostname, so the marker+accounts leg is
+  // the one signal available, and a mismatch (or a missing PORTAL_DB)
+  // means the scheduled handler does nothing -- no job runs, nothing
+  // is logged as having run. A merge that binds the preview DB to this
+  // branch's cron (A5: "treat a merge as a deploy") can therefore never
+  // push production secrets or real calendar/push actions against demo
+  // rows.
+  async scheduled(controller, env) {
+    const db = env.PORTAL_DB;
+    if (!db) return;
+    const envClass = await resolveScheduledEnvironmentClass(db);
+    if (envClass === "mismatch") return;
+    await runScheduled(buildPortalEnv(env, envClass));
   },
 };

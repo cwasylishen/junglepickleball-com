@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Jungle Pickleball Portal</title>
+  <link rel="manifest" href="/portal/manifest.webmanifest" />
+  <link rel="icon" href="/portal/icon-192.png" />
+  <link rel="stylesheet" href="/portal/portal.css" />
+  <!-- S-7/CTL-UI-01: self-hosted, no CDN script on portal pages. -->
+  <script src="/portal/js/api.js"></script>
+  <script src="/portal/js/app.js"></script>
+  <!-- Area modules (docs/portal/ui-structure.md): each registers itself
+       into window.PortalAreas / window.STR.en before Alpine parses the
+       page below. pwa.js (B2e, PWA/push UI) is allowed to 404 until that
+       part commits its files: a script tag whose fetch 404s just never
+       runs and throws no page error. It is loaded last so a 404 there
+       never blocks member.js/staff.js/account.js/owner.js/passkeys.js. -->
+  <script src="/portal/js/member.js"></script>
+  <script src="/portal/js/staff.js"></script>
+  <script src="/portal/js/account.js"></script>
+  <script src="/portal/js/owner.js"></script>
+  <script src="/portal/js/passkeys.js"></script>
+  <script src="/portal/js/pwa.js"></script>
+  <script defer src="/portal/vendor/alpine-3.14.9.min.js"></script>
+</head>
+<body class="font-body bg-slate-50 text-slate-900" x-data="portalShell()" x-init="init()" @hashchange.window="route = window.location.hash">
+
+  <!-- Top bar (screens.md §2.1). -->
+  <header class="sticky top-0 z-10 h-14 flex items-center justify-between gap-4 px-4 bg-jpteal text-white font-heading">
+    <span class="font-semibold tracking-wide shrink-0">JUNGLE <span class="text-jpyellow">PICKLEBALL</span></span>
+    <!-- Desktop nav (screens.md S-7/D2): the bottom tab bar below is
+         `flex md:hidden` (mobile only), so >=768px needs its own path to
+         the same role-based tabs. Same `nav` array, same route hrefs --
+         the area routers (hashchange listeners) are what actually mount
+         each view, so this is just another link to the same hash. -->
+    <nav x-show="session.authenticated" class="hidden md:flex md:items-center md:gap-6">
+      <template x-for="(item, i) in nav" :key="item[0]">
+        <a :href="item[0]" class="text-xs uppercase tracking-wide font-heading hover:text-jpyellow"
+           :class="isActive(item[0], i) ? 'text-jpyellow underline underline-offset-8' : 'text-white'"
+           :aria-current="isActive(item[0], i) ? 'page' : null"
+           x-text="window.t ? window.t(item[1]) : item[1]"></a>
+      </template>
+    </nav>
+    <span x-show="session.account" class="shrink-0" x-text="session.account && session.account.display_name"></span>
+  </header>
+
+  <!-- Preview ribbon: shown only when GET /api/portal/me reports a preview build. -->
+  <div x-show="session.features && session.features.preview" class="bg-jpyellow text-jpteal text-xs text-center py-1" x-text="STR.en['shell.preview_badge']"></div>
+
+  <!-- Each area (home/book/bookings/account/calendar/today/members/manage)
+       mounts here. B2f1/B2f2 register their templates against this id, per
+       docs/portal/ui-structure.md -- B1 only owns the mount point and the
+       nav built from PortalApp.navForRole(). -->
+  <main id="portal-area" class="max-w-[720px] mx-auto px-4 pt-4 portal-content">
+    <!-- M7/CTL-AUTH-05/CTL-UI-04: shown only when the server has told us
+         (via 409 age_confirmation_required) that this email has never
+         signed in before -- the attestation is asked of the person
+         here, at this request, never assumed by the client. -->
+    <template x-if="ageConfirmToken">
+      <section>
+        <h1 class="text-2xl font-heading text-jpteal" x-text="STR.en['auth.age_confirm_title']"></h1>
+        <p class="text-sm text-slate-600 mt-1" x-text="STR.en['auth.age_confirm_body']"></p>
+        <label class="mt-4 flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" x-model="ageChecked" class="mt-0.5" />
+          <span x-text="STR.en['auth.age_confirm_checkbox']"></span>
+        </label>
+        <button type="button" id="age-confirm-submit" :disabled="!ageChecked" @click="confirmAge16Plus()"
+                class="mt-4 bg-jpteal text-white rounded px-4 py-2 disabled:opacity-50">
+          <span x-text="STR.en['auth.age_confirm_submit']"></span>
+        </button>
+        <p x-show="ageConfirmError" class="text-sm text-red-600 mt-3" x-text="STR.en['auth.age_confirm_error']"></p>
+      </section>
+    </template>
+    <template x-if="!ageConfirmToken && !session.authenticated">
+      <section>
+        <h1 class="text-2xl font-heading text-jpteal">Sign in</h1>
+        <p class="text-sm text-slate-600 mt-1">Enter your email for a sign-in link.</p>
+        <form class="mt-4 flex gap-2" @submit.prevent="startLogin()">
+          <input type="email" x-model="loginEmail" required placeholder="you@example.com"
+                 class="flex-1 border border-slate-300 rounded px-3 py-2" />
+          <button type="submit" class="bg-jpteal text-white rounded px-4 py-2">Send link</button>
+        </form>
+        <p x-show="loginSent" class="text-sm text-slate-700 mt-3" x-text="STR.en['auth.link_sent']"></p>
+        <p x-show="loginError" class="text-sm text-red-600 mt-3" x-text="loginError"></p>
+        <p x-show="devLink" class="text-xs text-slate-500 mt-3">Preview only: the link was written to the browser console.</p>
+      </section>
+    </template>
+    <template x-if="!ageConfirmToken && session.authenticated">
+      <section>
+        <p class="text-sm text-slate-600">Signed in as <span x-text="session.account.email"></span> (<span x-text="session.account.role"></span>).</p>
+      </section>
+    </template>
+  </main>
+
+  <!-- Bottom tab bar (mobile). Desktop moves these into the top bar
+       (screens.md §2.1); left as a simple list here since B1 ships the
+       mount-point contract, not the final nav chrome (B2f owns that). -->
+  <nav x-show="session.authenticated" class="fixed bottom-0 inset-x-0 h-16 px-4 bg-white border-t border-slate-200 flex md:hidden">
+    <template x-for="(item, i) in nav" :key="item[0]">
+      <a :href="item[0]" class="flex-1 flex items-center justify-center text-xs uppercase font-heading text-jpteal border-t-4"
+         :class="isActive(item[0], i) ? 'border-jpyellow bg-slate-100' : 'border-transparent'"
+         :aria-current="isActive(item[0], i) ? 'page' : null"
+         x-text="window.t ? window.t(item[1]) : item[1]"></a>
+    </template>
+  </nav>
+</body>
+</html>

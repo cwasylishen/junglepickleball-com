@@ -1,0 +1,26 @@
+<!-- M4 Billing (screens.md). The not-configured state renders from
+     /me's features.stripe directly -- no portal-session request is made
+     until the viewer taps "Open billing". Mounted by portal/js/member.js. -->
+<section x-data="memberBilling()" x-init="load()">
+  <h1 class="font-heading text-2xl text-jpteal" x-text="t('account.billing')"></h1>
+
+  <template x-if="loading">
+    <div class="mt-3 h-20 rounded-xl bg-slate-100 animate-pulse" aria-busy="true"></div>
+  </template>
+
+  <template x-if="!loading && !stripeOn">
+    <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p class="font-heading text-jpteal" x-text="t('nc.stripe_title')"></p>
+      <p class="text-sm text-slate-600 mt-1" x-text="t('nc.stripe_billing_body')"></p>
+    </div>
+  </template>
+
+  <template x-if="!loading && stripeOn">
+    <div class="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+      <p class="text-sm text-slate-700" x-text="t('billing.top')"></p>
+      <button class="mt-3 rounded-lg bg-jpyellow px-4 py-2 font-heading uppercase text-black" :disabled="opening" @click="openBilling()" x-text="opening ? t('billing.opening') : t('billing.open')"></button>
+      <p class="text-xs text-slate-500 mt-3" x-text="t('billing.no_cards_here')"></p>
+      <p x-show="openError" class="text-sm text-[#b91c1c] mt-2" x-text="t('billing.open_failed')"></p>
+    </div>
+  </template>
+</section>

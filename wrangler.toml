@@ -2,6 +2,34 @@ name = "junglepickleball-com"
 compatibility_date = "2026-01-01"
 main = "src/worker.js"
 
+# Declared, never inherited (an omitted key means whatever the installed
+# wrangler does with it). Compared with the live Worker by read-only API
+# calls on 2026-10-05 (files/junglepickleball-portal/prod-baseline-check.sh):
+#   workers_dev     live: enabled   -> true, the same
+#   preview_urls    live: enabled   -> false: a deploy turns Worker preview
+#                   URLs off, on purpose. They would serve this Worker's
+#                   code, bindings and secrets at an unlisted hostname.
+#   custom domains  live: junglepickleball.com and www.junglepickleball.com,
+#                   both on this Worker, no zone routes -> declared below
+#   crons           live: none -> the [triggers] block below adds one (ruling PF-5)
+workers_dev = true
+preview_urls = false
+routes = [
+  { pattern = "junglepickleball.com", custom_domain = true },
+  { pattern = "www.junglepickleball.com", custom_domain = true },
+]
+
+# Workers Logs (2026-10-07, Clinton's go): every request and console line is
+# kept 7 days so a failed signup/checkout is visible. Turned on first through
+# the script-settings API on live version 15bf0d84 without a deploy; declared
+# here so the next deploy keeps it on instead of resetting it by omission.
+# redact_query_string strips ?query from logged URLs: /api/glow/list takes
+# GLOW_LIST_KEY as ?key=, which must never land in the logs. wrangler 4.113
+# warns "Unexpected fields found in observability field: redact_query_string"
+# (harmless; 4.148 knows the key). After any deploy, read back
+# script-settings: observability.redact_query_string must still be true.
+observability = { enabled = true, head_sampling_rate = 1, redact_query_string = true }
+
 # Static site served as assets; the Worker only receives /api/* and 404s.
 [assets]
 directory = "./"
@@ -14,10 +42,14 @@ binding = "EVENTS"
 id = "0c6dbe2eca394cc8a4ddf98147dc0332"
 
 # wizardweb analytics network (same account) - read-only stats for the admin.
+# migrations_dir points at a directory that does not exist (SCV-04 guard,
+# amendment 5): `wrangler d1 migrations apply ANALYTICS` can then never
+# pick up a portal migration by accident.
 [[d1_databases]]
 binding = "ANALYTICS"
 database_name = "wizardweb"
 database_id = "69028e1f-c781-4501-b0a8-5404801366f4"
+migrations_dir = "migrations-analytics-none"
 
 # Club database: members, bookings, payments, settings.
 # Uncomment once the D1 database exists (create "junglepickleball-db" and set its id).
@@ -33,6 +65,20 @@ database_id = "69028e1f-c781-4501-b0a8-5404801366f4"
 [[services]]
 binding = "WARD_MAIL"
 service = "ward-mail"
+
+# Member + owner portal database (PIN-5). Separate from the legacy DB
+# binding above so ensureSchema()'s `members`/`bookings` tables never
+# collide with the portal's own tables of the same name.
+[[d1_databases]]
+binding = "PORTAL_DB"
+# PIN L1: the production D1 is `junglepickleball-portal`. The preview D1
+# `junglepickleball-portal-preview` (ca34a6c4-...) is never bound to production.
+database_name = "junglepickleball-portal"
+database_id = "d7daeb61-9843-4fa5-86a2-a3134e777ea7"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/15 * * * *"]
 
 # Required Worker secrets (Settings -> Variables and Secrets in the dashboard):
 #   ADMIN_USERNAME        - Roger's admin username (plaintext var is fine)
@@ -58,3 +104,23 @@ service = "ward-mail"
 # Stripe dashboard config (Roger's account) once payments go live:
 #   Webhook endpoint URL: https://junglepickleball.com/api/stripe/webhook
 #   Event to send: checkout.session.completed
+#
+# Portal secrets/vars (names only -- no values here, ever; each gates its
+# own feature via `features.*`/`isStripeConfigured`/etc. when unset,
+# never a hard failure):
+#   OWNER_EMAILS                 - comma-separated list, portal owner role (S-3)
+#   STRIPE_SECRET_KEY            - secret
+#   STRIPE_WEBHOOK_SECRET        - secret
+#   GOOGLE_SERVICE_ACCOUNT_JSON  - secret (B2d, Calendar push)
+#   VAPID_PUBLIC_KEY             - var (B2e, push)
+#   VAPID_PRIVATE_KEY            - secret (B2e, push)
+#   VAPID_SUBJECT                - var, e.g. mailto:owner@junglepickleball.com (B2e, push)
+#   EMAIL                        - send_email binding, outbound magic-link email (PIN L5; see the block below)
+
+# Outbound magic-link email (PIN L5, portal(B3)): the Cloudflare Email Service
+# `send_email` binding named EMAIL, From "Jungle Pickleball <portal@junglepickleball.com>"
+# (the From is set in the sending code). junglepickleball.com is onboarded to
+# Email Sending by the deployer. If the binding is ever absent, sign-in fails
+# closed with "Email sign-in is not available right now."
+[[send_email]]
+name = "EMAIL"

@@ -11,7 +11,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f393b'/%3E%3Ccircle cx='50' cy='50' r='26' fill='none' stroke='%23EAB308' stroke-width='8'/%3E%3Ccircle cx='38' cy='40' r='4' fill='%23EAB308'/%3E%3Ccircle cx='58' cy='38' r='4' fill='%23EAB308'/%3E%3Ccircle cx='62' cy='58' r='4' fill='%23EAB308'/%3E%3Ccircle cx='40' cy='60' r='4' fill='%23EAB308'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/styles.css?v=69e0741409">
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
@@ -29,14 +29,14 @@
         <div class="text-center mb-8">
             <span class="text-green-700 font-bold tracking-widest uppercase text-sm">Court Reserve</span>
             <h1 class="text-3xl md:text-4xl font-bold text-jungle mt-2" style="font-family:'Oswald',sans-serif">Register</h1>
-            <p class="text-slate-500 mt-2 max-w-xl mx-auto">Create your Jungle Pickleball account to book courts and join events.</p>
+            <p class="text-slate-600 mt-2 max-w-xl mx-auto">Create your Jungle Pickleball account to book courts and join events.</p>
         </div>
 
         <div class="bg-white rounded-2xl shadow-sm p-4 md:p-6">
             <iframe id="form-iframe" class="form-iframe-103824" src="https://widgets.courtreserve.com/Online/Public/EmbedCode/17422/103824" style="margin:0; width:100%; border:none; overflow:hidden;" scrolling="no"></iframe>
         </div>
 
-        <p class="text-center text-slate-400 text-xs mt-6">
+        <p class="text-center text-slate-600 text-xs mt-6">
             Trouble registering? Message Roger on
             <a href="https://wa.me/50689893111" class="text-jungle font-bold hover:underline">WhatsApp +506 8989 3111</a>.
         </p>
@@ -57,27 +57,58 @@
         var myEventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
         var myEventListener = window[myEventMethod];
         var myEventMessage = myEventMethod == "attachEvent" ? "onmessage" : "message";
+        // F-01: only the embedded CourtReserve iframe may drive this page.
+        var COURTRESERVE_ORIGIN = "https://widgets.courtreserve.com";
+        // redirectAfterLogin may only land on these origins (https, default port).
+        var REDIRECT_ORIGINS = [
+            "https://widgets.courtreserve.com",
+            "https://app.courtreserve.com",
+            "https://junglepickleball.com",
+            "https://www.junglepickleball.com"
+        ];
+        function isAllowedRedirect(url) {
+            if (typeof url !== "string" || url.trim() === "") return false;
+            var parsed;
+            try { parsed = new URL(url, window.location.href); } catch (err) { return false; }
+            return parsed.protocol === "https:" && REDIRECT_ORIGINS.indexOf(parsed.origin) !== -1;
+        }
+        // A finite number inside [min, max], or null when the value is not usable.
+        function clampNumber(value, min, max) {
+            if (typeof value !== "number" && typeof value !== "string") return null;
+            if (typeof value === "string" && value.trim() === "") return null;
+            var n = Number(value);
+            if (!isFinite(n)) return null;
+            return Math.min(Math.max(n, min), max);
+        }
         myEventListener(myEventMessage, function (e) {
+            var iframe = document.getElementById('form-iframe');
+            if (e.origin !== COURTRESERVE_ORIGIN) return;
+            if (!iframe || e.source !== iframe.contentWindow) return;
+            if (!e.data || typeof e.data !== "object") return;
             switch (e.data.action) {
                 case "setHeight": {
+                    var height = clampNumber(e.data.height, 0, 10000);
+                    if (height === null) break;
                     var embedCodeId = e.data.embedCodeId;
                     if (embedCodeId != null && embedCodeId != '') {
                         var elements = document.getElementsByClassName('form-iframe-' + embedCodeId);
                         for (var i = 0; i < elements.length; i++) {
-                            elements[i].style.height = (e.data.height) + "px";
+                            elements[i].style.height = height + "px";
                         }
                     } else {
-                        document.getElementById('form-iframe').height = (e.data.height) + "px";
+                        iframe.height = height + "px";
                     }
                     break;
                 }
                 case "redirectAfterLogin": {
                     var url = e.data.urlToRedirect;
+                    if (!isAllowedRedirect(url)) break;
                     setTimeout(function () { window.location.href = url; }, 100);
                     break;
                 }
                 case "scrollBottom": {
-                    if (e.data.scrollHeight) window.scrollTo(0, e.data.scrollHeight);
+                    var scrollHeight = clampNumber(e.data.scrollHeight, 0, 100000);
+                    if (scrollHeight) window.scrollTo(0, scrollHeight);
                     break;
                 }
                 case "scrollTop": {

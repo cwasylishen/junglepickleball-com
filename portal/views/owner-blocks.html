@@ -1,0 +1,70 @@
+<div x-data="ownerBlocks()" x-init="init()">
+  <a href="#/manage" class="text-sm text-jpteal underline" x-text="t('act.back')"></a>
+  <h1 class="text-2xl font-heading uppercase text-jpteal mt-1" x-text="t('manage.blocks')"></h1>
+
+  <template x-if="state === 'loading'">
+    <div class="mt-4 h-40 bg-slate-100 rounded" aria-label="loading"></div>
+  </template>
+
+  <template x-if="state === 'offline' || state === 'not_found' || state === 'error' || state === 'forbidden' || state === 'rate_limited'">
+    <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-300 text-red-700">
+      <p x-text="state === 'not_found' ? t('state.not_wired') : t('state.error_body')"></p>
+      <button class="mt-2 underline" @click="load()" x-text="t('act.retry')"></button>
+    </div>
+  </template>
+
+  <template x-if="state === 'ok' || state === 'empty'">
+    <div>
+      <p class="text-sm text-slate-600 mt-1" x-text="t('blocks.top', {w: weekly.length, o: oneOff.length})"></p>
+      <button class="mt-3 w-full py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="openSheet()" x-text="t('blocks.add')"></button>
+
+      <template x-if="state === 'empty'">
+        <p class="mt-4 text-sm text-slate-600" x-text="t('blocks.empty')"></p>
+      </template>
+
+      <div class="mt-4 space-y-2">
+        <template x-for="b in blocks" :key="b.id">
+          <div class="p-3 rounded-xl border border-slate-200 bg-white flex justify-between items-center">
+            <div class="text-sm">
+              <div x-text="(b.label || t('slot.blocked')) + (b.kind === 'weekly' ? ' ↻' : '')"></div>
+              <div class="text-slate-500" x-text="(b.weekday || h.fmtDate(b.date)) + ' · ' + b.start_time + '–' + b.end_time"></div>
+            </div>
+            <button class="text-xs underline text-red-700" @click="remove(b)" x-text="t('blocks.remove')"></button>
+          </div>
+        </template>
+      </div>
+
+      <template x-if="sheetOpen">
+        <div class="fixed inset-0 bg-black/30 flex items-end md:items-center justify-center z-20" @click.self="sheetOpen = false">
+          <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
+            <h2 class="font-heading text-lg text-jpteal" x-text="t('block.title')"></h2>
+            <div class="mt-2 flex gap-2 flex-wrap">
+              <template x-for="r in resources" :key="r.id">
+                <button type="button" class="px-2 py-1 rounded-full text-xs border"
+                  :class="form.resource_ids.includes(r.id) ? 'bg-jpteal text-white border-jpteal' : 'border-slate-300'"
+                  @click="toggleResource(r.id)" x-text="r.name"></button>
+              </template>
+            </div>
+            <div class="mt-3 flex gap-2">
+              <label class="flex items-center gap-1 text-sm"><input type="radio" value="one_off" x-model="form.kind" /> <span x-text="t('block.one_off')"></span></label>
+              <label class="flex items-center gap-1 text-sm"><input type="radio" value="weekly" x-model="form.kind" /> <span x-text="t('block.weekly')"></span></label>
+            </div>
+            <input x-show="form.kind === 'one_off'" type="date" x-model="form.date" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-2" />
+            <select x-show="form.kind === 'weekly'" x-model="form.weekday" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-2">
+              <template x-for="d in ['mon','tue','wed','thu','fri','sat','sun']" :key="d"><option :value="d" x-text="d"></option></template>
+            </select>
+            <div class="mt-2 flex gap-2">
+              <input type="time" x-model="form.start_time" class="flex-1 border border-slate-300 rounded-lg px-2 py-2" />
+              <input type="time" x-model="form.end_time" class="flex-1 border border-slate-300 rounded-lg px-2 py-2" />
+            </div>
+            <input type="text" x-model="form.label" :placeholder="t('block.label_ph')" class="w-full border border-slate-300 rounded-lg px-2 py-2 mt-2" />
+            <div class="mt-4 flex gap-2">
+              <button class="flex-1 py-2 rounded-lg bg-jpyellow font-heading uppercase text-sm" @click="save()" x-text="t('block.save')"></button>
+              <button class="flex-1 py-2 rounded-lg border border-slate-300" @click="sheetOpen = false" x-text="t('cancel.keep')"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>

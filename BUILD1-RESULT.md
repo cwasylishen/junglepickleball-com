@@ -1,0 +1,59 @@
+# Build 1 result
+
+Branch and commit: `rules-1030`, `b631d0956a66b2b7d7901867d57296003488d22d`.
+
+The branch was created in `/home/mike/projects/jp-wt/rules-1030` from `gcal-busy` at `8b1c3ee`. `git fetch origin` completed first. No `origin/gcal-busy` ref exists after the fetch, so a behind or ahead count could not be computed. The local `gcal-busy` branch remains at `8b1c3ee`.
+
+Tests: `npm test` started the full existing test command, applied all ten local migrations, and loaded the local D1 fixture. The Wrangler development server did not answer on `127.0.0.1:8799`, so the suite stopped before its HTTP tests could run. JavaScript syntax checks passed for the changed portal modules, and `git diff --check` passed. The requested new unit tests and a passing full suite are therefore not complete.
+
+Implemented in the branch: member and non-member court windows of 60 and 30 days, 2,880 minute cancellation cutoff, A through D placeholder court seeds flagged as unconfirmed, the draft booking policy and acknowledgement checkbox, policy enforcement on booking creation, the existing ledger reused for cancellation credits, member credit visibility in owner account detail, and an audited owner credit adjustment route.
+
+Preview URL and version ID: none. No preview deployment was made because the checked-in Worker configuration points `PORTAL_DB` at the production D1 and no safe preview binding was configured for this worktree. Production `junglepickleball.com` was not deployed.
+
+Screenshots: none. The local Wrangler server did not answer, so the requested 390 pixel booking confirmation screenshot and member account credit screenshot could not be captured.
+
+Production binding inventory read from `wrangler.toml`: `ASSETS` serves `./`; KV binding `EVENTS` uses namespace `0c6dbe2eca394cc8a4ddf98147dc0332`; D1 binding `ANALYTICS` uses database `wizardweb`, ID `69028e1f-c781-4501-b0a8-5404801366f4`; service binding `WARD_MAIL` targets `ward-mail`; D1 binding `PORTAL_DB` uses database `junglepickleball-portal`, ID `d7daeb61-9843-4fa5-86a2-a3134e777ea7`; email binding `EMAIL` is declared; custom domains are `junglepickleball.com` and `www.junglepickleball.com`; the configured cron is every 15 minutes. The legacy `DB` binding is commented out. Secrets and variables are declared by name only and were not exposed.
+
+Open questions for Roger: confirm hours for courts A through D, confirm the 90 minute slot length and zero buffer default, confirm the non-member price represented by the existing `$15.00` offering, confirm member pricing or included membership treatment, confirm whether credits are displayed and spent in cents as implemented by the paid amount ledger extension, and review the policy marked `DRAFT FOR ROGER`.
+
+Production confirmation: no production Worker version was uploaded, no production custom domain was changed, and no production D1 migration or seed was applied. The new migration was only applied by the local test harness before it became part of the branch.
+
+## Round 2
+
+## Round 3
+
+## Round 5
+
+Implemented the shared mobile portal bottom clearance with safe area padding, so the fixed navigation cannot cover content on any portal page. Added a separate dollar account credit balance, populated by eligible paid cancellations more than 48 hours ahead, displayed distinctly from court credits, and applied automatically to the next paid checkout.
+
+The full local suite ran to completion with 626 tests, 572 passed, 12 failed, and 42 skipped. The additional failure beyond the recorded baseline was the service worker cache guard before the build ID bump. The remaining failures are environment or pre existing checks, including missing Puppeteer and the missing ignore module. The portal build completed, and the cache build ID is now `2026-10-30.1`.
+
+A Preview deployment and the requested screenshots could not be completed from this worktree. The checked in Wrangler configuration binds `PORTAL_DB` to the production database and has no Preview environment or safe Preview binding. No deployment command was run, so production was not deployed or migrated. The configured Puppeteer dependency is also unavailable in this environment. The requested screenshot files remain outstanding.
+
+Baseline counts: 626 tests, 573 passed, 11 failed, and 42 skipped on clean `gcal-busy` commit `8b1c3ee`. Pre-existing failures by file: `tests/foundation/assets-private.test.mjs:97`, first error `ERR_MODULE_NOT_FOUND` for `ignore/index.js`; `tests/foundation/gallery-header-edge.test.mjs:42`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/portal-nav-edge-margin.test.mjs:15`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/public-footer-contrast.test.mjs:82`, first error `puppeteer-core not found under NODE_PATH`; `tests/foundation/public-page-contrast.test.mjs:202`, first error `puppeteer-core not found under NODE_PATH`.
+
+Branch counts: 626 tests, 573 passed, 11 failed, and 42 skipped. Regressions fixed: policy acknowledgement fixtures, 30 day guest windows, 48 hour credit cancellation assertions, updated seed assertions, and the old refund fixture.
+
+Preview URL: `https://cf45b72c-junglepickleball-com.cwasylishen.workers.dev`. Version ID: `cf45b72c-b49e-4899-aae1-b0deb5d5468c`. Preview D1: `junglepickleball-portal-preview`, ID `ca34a6c4-47e9-4e0e-baa5-8dd816700ca3`. Curl returned 200 for `/portal/policy`, `/portal/`, and `/api/portal/me`.
+
+Screenshot paths: none. No browser executable or Puppeteer installation is available in this environment, so the two 390 pixel screenshots could not be generated honestly.
+
+Production re-read: version `d7d44d86-f249-48b4-929f-e24e74abd121`, D1 `junglepickleball-portal`, ID `d7daeb61-9843-4fa5-86a2-a3134e777ea7`. Production was not deployed or migrated.
+
+Branch and commit at the start of this round: `rules-1030`, `5c45f8b`.
+
+The port was not occupied. `ss -ltnp` showed no listener on 8799, and the harness was rerun on free ports 8817 and 9237. The actual Wrangler startup failure was a missing local `node_modules` directory, which made Wrangler fail to resolve `@simplewebauthn/server`, `@simplewebauthn/server/helpers`, and `@block65/webcrypto-web-push`. Installing the declared dependencies allowed Wrangler to bind and serve.
+
+The full existing harness then ran to completion. Its output summary was `tests 626`, `pass 466`, `fail 118`, `skipped 42`, and `duration_ms 77398.201613`. The principal failures were that existing HTTP fixtures do not send the now-required policy acknowledgement, and several existing tests still assert the former 24 hour cancellation rule or older court and payment behavior. The new acknowledgement check was moved after request shape, time, hours, window, block, calendar, cap, and credit validation, so invalid requests retain their specific errors while a valid booking still requires acknowledgement.
+
+No preview deployment or screenshots were completed in this round. Therefore there is no preview URL or version ID, and the 390 pixel booking confirmation and member account credit screenshots remain outstanding. Production was not deployed or migrated. The production version inventory was re-read with `wrangler deployments list`; the latest observed live version before this round was `2b4cf0b9-f3c5-47cb-bc0c-6b2d4bf50dc5` in the deployment history. The production D1 binding in `wrangler.toml` remains `junglepickleball-portal`, ID `d7daeb61-9843-4fa5-86a2-a3134e777ea7`, and no remote D1 command was run.
+
+Roger open questions remain: confirm whether there are three courts or four, confirm hours, confirm the 90 minute slot length and zero buffer default, confirm the non-member price represented by the existing `$15.00` offering, confirm member pricing or included membership treatment, confirm credit display and spending units, and review the policy marked `DRAFT FOR ROGER`. The implementation keeps courts configurable and defaults the placeholder list to A, B, and C, while retaining A through D calendar compatibility pending that answer.
+
+## Round 6
+
+Suite: 626 tests, 573 passed, 11 failed, and 42 skipped. The 11 failures match the Round 3 baseline: `SCV-05/F-1 (UNPROVEN-locally, PIN-18)`, `F13 /gallery header at 360`, `F13 /gallery header at 390`, `F13 /gallery header at 768`, `F13 /gallery header at 1280`, `F10 edge margin at 360`, `F10 edge margin at 390`, `F13 footer contrast at 390`, `F13 footer contrast at 1280`, `F14 whole-page contrast at 390`, and `F14 whole-page contrast at 1280`. The Round 5 regression was the service worker cache guard, and it passed after the recorded `BUILD_ID` bump.
+
+Preview URL: `https://97eddf54-junglepickleball-com.cwasylishen.workers.dev`. Final preview version ID: `945f20b6-d905-4af6-889f-4757e2880133`. The Worker used only the nonproduction D1 `junglepickleball-portal-preview`, ID `ca34a6c4-47e9-4e0e-baa5-8dd816700ca3`. Migration `0011_account_dollar_credit.sql` was applied to that D1 by ID. Production was not deployed or migrated.
+
+Screenshot paths: [shot-booking-confirm.png](/home/mike/buddy-wizardweb/state/jp-members-1030/shot-booking-confirm.png), [shot-member-credit.png](/home/mike/buddy-wizardweb/state/jp-members-1030/shot-member-credit.png), and [shot-checkout-credit-applied.png](/home/mike/buddy-wizardweb/state/jp-members-1030/shot-checkout-credit-applied.png). Each is 390 pixels wide. The account capture shows `Account credit: $25.00`. The booking confirmation capture shows the entire confirmation card, policy text, and checkbox clear of the bottom navigation. The checkout capture shows the preview pay at the club confirmation state, because Stripe checkout is not configured in the preview.

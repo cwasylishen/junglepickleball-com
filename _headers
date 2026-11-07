@@ -5,11 +5,58 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Strict-Transport-Security: max-age=15552000
 
+# F-01: /register embeds the CourtReserve widget and trusts its postMessage.
+# COOP cuts off a cross-origin opener; the CSP blocks javascript: navigation
+# (no 'unsafe-inline' in script-src: each inline script is allowed by hash,
+# so editing an inline script in register.html means re-hashing it here;
+# tests/foundation/register-postmessage.test.mjs fails if they drift).
+# The site serves clean URLs, so both paths carry the same headers.
+/register
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-pJsW5aO8eLKTFn7dhitUfsmZqYIkBsRikdG6RUV3bFs=' 'sha256-1rviiqAURP0bC/o9CQ11ERwyQMdC3CU1JKb0eq9Yh5M=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://app.wizardweb.ca https://cloudflareinsights.com; frame-src https://widgets.courtreserve.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
+
+/register.html
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-pJsW5aO8eLKTFn7dhitUfsmZqYIkBsRikdG6RUV3bFs=' 'sha256-1rviiqAURP0bC/o9CQ11ERwyQMdC3CU1JKb0eq9Yh5M=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://app.wizardweb.ca https://cloudflareinsights.com; frame-src https://widgets.courtreserve.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
+
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# styles.css is the one /assets file that keeps its name when it changes, so
+# it must NOT inherit the immutable rule above. Cloudflare applies every
+# matching rule and joins the values, which sent two Cache-Control values
+# (immutable for a year, then revalidate) and let phones pin an old copy.
+# `!` detaches the inherited value; pages also link it as ?v=<hash>
+# (scripts/stamp-css.mjs). Proof: tests/foundation/styles-cache.test.mjs.
 /assets/styles.css
+  ! Cache-Control
   Cache-Control: public, max-age=0, must-revalidate
 
 /*.html
   Cache-Control: public, max-age=0, must-revalidate
+
+# Portal (CTL-HDR-01). /api/portal/* responses are Worker-generated JSON
+# and already carry their own headers from src/portal/http.js; this
+# block covers the static /portal/* HTML and assets, which the assets
+# layer serves directly and _headers is the only way to set CSP on them.
+# The two cloudflareinsights.com origins are Cloudflare Web Analytics, which
+# the zone adds to HTML on the production host (D-R2). Never add
+# 'unsafe-inline' to script-src: the edge's other injection is an inline
+# script that changes on every request and cannot be allowed by hash.
+# Kept the same as PORTAL_HTML_HEADERS in src/portal/http.js (tests/portal-csp.test.mjs).
+/portal/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'
+  ! Referrer-Policy
+  Referrer-Policy: no-referrer
+  Cross-Origin-Opener-Policy: same-origin
+  ! X-Frame-Options
+  X-Frame-Options: DENY
+  ! Cache-Control
+  Cache-Control: no-store
+
+/portal/sw.js
+  ! Cache-Control
+  Cache-Control: no-cache
+
+/api/portal/*
+  Cache-Control: no-store
