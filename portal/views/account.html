@@ -17,6 +17,12 @@
         <span class="mt-1 inline-block text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-jpteal" x-text="t('chip.' + account.role)"></span>
       </div>
 
+      <div class="rounded-xl border border-jpyellow bg-amber-50 p-4">
+        <p class="font-semibold text-jpteal">Account credit: <span x-text="'$' + (accountCreditCents / 100).toFixed(2)"></span></p>
+        <p class="mt-1 text-sm text-slate-700">Used automatically on your next paid booking.</p>
+        <p class="mt-1 text-sm text-slate-600">This is separate from court credits included with your plan.</p>
+      </div>
+
       <div class="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
         <a x-show="showRow('billing')" href="#/account/billing" class="flex items-center justify-between px-4 py-3">
           <span x-text="t('account.billing')"></span>

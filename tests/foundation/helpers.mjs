@@ -22,10 +22,13 @@ export function makeClient() {
     let res;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
+        const requestBody = path === "/api/portal/bookings" && body && typeof body === "object"
+          ? { policy_acknowledged: true, ...body }
+          : body;
         res = await fetch(`${BASE_URL}${path}`, {
           method,
           headers,
-          body: body !== undefined ? JSON.stringify(body) : undefined,
+          body: requestBody !== undefined ? JSON.stringify(requestBody) : undefined,
         });
         break;
       } catch (err) {

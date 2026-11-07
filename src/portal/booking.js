@@ -25,6 +25,7 @@ import { json, notConfigured } from "./http.js";
 import { newId, nowIso, runBatch } from "./db.js";
 import { resolveAudience, resolveEntitlement, audienceFor } from "./entitlement.js";
 import { isStripeConfigured, createBookingCheckout } from "./stripe.js";
+import { busyIntervalsForWindow, overlapsBusy } from "./gcal-busy.js";
 import {
   crDateStringFromUtc,
   crTimeStringFromUtcIso,
@@ -48,6 +49,8 @@ const MAX_SLOTS_PER_DAY = 288; // CTL-RES-01's grid-generator cap
 // per-resource cap on their own resource row.
 const GUEST_MAX_UPCOMING_COURT_BOOKINGS = 2;
 const GUEST_CAP_MESSAGE = `Guests can hold up to ${GUEST_MAX_UPCOMING_COURT_BOOKINGS} upcoming court bookings. Become a member for unlimited booking, or ask at the club.`;
+
+export const BOOKING_POLICY = "Bookings can be made up to 60 days ahead for members and 30 days ahead for non-members. Cancel more than 48 hours before your start time and the full amount returns as credit on your account for a future booking. Cancel within 48 hours and the booking is non-refundable. Credits do not expire unless the club says otherwise.";
 
 // The ONE definition of a "live" booking: one that occupies its court right
 // now. It is confirmed, or it is a payment hold that has not run out (a hold
@@ -408,6 +411,11 @@ export async function availability(request, env, db, url, session, account, para
         .all()
     ).results || [];
 
+  // Roger's own events on this resource's Google calendar. "unknown" (Google
+  // unreadable) and "not_configured" both mean: no Google blocks, DB only.
+  const googleBusy = await busyIntervalsForWindow(env, resource, dayStartUtc, dayEndUtc, { clampToWindow: mustGiveNotice });
+  const busyIntervals = googleBusy.state === "ok" ? googleBusy.intervals : [];
+
   const slots = grid.map((slot) => {
     if (slot.start <= nowIsoVal) return { start: slot.start, end: slot.end, state: "past" };
 
@@ -423,6 +431,7 @@ export async function availability(request, env, db, url, session, account, para
     if (overlapping.find((b) => b.account_id === account.id && b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held_mine" };
     if (overlapping.find((b) => b.status === "confirmed")) return { start: slot.start, end: slot.end, state: "taken" };
     if (overlapping.find((b) => b.status === "pending_payment")) return { start: slot.start, end: slot.end, state: "held" };
+    if (overlapsBusy(busyIntervals, slot.start, slot.end)) return { start: slot.start, end: slot.end, state: "blocked" };
     if (mustGiveNotice && tooSoon(resource, Date.parse(slot.start), Date.now())) return { start: slot.start, end: slot.end, state: "too_soon" };
     return { start: slot.start, end: slot.end, state: "available" };
   });
@@ -448,6 +457,7 @@ export async function quote(request, env, db, url, session, account, params) {
 
   const unitCents = audience.unit_cents || 0;
   const totalCents = bookingTotalCents(resource, audience, partySize);
+  const accountCredit = Number(account.account_credit_cents || 0);
   const creditsRow = await db.prepare(`SELECT balance FROM credits WHERE account_id = ?`).bind(account.id).first();
   const creditsHave = creditsRow ? creditsRow.balance : 0;
   const creditsNeeded = resource.kind === "court" && audience.mode === "pay" ? partySize : 0;
@@ -462,6 +472,8 @@ export async function quote(request, env, db, url, session, account, params) {
     unit_cents: unitCents,
     party_size: partySize,
     total_cents: totalCents,
+    account_credit_cents: Math.min(accountCredit, totalCents),
+    payable_cents: Math.max(0, totalCents - Math.min(accountCredit, totalCents)),
     credits_needed: creditsNeeded,
     credits_have: creditsHave,
     pay_at_club: payAtClub,
@@ -506,6 +518,7 @@ export async function createBooking(request, env, db, url, session, account) {
   // instead of the default credit spend. Omitted -> defaults to credits
   // when the balance covers it, else card. Logged in api.md's changelog.
   const paymentChoice = body && body.payment_choice === "card" ? "card" : body && body.payment_choice === "credits" ? "credits" : null;
+  if (!body) return json({ error: "invalid_request" }, 400);
 
   if (!resourceId || typeof startRaw !== "string") return json({ error: "invalid_request" }, 400);
   const startDate = parseInstantUtc(startRaw);
@@ -558,6 +571,12 @@ export async function createBooking(request, env, db, url, session, account) {
   const block = await isBlockedSlot(db, resourceId, crDateStr, startHHMM, endHHMM);
   if (block) return json({ error: "blocked" }, 409);
 
+  // Roger's own Google Calendar events: read fresh (not from the cache) at
+  // the moment of booking. If Google cannot be read this does not refuse
+  // the booking; the database's own guards still decide.
+  const googleBusy = await busyIntervalsForWindow(env, resource, startIso, endIso, { fresh: true, clampToWindow: !isOwnerOrStaff });
+  if (googleBusy.state === "ok" && overlapsBusy(googleBusy.intervals, startIso, endIso)) return json({ error: "calendar_busy" }, 409);
+
   if (resource.max_active_per_account != null) {
     const countRow = await db
       .prepare(
@@ -575,9 +594,13 @@ export async function createBooking(request, env, db, url, session, account) {
   const guestCourtCap = resource.kind === "court" && entitlement && !entitlement.entitled ? GUEST_MAX_UPCOMING_COURT_BOOKINGS : null;
   if (guestCourtCap != null && (await countUpcomingCourtBookings(db, account.id, nowIsoVal)) >= guestCourtCap) return guestCapReached();
 
+  if (body.policy_acknowledged !== true) return json({ error: "policy_acknowledgement_required" }, 400);
+
   let paymentMode;
   let payAtClub = false;
   let creditsSpent = 0;
+  const paidTotalCents = bookingTotalCents(resource, audience, partySize);
+  const dollarCreditCents = paymentMode === "pay" ? Math.min(Number(account.account_credit_cents || 0), paidTotalCents) : 0;
   if (audience.mode === "included") {
     paymentMode = "included";
   } else {
@@ -665,7 +688,7 @@ export async function createBooking(request, env, db, url, session, account) {
         // request so stripe.js can refuse a live Price that no longer
         // matches what the portal showed, instead of charging whatever
         // Stripe currently has on file.
-        lineItems: [{ lookup_key: audience.lookup_key, quantity, expected_unit_cents: audience.unit_cents }],
+        lineItems: [{ lookup_key: audience.lookup_key, quantity: dollarCreditCents > 0 ? 1 : quantity, expected_unit_cents: audience.unit_cents, unit_amount_override_cents: dollarCreditCents > 0 ? paidTotalCents - dollarCreditCents : undefined }],
         expiresAt: Math.floor(nowDate.getTime() / 1000) + CHECKOUT_MINUTES * 60,
         successUrl: `${url.origin}/portal/#/bookings/${id}?paid=1`,
         cancelUrl: `${url.origin}/portal/#/bookings/${id}?cancelled=1`,
@@ -684,6 +707,7 @@ export async function createBooking(request, env, db, url, session, account) {
       throw err;
     }
     await db.prepare(`UPDATE bookings SET checkout_session_id = ? WHERE id = ?`).bind(checkout.sessionId, id).run();
+    if (dollarCreditCents > 0) await db.prepare(`UPDATE accounts SET account_credit_cents = account_credit_cents - ?, updated_at = ? WHERE id = ? AND account_credit_cents >= ?`).bind(dollarCreditCents, createdAt, account.id, dollarCreditCents).run();
     return json({ booking: { id, status: row.status, payment_mode: paymentMode, hold_expires_at: holdExpiresAt, checkout_url: checkout.url } }, 201);
   }
 
@@ -730,12 +754,9 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const nowDate = new Date();
   const nowIsoVal = nowDate.toISOString();
 
-  if (booking.status === "confirmed" && account.role !== "owner") {
-    const resource = await db.prepare(`SELECT cancel_cutoff_minutes FROM resources WHERE id = ?`).bind(booking.resource_id).first();
-    const cutoffMinutes = resource ? resource.cancel_cutoff_minutes : 0;
-    const cutoffMs = new Date(booking.start_at).getTime() - cutoffMinutes * 60000;
-    if (nowDate.getTime() > cutoffMs) return json({ error: "past_cutoff", cancel_cutoff_minutes: cutoffMinutes }, 409);
-  }
+  const resource = await db.prepare(`SELECT * FROM resources WHERE id = ?`).bind(booking.resource_id).first();
+  const cutoffMinutes = resource ? resource.cancel_cutoff_minutes : 2880;
+  const outsideCutoff = account.role === "owner" || nowDate.getTime() <= new Date(booking.start_at).getTime() - cutoffMinutes * 60000;
 
   const cancelledAt = nowIsoVal;
   const statements = [
@@ -747,7 +768,8 @@ export async function cancelBooking(request, env, db, url, session, account, par
     db
       .prepare(
         `UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, updated_at = ?,
-           refund_state = CASE WHEN status = 'confirmed' AND payment_mode = 'pay' AND payment_intent_id IS NOT NULL THEN 'due' ELSE refund_state END
+           policy_acknowledged_at = COALESCE(policy_acknowledged_at, policy_acknowledged_at),
+           refund_state = 'none'
            WHERE id = ? AND status IN ('confirmed', 'pending_payment')
            RETURNING *`
       )
@@ -757,6 +779,11 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const creditsReturned = booking.payment_mode === "credits" && booking.credits_spent > 0 ? booking.credits_spent : 0;
   if (creditsReturned > 0) {
     statements.push(...creditReturnStatements(db, { bookingId, accountId: booking.account_id, amount: creditsReturned, cancelledAt }));
+  }
+  if (outsideCutoff && booking.payment_mode === "pay" && booking.payment_intent_id) {
+    const offering = await db.prepare(`SELECT display_price_cents FROM offerings WHERE id = ?`).bind(booking.offering_id).first();
+    const amountPaid = (offering ? offering.display_price_cents : 0) * (resource && resource.price_mode === "per_player" ? booking.party_size : 1);
+    if (amountPaid > 0) statements.push(db.prepare(`UPDATE accounts SET account_credit_cents = account_credit_cents + ?, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM bookings WHERE id = ? AND status = 'cancelled' AND cancelled_at = ?)`).bind(amountPaid, cancelledAt, booking.account_id, bookingId, cancelledAt));
   }
   if (booking.status === "confirmed") {
     statements.push(
@@ -768,7 +795,8 @@ export async function cancelBooking(request, env, db, url, session, account, par
   const updatedRows = results[0].results || [];
   if (updatedRows.length === 0) return json({ error: "not_found" }, 404);
 
-  return json({ ok: true, credits_returned: creditsReturned });
+  const dollarCreditReturned = outsideCutoff && booking.payment_mode === "pay" ? ((await db.prepare(`SELECT account_credit_cents FROM accounts WHERE id = ?`).bind(booking.account_id).first())?.account_credit_cents || 0) : 0;
+  return json({ ok: true, credits_returned: creditsReturned, credit_amount_cents: dollarCreditReturned });
 }
 
 // ---------------------------------------------------------------------

@@ -729,12 +729,19 @@
       },
       async loadResources() {
         this.state = "loading";
-        const res = await PortalApi.get("/api/portal/owner/resources");
+        // Both reads go out together. The second is the public resource list,
+        // asked only whether massage can be booked online: the owner's list
+        // carries every resource, including one nobody can book.
+        const [res, publicRes] = await Promise.all([
+          PortalApi.get("/api/portal/owner/resources"),
+          PortalApi.get("/api/portal/resources"),
+        ]);
         if (!res.ok) {
           this.state = classify(res);
           return;
         }
-        this.resources = res.data || [];
+        const massageOpen = window.PortalApp.massageBookable(publicRes);
+        this.resources = (res.data || []).filter((r) => r.kind !== "massage" || massageOpen);
         this.state = this.resources.length === 0 ? "empty" : "ok";
         if (this.resources.length) {
           // D3: loadResources() can run more than once for the same mount

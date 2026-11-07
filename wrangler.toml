@@ -19,6 +19,17 @@ routes = [
   { pattern = "www.junglepickleball.com", custom_domain = true },
 ]
 
+# Workers Logs (2026-10-07, Clinton's go): every request and console line is
+# kept 7 days so a failed signup/checkout is visible. Turned on first through
+# the script-settings API on live version 15bf0d84 without a deploy; declared
+# here so the next deploy keeps it on instead of resetting it by omission.
+# redact_query_string strips ?query from logged URLs: /api/glow/list takes
+# GLOW_LIST_KEY as ?key=, which must never land in the logs. wrangler 4.113
+# warns "Unexpected fields found in observability field: redact_query_string"
+# (harmless; 4.148 knows the key). After any deploy, read back
+# script-settings: observability.redact_query_string must still be true.
+observability = { enabled = true, head_sampling_rate = 1, redact_query_string = true }
+
 # Static site served as assets; the Worker only receives /api/* and 404s.
 [assets]
 directory = "./"

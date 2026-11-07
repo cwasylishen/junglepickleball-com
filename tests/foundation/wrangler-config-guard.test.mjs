@@ -239,6 +239,15 @@ test("WCG-07 PORTAL_DB is the production D1 and the preview D1 is bound nowhere"
   assert.deepEqual(mentions, [], "a binding references the preview D1 ca34a6c4");
 });
 
+test("WCG-09 Workers Logs are declared on, every request sampled, query strings redacted", () => {
+  // Omitted, a deploy could switch production logging off (or log
+  // /api/glow/list?key=... in full). Turned on live 2026-10-07 via API.
+  assert.ok(config.observability && typeof config.observability === "object", `observability is missing from ${tomlPath}`);
+  assert.strictEqual(config.observability.enabled, true);
+  assert.strictEqual(config.observability.head_sampling_rate, 1);
+  assert.strictEqual(config.observability.redact_query_string, true);
+});
+
 // ---------- the reader's own tests ----------
 
 test("WCG-08 reader: comments are ignored, inline tables and multi-line arrays parse, odd input throws", () => {

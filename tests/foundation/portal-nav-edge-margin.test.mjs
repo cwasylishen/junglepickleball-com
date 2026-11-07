@@ -9,12 +9,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ROLES, EDGE_PX, TAP_PX, loadPuppeteer, withBrowser, openPortal, readNav } from "./portal-nav-probe.mjs";
+import { ROLES, EDGE_PX, TAP_PX, requirePuppeteer, withBrowser, openPortal, readNav } from "./portal-nav-probe.mjs";
 
 for (const width of [360, 390]) {
   test(`F10 edge margin at ${width}: every role's bottom bar keeps 16 px from both edges, tap targets 44 px`, { timeout: 170000 }, async (t) => {
-    const puppeteer = await loadPuppeteer();
-    if (!puppeteer) return t.skip("puppeteer-core not on NODE_PATH -- run with NODE_PATH=/home/mike/wzq/node_modules");
+    const puppeteer = await requirePuppeteer();
     await withBrowser(puppeteer, async (browser) => {
       const problems = [];
       const measured = [];

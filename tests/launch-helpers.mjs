@@ -57,7 +57,10 @@ export async function callPortal(db, env, { method = "GET", path, body, session 
     headers.Cookie = session.cookie;
     if (method !== "GET") headers["X-CSRF-Token"] = session.csrf;
   }
-  const request = new Request(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const requestBody = path === "/api/portal/bookings" && body && typeof body === "object"
+    ? { policy_acknowledged: true, ...body }
+    : body;
+  const request = new Request(url, { method, headers, body: requestBody === undefined ? undefined : JSON.stringify(requestBody) });
   const response = await handlePortalRequest(request, { PORTAL_DB: db, ...env }, url);
   return { status: response.status, data: await response.json().catch(() => null) };
 }

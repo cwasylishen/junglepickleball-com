@@ -156,9 +156,13 @@
           </template>
 
           <p class="text-xs text-slate-500 mt-3" x-text="t('book.cancel_rule', {cutoff: cutoffLabel()})"></p>
+          <label class="mt-3 flex gap-2 text-sm text-slate-700">
+            <input type="checkbox" x-model="policyAcknowledged" class="mt-1" />
+            <span>I have read and agree to the <a href="/portal/policy" target="_blank" class="underline text-jpteal">booking and cancellation policy</a>.</span>
+          </label>
 
           <button class="mt-3 w-full rounded-lg bg-jpyellow py-3 font-heading uppercase text-black"
-                  :disabled="confirming" @click="confirm()"
+                  :disabled="confirming || !policyAcknowledged" @click="confirm()"
                   x-text="confirming ? t('book.opening_payment') : (quote && quote.pay_at_club ? t('book.confirm_pay_club') : (quoteNeedsCard() ? t('book.to_payment') : t('book.confirm')))"></button>
 
           <template x-if="confirmError">

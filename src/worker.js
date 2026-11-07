@@ -286,15 +286,23 @@ async function verifyStripeSignature(rawBody, header, secret) {
 // to the webhook. Repeatable: marking an already-paid signup paid again
 // with the same session id leaves the list unchanged (the run-it-twice
 // case the webhook itself can trigger if Stripe retries delivery).
+//
+// Returns { found, transitioned, signup }. `transitioned` is true only when
+// the row's status before this call was not "paid" and this call wrote it as
+// "paid": that is the one moment the owner's paid email is sent, so a retry,
+// or a second session id on an already-paid row, never mails again.
 async function markGlowSignupPaid(env, signupId, amountCents, stripeSessionId) {
   const list = await getGlowSignups(env);
   const idx = list.findIndex((s) => s.id === signupId);
-  if (idx === -1) return false;
+  if (idx === -1) return { found: false, transitioned: false, signup: null };
   const current = list[idx];
-  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) return true;
+  if (current.status === "paid" && current.stripeSessionId === stripeSessionId) {
+    return { found: true, transitioned: false, signup: current };
+  }
+  const wasPaid = current.status === "paid";
   list[idx] = { ...current, status: "paid", amountCents, currency: GLOW_CURRENCY, stripeSessionId };
   await env.EVENTS.put(GLOW_SIGNUPS_KEY, JSON.stringify(list));
-  return true;
+  return { found: true, transitioned: !wasPaid, signup: list[idx] };
 }
 
 async function getGlowSignups(env) {
@@ -364,42 +372,128 @@ async function setGlowSignupStripeSession(env, signupId, stripeSessionId) {
   return true;
 }
 
-async function notifyGlowSignup(env, signup) {
-  if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
-    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set)." };
-  }
+// Who hears about every Glow signup and every Glow payment (owner's order,
+// Clinton 2026-10-05: Roger gets them too). One /send POST per address,
+// because ward-mail hands `to` straight to env.EMAIL.send as one string.
+const GLOW_NOTIFY_RECIPIENTS = ["cwasylishen@gmail.com", "rogerworsham.cr@gmail.com"];
+
+// Pin PIN-NOADDR (2026-10-05): no recipient address appears in any HTTP
+// response body or any console log line. Results and log lines name a
+// recipient by its place in the list ("recipient 1"); the address is only ever
+// the `to` of the outbound /send request.
+function glowRecipientLabel(index) {
+  return `recipient ${index + 1}`;
+}
+
+// Text that came back from a failed send (an error message from the service
+// binding can echo the address it was given) is cleaned before it is stored,
+// returned or logged: each address becomes its label.
+function scrubGlowAddresses(text) {
+  let clean = String(text);
+  GLOW_NOTIFY_RECIPIENTS.forEach((address, index) => {
+    clean = clean.split(address).join(glowRecipientLabel(index));
+    clean = clean.split(address.toLowerCase()).join(glowRecipientLabel(index));
+  });
+  return clean;
+}
+
+const GLOW_STATUS_LABELS = {
+  pending_payment: "Not paid yet (sent to Stripe checkout)",
+  pay_at_event: "Pay at the event",
+  free: "Free",
+};
+
+// Each ward-mail /send call is bounded (pin PIN-TIMEOUT, 2026-10-05): 5000 ms,
+// env.GLOW_MAIL_TIMEOUT_MS may only shorten it (so a test can run fast); a
+// value that is not a number, not above zero, or above 5000 is ignored and the
+// bound stays 5000. A call that has not answered by then counts as a failed
+// send for that recipient.
+const GLOW_MAIL_TIMEOUT_MS = 5000;
+
+function glowMailTimeoutMs(env) {
+  const ms = Number(env.GLOW_MAIL_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 && ms <= GLOW_MAIL_TIMEOUT_MS ? ms : GLOW_MAIL_TIMEOUT_MS;
+}
+
+// One /send POST, raced against a timer. The race works whether or not the
+// service binding honours an AbortSignal. The timer is always cleared, so a
+// quick answer leaves nothing running.
+async function sendOneGlowMail(env, index, subject, text) {
+  const to = GLOW_NOTIFY_RECIPIENTS[index];
+  const recipient = glowRecipientLabel(index);
+  const limitMs = glowMailTimeoutMs(env);
+  let timer;
+  const timedOut = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`ward-mail did not answer within ${limitMs} ms`)), limitMs);
+  });
   try {
-    const res = await env.WARD_MAIL.fetch("https://ward-mail/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
-      body: JSON.stringify({
-        to: "cwasylishen@gmail.com",
-        from: "ward@wizardweb.ca",
-        subject: `Glow Tournament signup: ${signup.name}`,
-        text: [
-          `New Glow in the Dark Fun Tournament signup.`,
-          ``,
-          `Name: ${signup.name}`,
-          `Phone/WhatsApp: ${signup.phone}`,
-          `Email: ${signup.email || "(none)"}`,
-          `Member: ${signup.member ? "Yes" : "No"}`,
-          `Role: ${signup.role}`,
-          signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
-          `Partner: ${signup.partnerName || "(none)"}`,
-          `People: ${signup.people}`,
-          `Notes: ${signup.notes || "(none)"}`,
-          `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
-          `Payment status: ${signup.status}`,
-          ``,
-          GLOW_PRICE_NOTE,
-        ].filter(Boolean).join("\n"),
+    const res = await Promise.race([
+      env.WARD_MAIL.fetch("https://ward-mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ward-secret": env.WARD_SEND_SECRET },
+        body: JSON.stringify({ to, from: "ward@wizardweb.ca", subject, text }),
       }),
-    });
-    if (!res.ok) return { sent: false, reason: `ward-mail returned ${res.status}` };
-    return { sent: true };
+      timedOut,
+    ]);
+    return res.ok ? { recipient, sent: true } : { recipient, sent: false, reason: `ward-mail returned ${res.status}` };
   } catch (err) {
-    return { sent: false, reason: String((err && err.message) || err).slice(0, 200) };
+    return { recipient, sent: false, reason: scrubGlowAddresses(String((err && err.message) || err).slice(0, 200)) };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+// Sends one Glow email to every recipient. Never throws, and one recipient's
+// failure never stops the other's send. The recipients are sent at the same
+// time, so the whole call is bounded by one timeout, not one per address
+// (the paid email is awaited before the webhook answers Stripe).
+// Result: { sent, reason?, recipients } where `sent` is true only if every
+// recipient's send succeeded, `reason` names each failure by label ("recipient
+// 2: ..."), and `recipients` holds { recipient, sent, reason? } per label.
+// This result goes to the browser and to the logs, so it carries no address.
+async function sendGlowMail(env, subject, text) {
+  if (!env.WARD_MAIL || !env.WARD_SEND_SECRET) {
+    return { sent: false, reason: "Mail not configured (WARD_MAIL binding / WARD_SEND_SECRET not set).", recipients: [] };
+  }
+  const recipients = await Promise.all(GLOW_NOTIFY_RECIPIENTS.map((address, index) => sendOneGlowMail(env, index, subject, text)));
+  const failed = recipients.filter((r) => !r.sent);
+  if (failed.length === 0) return { sent: true, recipients };
+  return { sent: false, reason: failed.map((r) => `${r.recipient}: ${r.reason}`).join("; "), recipients };
+}
+
+async function notifyGlowSignup(env, signup) {
+  return sendGlowMail(env, `Glow Tournament signup: ${signup.name}`, [
+    `New Glow in the Dark Fun Tournament signup.`,
+    ``,
+    `Name: ${signup.name}`,
+    `Phone/WhatsApp: ${signup.phone}`,
+    `Email: ${signup.email || "(none)"}`,
+    `Member: ${signup.member ? "Yes" : "No"}`,
+    `Role: ${signup.role}`,
+    signup.role === "spectator" ? `Wants the meal: ${signup.spectatorMeal ? "Yes ($10)" : "No"}` : null,
+    `Partner: ${signup.partnerName || "(none)"}`,
+    `People: ${signup.people}`,
+    `Notes: ${signup.notes || "(none)"}`,
+    `Amount: $${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`,
+    `Payment status: ${GLOW_STATUS_LABELS[signup.status] || signup.status}`,
+    ``,
+    GLOW_PRICE_NOTE,
+  ].filter(Boolean).join("\n"));
+}
+
+// Sent once per signup, when the webhook moves it to "paid" (see
+// markGlowSignupPaid's `transitioned`). Attempted after the KV write.
+async function notifyGlowPaid(env, signup) {
+  const amount = `$${(signup.amountCents / 100).toFixed(2)} ${signup.currency.toUpperCase()}`;
+  return sendGlowMail(env, `PAID: Glow Tournament - ${signup.name}, ${amount}`, [
+    `A Glow in the Dark Fun Tournament signup has been paid.`,
+    ``,
+    `Name: ${signup.name}`,
+    `People: ${signup.people}`,
+    `Partner: ${signup.partnerName || "(none)"}`,
+    `Amount: ${amount}`,
+    `Stripe session: ${signup.stripeSessionId}`,
+  ].join("\n"));
 }
 
 async function handleGlowSignup(request, env) {
@@ -526,8 +620,18 @@ async function applyGlowStripeEvent(event, env) {
     const session = event.data && event.data.object;
     const signupId = session && session.metadata && session.metadata.signup_id;
     if (!signupId) return json({ error: "Missing signup_id metadata on session." }, 400);
-    const ok = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
-    if (!ok) return json({ error: `No signup found for id ${signupId}.` }, 404);
+    const marked = await markGlowSignupPaid(env, signupId, session.amount_total ?? 0, session.id);
+    if (!marked.found) return json({ error: `No signup found for id ${signupId}.` }, 404);
+    if (marked.transitioned) {
+      // The row is already written. Mail trouble is logged with the signup id
+      // and never changes the answer Stripe gets, so Stripe does not retry.
+      try {
+        const mail = await notifyGlowPaid(env, marked.signup);
+        if (!mail.sent) console.log(`glow_paid_mail_failed signup=${signupId} reason=${mail.reason}`);
+      } catch (mailErr) {
+        console.log(`glow_paid_mail_failed signup=${signupId} reason=${scrubGlowAddresses(String((mailErr && mailErr.message) || mailErr).slice(0, 200))}`);
+      }
+    }
   }
   return json({ received: true });
 }

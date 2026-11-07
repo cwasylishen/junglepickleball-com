@@ -63,6 +63,7 @@ function accountHub() {
   return {
     loading: true,
     account: null,
+    accountCreditCents: 0,
     features: {},
     toast: window.sessionStorage.getItem("jp_toast") || "",
     t: window.t,
@@ -71,6 +72,7 @@ function accountHub() {
       var me = await PortalApi.get("/api/portal/me");
       if (me.ok && me.data && me.data.authenticated) {
         this.account = me.data.account;
+        this.accountCreditCents = me.data.account_credit_cents || 0;
         this.features = me.data.features || {};
       }
       this.loading = false;

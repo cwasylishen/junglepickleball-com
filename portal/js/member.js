@@ -69,6 +69,7 @@ if (!window.chipClass) {
 
 window.PortalApp.mergeStrings({
   "home.hello": "Hi, {first_name}",
+  "book.pay_with_credit": "Account credit {credit} applied, you pay {amount}",
   "home.next_label": "Next up",
   "home.players": "{n} players",
   "home.hold_title": "Finish paying for {resource}, {date} {time}",
@@ -129,6 +130,7 @@ window.PortalApp.mergeStrings({
   "book.err_past": "That time has already passed.",
   "book.err_cap": "You've reached the limit of upcoming bookings for {resource}.",
   "book.err_blocked": "That time is closed.",
+  "book.err_calendar_busy": "That time is no longer available. Pick another.",
   "book.err_too_soon": "This needs at least {notice} notice. Pick a later time.",
   "book.err_not_bookable": "This can't be booked online right now. Please contact the club.",
   "book.err_credits": "Not enough credits for this booking.",
@@ -299,7 +301,7 @@ function memberHome() {
       this.courtHours = rules ? { open: rules.open, close: rules.close } : null;
       // The MASSAGE button leads to a picker; with massage switched off (or
       // the list unreadable) that is a dead end, so it is not offered.
-      this.massageOpen = resourcesRes.ok && (resourcesRes.data || []).some(function (r) { return r.kind === "massage" && r.active === true; });
+      this.massageOpen = window.PortalApp.massageBookable(resourcesRes);
       var ent = me.data.entitlement || { entitled: false };
       if (ent.entitled) {
         this.statusTint = "ok";
@@ -352,6 +354,7 @@ function memberBook() {
     quote: null,
     confirming: false,
     confirmError: "",
+    policyAcknowledged: false,
     done: false,
     doneAmountCents: null, // set when the booking was recorded as pay at the club (L4)
     features: {},
@@ -516,6 +519,7 @@ function memberBook() {
       if (this.quote.mode === "included") return t("book.cost_included");
       if (this.quote.mode === "credits") return t("book.pay_credits", { n: this.quote.credits_needed, left: this.quote.credits_have - this.quote.credits_needed });
       if (this.quote.pay_at_club) return t("book.pay_at_club", { amount: money(this.quote.total_cents) });
+      if (this.quote.account_credit_cents > 0) return t("book.pay_with_credit", { credit: money(this.quote.account_credit_cents), amount: money(this.quote.payable_cents) });
       return money(this.quote.total_cents);
     },
     cutoffLabel() {
@@ -533,7 +537,7 @@ function memberBook() {
       if (!this.resource || !this.slot) return;
       this.confirming = true;
       this.confirmError = "";
-      var body = { resource_id: this.resource.id, start: this.slot.start, party_size: this.partySize };
+      var body = { resource_id: this.resource.id, start: this.slot.start, party_size: this.partySize, policy_acknowledged: this.policyAcknowledged };
       if (this.offering) body.offering_id = this.offering.id;
       var res = await PortalApi.post("/api/portal/bookings", body);
       this.confirming = false;
@@ -549,6 +553,7 @@ function memberBook() {
         outside_window: t("book.err_window"),
         in_past: t("book.err_past"),
         blocked: t("book.err_blocked"),
+        calendar_busy: t("book.err_calendar_busy"),
         cap_reached: t("book.err_cap", { n: "", resource: this.resource.name }),
         // C4-01: the server's own sentence, so the words live in one place.
         guest_cap_reached: res.data && res.data.message,
@@ -556,9 +561,10 @@ function memberBook() {
         price_not_set: t("book.err_price_not_set"),
         too_soon: t("book.err_too_soon", { notice: noticeWords(res.data && res.data.min_advance_minutes) }),
         not_bookable_online: t("book.err_not_bookable"),
+        policy_acknowledgement_required: "Please acknowledge the booking policy before continuing.",
       };
       this.confirmError = errMap[res.error] || t("state.error_body");
-      if (res.error === "slot_taken") this.loadSlots();
+      if (res.error === "slot_taken" || res.error === "calendar_busy") this.loadSlots();
     },
   };
 }
