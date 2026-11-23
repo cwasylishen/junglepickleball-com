@@ -17,12 +17,18 @@ module.exports = {
     "./src/worker.js",
     "./assets/**/*.js",
   ],
-  // Classes that exist only in data and in no scanned file would go here.
-  // Checked 2026-10-05 with a read-only GET of the production KV key `events`
-  // (8 events): the data holds plain text, image paths and links, no class
-  // names and no markup, so nothing needs a safelist today. If KV-edited
-  // content ever carries markup, list its classes here with where they come from.
-  safelist: [],
+  // Keep the prior production Glow banner rules while the stale banner is
+  // retired from the page. This preserves the rollback CSS contract until the
+  // old production version is no longer the rollback target.
+  safelist: [
+    "bottom-6", "ml-auto", "aspect-square", "h-1", "h-[72px]", "w-[72px]",
+    "gap-5", "bg-lime-400", "from-lime-400", "via-pink-500", "to-cyan-400",
+    "font-extrabold", "text-cyan-300", "text-lime-300", "text-slate-200",
+    "underline-offset-2", "shadow-[0_0_16px_rgba(163,230,53,0.4)]", "ring-1",
+    "ring-white/10", "hover:scale-110", "hover:bg-lime-300", "hover:text-cyan-200",
+    "group-hover:block", "sm:flex", "sm:hidden", "sm:h-24", "sm:w-24", "sm:gap-5",
+    "sm:py-4", "sm:text-sm", "sm:text-xl", "md:p-6",
+  ],
   theme: {
     extend: {},
   },

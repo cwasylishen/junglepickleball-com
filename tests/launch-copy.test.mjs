@@ -131,7 +131,7 @@ test("D-R1: a guest's Home states the booking window and the hours the courts re
   assert.doesNotMatch(home.statusLine, /\b2 days\b/);
   assert.equal(home.courtHours.open, "07:00");
   assert.equal(home.courtHours.close, "19:00");
-  assert.equal(ctx.t("home.empty_body", home.courtHours), "Courts are open 07:00\u201319:00 every day.");
+  assert.equal(ctx.t("home.empty_body", home.courtHours), "Courts are open from 07:00 to 19:00 every day.");
 });
 
 test("D-R1: the words follow the data: other hours and another window read as given", async () => {
