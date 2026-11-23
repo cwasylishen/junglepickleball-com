@@ -35,7 +35,7 @@
         <div class="rounded-xl bg-jpteal text-white p-4">
           <p class="text-xs uppercase tracking-widest font-heading text-jpyellow" x-text="t('home.next_label')"></p>
           <p class="font-heading text-xl mt-1" x-text="nextUp.resource"></p>
-          <p class="font-heading text-2xl" x-text="crDate(nextUp.start) + ' · ' + crTime(nextUp.start) + '–' + crTime(nextUp.end)"></p>
+          <p class="font-heading text-2xl" x-text="crDate(nextUp.start) + ' · ' + crTime(nextUp.start) + ' to ' + crTime(nextUp.end)"></p>
           <div class="mt-3 flex gap-2">
             <a :href="'#/bookings/' + nextUp.id" class="rounded-lg border border-white px-4 py-2 text-sm" x-text="t('act.view')"></a>
             <button class="rounded-lg border border-white px-4 py-2 text-sm" @click="cancelFromHome(nextUp.id)" x-text="t('act.cancel')"></button>

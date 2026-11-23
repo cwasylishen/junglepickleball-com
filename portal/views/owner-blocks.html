@@ -27,7 +27,7 @@
           <div class="p-3 rounded-xl border border-slate-200 bg-white flex justify-between items-center">
             <div class="text-sm">
               <div x-text="(b.label || t('slot.blocked')) + (b.kind === 'weekly' ? ' ↻' : '')"></div>
-              <div class="text-slate-500" x-text="(b.weekday || h.fmtDate(b.date)) + ' · ' + b.start_time + '–' + b.end_time"></div>
+              <div class="text-slate-500" x-text="(b.weekday || h.fmtDate(b.date)) + ' · ' + b.start_time + ' to ' + b.end_time"></div>
             </div>
             <button class="text-xs underline text-red-700" @click="remove(b)" x-text="t('blocks.remove')"></button>
           </div>

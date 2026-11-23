@@ -22,6 +22,10 @@
       <span x-text="t('manage.sync')"></span>
       <span class="text-sm text-slate-500" x-text="syncHint === 'off' ? t('sync.hint_off') : (syncHint === 'ok' ? t('sync.hint_ok') : t('sync.hint_failed', {n: syncHint}))"></span>
     </a>
+    <a href="#/events" class="flex justify-between items-center px-4 py-3">
+      <span x-text="t('manage.events')"></span>
+      <span class="text-sm text-slate-500">Public site</span>
+    </a>
   </div>
 
   <template x-if="health">

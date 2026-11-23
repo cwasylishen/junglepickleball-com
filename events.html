@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Events and Schedule | Jungle Pickleball, Ojochal</title>
+    <meta name="description" content="Upcoming tournaments, socials, and the weekly pickleball schedule at Jungle Pickleball in Ojochal, Costa Rica.">
+    <link rel="canonical" href="https://junglepickleball.com/events">
+    <meta name="theme-color" content="#0f393b">
+    <link rel="stylesheet" href="assets/styles.css?v=6dae7bdae4">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+      .event-card-image { aspect-ratio: 16 / 9; object-fit: cover; }
+      .event-card-image.is-empty { background: linear-gradient(135deg, #164e4a, #0c3637); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 pb-16 md:pb-0">
+    <nav class="bg-[#0f393b] sticky top-0 z-50 border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+            <a href="/" class="text-xl sm:text-2xl md:text-3xl font-bold font-heading uppercase tracking-tighter text-white" aria-label="Jungle Pickleball home">
+                Jungle<span class="text-yellow-400">Pickleball</span>
+            </a>
+            <div class="flex items-center gap-3 sm:gap-6 font-heading text-base sm:text-lg tracking-wide">
+                <a href="/" class="text-white hover:text-yellow-400 transition">HOME</a>
+                <a href="https://wa.me/50689893111" class="bg-yellow-400 text-black px-3 sm:px-6 py-2 whitespace-nowrap rounded font-bold hover:bg-yellow-300 transition">BOOK COURT</a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="bg-[#0f393b] text-white">
+        <div class="max-w-7xl mx-auto px-6 pt-16 pb-14">
+            <span class="text-yellow-400 font-bold tracking-widest uppercase text-sm">Play with us</span>
+            <h1 class="text-5xl md:text-7xl font-bold font-heading uppercase mt-2 max-w-3xl">Events and schedule</h1>
+            <p class="text-green-100 mt-5 max-w-2xl text-lg leading-relaxed">Find the next tournament, social, or regular session. Upcoming events are added by Roger from the owner portal and past events leave this list automatically.</p>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-16">
+        <section aria-labelledby="upcoming-heading">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+                <div>
+                    <span class="text-green-700 font-bold tracking-widest uppercase text-sm">What is next</span>
+                    <h2 id="upcoming-heading" class="text-4xl font-bold text-jungle mt-2">Upcoming events</h2>
+                </div>
+                <a href="https://wa.me/50689893111" class="self-start md:self-auto inline-flex items-center justify-center bg-yellow-400 text-black font-bold px-6 py-3 rounded hover:bg-yellow-300 transition">Ask Roger a question</a>
+            </div>
+            <div id="events-list" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6" aria-live="polite">
+                <div class="md:col-span-2 lg:col-span-3 rounded-2xl bg-white border border-slate-200 p-8 text-slate-500">Loading upcoming events.</div>
+            </div>
+        </section>
+
+        <section class="mt-20" aria-labelledby="weekly-heading">
+            <div class="mb-8">
+                <span class="text-green-700 font-bold tracking-widest uppercase text-sm">Every week</span>
+                <h2 id="weekly-heading" class="text-4xl font-bold text-jungle mt-2">Regular play</h2>
+                <p class="text-slate-600 mt-3 max-w-2xl">Times can change with demand. Message Roger before you travel so he can confirm the current open slots.</p>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="bg-white border-t-4 border-green-600 rounded-xl p-6 shadow-sm"><h3 class="text-xl font-bold">Open Play</h3><p class="text-slate-600 mt-2">Tuesdays and Thursdays, 10:00 AM start.</p></div>
+                <div class="bg-white border-t-4 border-green-600 rounded-xl p-6 shadow-sm"><h3 class="text-xl font-bold">Open Play</h3><p class="text-slate-600 mt-2">Wednesdays, 8:30 AM start.</p></div>
+                <div class="bg-white border-t-4 border-green-600 rounded-xl p-6 shadow-sm"><h3 class="text-xl font-bold">Women&apos;s Open</h3><p class="text-slate-600 mt-2">Fridays, 8:30 AM start.</p></div>
+                <div class="bg-white border-t-4 border-green-600 rounded-xl p-6 shadow-sm"><h3 class="text-xl font-bold">The Sunday Swish</h3><p class="text-slate-600 mt-2">Sunday mornings, 8:30 AM start.</p></div>
+                <div class="bg-white border-t-4 border-green-600 rounded-xl p-6 shadow-sm"><h3 class="text-xl font-bold">Alternating Opens</h3><p class="text-slate-600 mt-2">Monday and Saturday sessions vary by demand.</p></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-[#0c3637] border-t border-green-900 text-gray-400">
+        <div class="w-full h-2 bg-gradient-to-r from-yellow-500 via-green-500 to-yellow-500"></div>
+        <div class="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row justify-between items-center gap-4 text-xs uppercase tracking-widest">
+            <p>&copy; 2026 Jungle Pickleball. All Rights Reserved.</p>
+            <p class="text-yellow-400 font-bold normal-case tracking-normal">Smoke-free facility, no smoking or vaping anywhere on the property.</p>
+            <div class="flex items-center gap-3">
+                <span class="text-[10px] text-gray-400">Built and hosted by</span>
+                <a href="https://wizardweb.ca" target="_blank" rel="noopener" class="text-white font-bold border border-white/20 px-3 py-1 rounded hover:bg-white hover:text-black transition">wizardweb.ca</a>
+            </div>
+        </div>
+    </footer>
+
+    <a href="https://wa.me/50689893111" class="fixed bottom-0 left-0 right-0 md:bottom-6 md:left-auto md:right-6 z-50 bg-[#25D366] text-white px-5 py-3 md:p-4 shadow-2xl hover:bg-green-600 transition transform md:hover:scale-110 flex items-center justify-center gap-3" aria-label="Chat with Roger on WhatsApp">
+        <span class="font-bold">Chat with Roger</span>
+    </a>
+
+    <script>
+      (async function () {
+        const list = document.getElementById("events-list");
+        const formatDate = value => new Date(value + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+        const card = event => {
+          const article = document.createElement("article");
+          article.className = "bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-xl transition-shadow";
+          if (event.image) {
+            const image = document.createElement("img");
+            image.className = "event-card-image w-full";
+            image.src = event.image;
+            image.alt = event.title;
+            image.loading = "lazy";
+            article.appendChild(image);
+          } else {
+            const image = document.createElement("div");
+            image.className = "event-card-image is-empty";
+            image.setAttribute("aria-hidden", "true");
+            article.appendChild(image);
+          }
+          const body = document.createElement("div");
+          body.className = "p-7";
+          const date = document.createElement("p");
+          date.className = "text-green-700 font-bold uppercase tracking-wider text-sm";
+          date.textContent = formatDate(event.date);
+          const title = document.createElement("h3");
+          title.className = "text-2xl font-bold text-jungle mt-2";
+          title.textContent = event.title;
+          const details = document.createElement("p");
+          details.className = "text-slate-600 font-semibold mt-3";
+          details.textContent = event.time + ", " + event.place;
+          const description = document.createElement("p");
+          description.className = "text-slate-600 leading-relaxed mt-4";
+          description.textContent = event.description;
+          body.append(date, title, details, description);
+          if (event.price_text) {
+            const price = document.createElement("p");
+            price.className = "text-yellow-700 font-bold mt-4";
+            price.textContent = event.price_text;
+            body.appendChild(price);
+          }
+          if (event.signup_url) {
+            const link = document.createElement("a");
+            link.className = "inline-flex mt-6 bg-yellow-400 text-black font-bold px-5 py-3 rounded hover:bg-yellow-300 transition";
+            link.href = event.signup_url;
+            link.textContent = "Sign up or ask a question";
+            body.appendChild(link);
+          }
+          article.appendChild(body);
+          return article;
+        };
+        try {
+          const response = await fetch("/api/public/events");
+          const data = response.ok ? await response.json() : { events: [] };
+          list.replaceChildren();
+          if (!Array.isArray(data.events) || data.events.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "md:col-span-2 lg:col-span-3 rounded-2xl bg-white border border-slate-200 p-8";
+            empty.textContent = "There are no special events posted yet. The regular weekly schedule is below, and Roger can confirm the latest times on WhatsApp.";
+            list.appendChild(empty);
+            return;
+          }
+          data.events.forEach(event => list.appendChild(card(event)));
+        } catch (error) {
+          list.replaceChildren();
+          const fallback = document.createElement("div");
+          fallback.className = "md:col-span-2 lg:col-span-3 rounded-2xl bg-white border border-slate-200 p-8";
+          fallback.textContent = "The event list is temporarily unavailable. The regular weekly schedule is below, and Roger can confirm the latest times on WhatsApp.";
+          list.appendChild(fallback);
+        }
+      }());
+    </script>
+    <script>(function(){var S="junglepickleball";function vid(){try{var k="wzv",x=localStorage.getItem(k);if(!x){x=Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(k,x)}return x}catch(e){return""}} function send(t){try{var r=document.referrer;try{if(r&&new URL(r).hostname===location.hostname)r=""}catch(e){}navigator.sendBeacon("https://app.wizardweb.ca/api/ingest",JSON.stringify({site_id:S,type:t,path:location.pathname,referrer:r,visitor:vid()}))}catch(e){}} send("pageview");document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest('a[href*="wa.me"],a[href*="api.whatsapp.com"],a[href*="whatsapp.com/send"]');if(a)send("whatsapp")},true)})();</script>
+</body>
+</html>

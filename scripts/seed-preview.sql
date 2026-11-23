@@ -74,6 +74,26 @@ INSERT INTO credits (account_id, balance, updated_at) VALUES
   ('demo-memb2-0000-0000-000000000004', 0, datetime('now')),
   ('demo-guest-0000-0000-000000000005', 0, datetime('now'));
 
+-- Event editor demo content. This row belongs only in the preview seed and is
+-- deliberately named so a reviewer will not mistake it for a live event.
+INSERT INTO events (id, title, event_date, event_time, place, description, image_url, image_data, signup_url, price_text, status, created_by, created_at, updated_at)
+VALUES (
+  'demo-event-preview-0000-000000000001',
+  'Preview sample: Jungle Lights Social',
+  '2026-12-19',
+  '5:00 PM to 8:00 PM',
+  'Jungle Pickleball, Ojochal',
+  'Preview content only. Use this sample to test the owner event editor, then delete it before publishing a real event.',
+  '/assets/events/glow-tournament-2026-v3.jpg',
+  NULL,
+  NULL,
+  'Preview sample only',
+  'published',
+  'demo-owner-0000-0000-000000000001',
+  datetime('now'),
+  datetime('now')
+);
+
 -- ---------------------------------------------------------------------
 -- portal(FR1): two sample massage bookings with Samy (staff.demo, the
 -- resource's assigned staff), made by member.demo, tomorrow and the day

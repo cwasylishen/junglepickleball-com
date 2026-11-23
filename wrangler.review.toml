@@ -1,0 +1,23 @@
+name = "junglepickleball-review-1122"
+compatibility_date = "2026-01-01"
+main = "src/worker.js"
+workers_dev = false
+preview_urls = false
+routes = [
+  { pattern = "junglepickleball-review.wizardweb.ca", custom_domain = true },
+]
+
+[assets]
+directory = "./"
+binding = "ASSETS"
+not_found_handling = "404-page"
+
+[[d1_databases]]
+binding = "PORTAL_DB"
+database_name = "junglepickleball-portal-preview"
+database_id = "ca34a6c4-47e9-4e0e-baa5-8dd816700ca3"
+migrations_dir = "migrations"
+
+[vars]
+PORTAL_DEV_LOGIN = "1"
+OWNER_EMAILS = "owner.demo@jp-demo.test"

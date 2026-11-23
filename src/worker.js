@@ -5,6 +5,7 @@
 import { handlePortalRequest, handlePortalShellFallback, handlePortalStripeEvent, resolveScheduledEnvironmentClass, buildPortalEnv } from "./portal/router.js";
 import { verifyStripeSignature as verifyStripeSignatureWithTolerance } from "./portal/stripe.js";
 import { runScheduled } from "./portal/cron.js";
+import { publicEventsResponse } from "./portal/events.js";
 
 const SESSION_COOKIE = "jp_admin";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -1133,6 +1134,11 @@ export default {
       } else if (p.startsWith("/portal")) {
         const portalShell = await handlePortalShellFallback(request, env, url);
         if (portalShell) return portalShell;
+      }
+
+      if (p === "/api/public/events" && request.method === "GET") {
+        if (!env.PORTAL_DB) return json({ events: [] });
+        return json(await publicEventsResponse(env.PORTAL_DB));
       }
 
       if (p.startsWith("/api/")) {

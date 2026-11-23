@@ -131,3 +131,21 @@ INSERT INTO credits (account_id, balance, updated_at) VALUES
   ('qa-test-pool-0000-000000000048', 0, datetime('now')),
   ('qa-test-pool-0000-000000000049', 0, datetime('now')),
   ('qa-test-pool-0000-000000000050', 0, datetime('now'));
+
+INSERT INTO events (id, title, event_date, event_time, place, description, image_url, image_data, signup_url, price_text, status, created_by, created_at, updated_at)
+VALUES (
+  'qa-event-preview-0000-000000000001',
+  'Preview sample: QA event',
+  '2026-12-20',
+  '10:00 AM to 12:00 PM',
+  'Jungle Pickleball, Ojochal',
+  'Preview test content.',
+  '/assets/events/glow-tournament-2026-v3.jpg',
+  NULL,
+  NULL,
+  'Preview sample only',
+  'published',
+  'demo-owner-0000-0000-000000000001',
+  datetime('now'),
+  datetime('now')
+);

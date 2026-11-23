@@ -48,6 +48,7 @@ window.STR.en = Object.assign(
     "nav.today": "Today",
     "nav.members": "Members",
     "nav.manage": "Manage",
+    "nav.events": "Events",
   },
   window.STR.en
 );
@@ -57,7 +58,7 @@ const NAV_BY_ROLE = {
   guest: [["#/home", "nav.home"], ["#/book", "nav.book"], ["#/bookings", "nav.bookings"], ["#/account", "nav.account"]],
   member: [["#/home", "nav.home"], ["#/book", "nav.book"], ["#/bookings", "nav.bookings"], ["#/account", "nav.account"]],
   staff: [["#/calendar", "nav.calendar"], ["#/account", "nav.account"]],
-  owner: [["#/today", "nav.today"], ["#/members", "nav.members"], ["#/owner-book", "nav.book"], ["#/manage", "nav.manage"], ["#/account", "nav.account"]],
+  owner: [["#/today", "nav.today"], ["#/members", "nav.members"], ["#/owner-book", "nav.book"], ["#/manage", "nav.manage"], ["#/events", "nav.events"], ["#/account", "nav.account"]],
 };
 
 function navForRole(role) {

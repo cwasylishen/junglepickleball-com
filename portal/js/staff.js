@@ -42,7 +42,7 @@ window.PortalApp.mergeStrings({
   "tab.calendar": "Calendar",
   "staff.top": "{n} bookings on {date}",
   "staff.top_one": "1 booking on {date}",
-  "staff.free": "Free {start}–{end}",
+  "staff.free": "Free from {start} to {end}",
   "staff.empty_day": "No bookings on {date}.",
   "staff.no_resource": "You're not assigned to a calendar yet. Ask Roger to assign you.",
   "staff.awaiting": "Awaiting payment",

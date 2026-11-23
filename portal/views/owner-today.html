@@ -62,13 +62,13 @@
                     <button type="button" class="w-full text-left p-2 rounded-lg text-xs" :class="stateClasses(b.state)" @click="open(b)">
                       <template x-if="b.state === 'blocked'">
                         <div>
-                          <div class="font-semibold" x-text="b.block.start_time + '–' + b.block.end_time"></div>
+                          <div class="font-semibold" x-text="b.block.start_time + ' to ' + b.block.end_time"></div>
                           <div x-text="(b.block.label || t('slot.blocked')) + (b.block.weekly ? ' ↻' : '')"></div>
                         </div>
                       </template>
                       <template x-if="b.state !== 'blocked'">
                         <div>
-                          <div class="font-semibold" x-text="h.fmtTime(b.start_at) + '–' + h.fmtTime(b.end_at)"></div>
+                          <div class="font-semibold" x-text="h.fmtTime(b.start_at) + ' to ' + h.fmtTime(b.end_at)"></div>
                           <div x-text="b.walk_in_name || b.display_name || t('today.walk_in')"></div>
                           <div x-show="b.state === 'held'" x-text="t('today.held_until', {time: h.fmtTime(b.end_at)})"></div>
                           <div x-show="b.state === 'confirmed' && b.party_size" x-text="playersLabel(b.party_size)"></div>
@@ -79,7 +79,7 @@
                     </button>
                   </template>
                   <template x-if="!(byResource[r.id] || []).length">
-                    <div class="text-xs text-slate-400 p-2">&mdash;</div>
+                    <div class="text-xs text-slate-400 p-2">No bookings</div>
                   </template>
                 </div>
               </div>
@@ -94,10 +94,10 @@
           <div class="bg-white rounded-xl p-4 w-full md:w-[480px] max-h-[90vh] overflow-auto">
             <h2 class="font-heading text-lg text-jpteal" x-text="sheet.state === 'blocked' ? (sheet.block.label || t('slot.blocked')) : (sheet.walk_in_name || sheet.display_name || t('today.walk_in'))"></h2>
             <template x-if="sheet.state !== 'blocked'">
-              <p class="text-sm text-slate-600 mt-1" x-text="h.fmtDate(sheet.start_at) + ' · ' + h.fmtTime(sheet.start_at) + '–' + h.fmtTime(sheet.end_at)"></p>
+              <p class="text-sm text-slate-600 mt-1" x-text="h.fmtDate(sheet.start_at) + ' · ' + h.fmtTime(sheet.start_at) + ' to ' + h.fmtTime(sheet.end_at)"></p>
             </template>
             <template x-if="sheet.state === 'blocked'">
-              <p class="text-sm text-slate-600 mt-1" x-text="sheet.block.start_time + '–' + sheet.block.end_time"></p>
+              <p class="text-sm text-slate-600 mt-1" x-text="sheet.block.start_time + ' to ' + sheet.block.end_time"></p>
             </template>
             <p class="text-sm text-slate-600" x-text="'Status: ' + sheet.state"></p>
             <p x-show="sheet.pay_at_club" class="mt-1 text-sm font-semibold text-amber-800" x-text="t('today.pay_club', { amount: h.fmtMoney(sheet.amount_cents) })"></p>

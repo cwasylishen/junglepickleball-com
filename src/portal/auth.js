@@ -18,6 +18,7 @@ const MAGIC_LINK_FROM = { email: "portal@junglepickleball.com", name: "Jungle Pi
 const MAGIC_LINK_SUBJECT = "Your Jungle Pickleball sign-in link";
 const MAX_EMAIL_LENGTH = 254;
 const DEMO_HOST_RE = /^[0-9a-f]{8}-junglepickleball-com\.cwasylishen\.workers\.dev$/;
+const REVIEW_PREVIEW_HOST = "junglepickleball-review.wizardweb.ca";
 
 export const CSRF_EXEMPT_ROUTES = new Set([
   "POST /api/portal/auth/start",
@@ -91,7 +92,7 @@ async function checkAndBump(db, key, limit, windowMinutes) {
 // ---------- demo gate (PIN-9 a-c, S-1 d-e) ----------
 
 export function isDemoEligibleHost(hostname) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || DEMO_HOST_RE.test(hostname);
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === REVIEW_PREVIEW_HOST || DEMO_HOST_RE.test(hostname);
 }
 
 // PIN-9 (a) and (b): the two checks that need no database. When these

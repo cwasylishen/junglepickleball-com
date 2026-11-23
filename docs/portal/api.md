@@ -133,7 +133,14 @@ the create/cancel handlers.
 | `GET /api/portal/owner/health` | owner | — | `{owners:[...], email_configured, email_send_failed_24h, stripe_configured, gcal_configured, push_configured, outbox:{pending,failed}}` (CTL-OWN-01, CTL-AUTH-06, CTL-UI-06; `outbox` wired portal(FR1)) | |
 | `GET /api/portal/owner/outbox` | owner | — | `{pending, failed:[...]}` (screens §10 item 9) | |
 | `GET /api/portal/owner/overlaps` | owner | — | accounts with >1 valid entitlement source (P-4) | |
+| `GET /api/portal/owner/events` | owner | — | all events, with draft and published status | |
+| `GET /api/portal/owner/events/:id` | owner | — | one event for the editor | `404` |
+| `POST /api/portal/owner/events` | owner | `{title,event_date,event_time,place,description,image_url?,image_data?,signup_url?,price_text?,status}` | `201 {event}` | `400` for invalid fields |
+| `PATCH /api/portal/owner/events/:id` | owner | event fields | `200 {event}` | `400` for invalid fields, `404` |
+| `DELETE /api/portal/owner/events/:id` | owner | — | `200 {ok:true}` | `404` |
 | `GET /api/portal/staff/calendar?date=` | staff-own | — | `[{start,end,resource,display_name,state,pay_at_club?}]`, this staff's own resource only, no email/phone/notes/payment (D-A16); `pay_at_club: true` (present only when true) marks a booking the club collects at the desk, with no amount (C4-05, ruling A6) | `403` if asking another resource (CTL-STF-01) |
+
+The public event feed is `GET /api/public/events`. It returns only published events dated today or later. It is intentionally read only, and the owner event routes are protected by the existing server side owner role and CSRF checks.
 
 **B2a2 appendix (2026-10-01, portal(FR2-B)):**
 - **CTL-REF-01.** Cancelling a paid, confirmed booking (member before cutoff, or owner at any

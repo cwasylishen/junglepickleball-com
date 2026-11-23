@@ -25,7 +25,7 @@
               <span class="font-semibold text-slate-800" x-text="r.name"></span>
               <span x-show="(r.unconfirmed_fields || []).length" class="text-xs px-2 py-0.5 rounded-full border border-amber-400 bg-amber-50 text-amber-800" x-text="t('res.n_defaults', {n: (r.unconfirmed_fields || []).length})"></span>
             </div>
-            <div class="text-sm text-slate-500" x-text="r.kind + ' · ' + r.slot_minutes + ' min · ' + r.open_time + '–' + r.close_time"></div>
+            <div class="text-sm text-slate-500" x-text="r.kind + ' · ' + r.slot_minutes + ' min · ' + r.open_time + ' to ' + r.close_time"></div>
           </a>
         </template>
       </div>

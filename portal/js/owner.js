@@ -146,7 +146,7 @@
     "block.weekly": "Weekly",
     "block.from_date": "Starting",
     "block.label_ph": "e.g. Open play, Maintenance",
-    "block.preview": "Blocks {resources} {when} {start}–{end}",
+    "block.preview": "Blocks {resources} {when} from {start} to {end}",
     "block.conflicts": "{n} bookings overlap. A block does not cancel them.",
     "block.save": "Block",
     "block.save_anyway": "Block anyway",
@@ -168,6 +168,42 @@
     "manage.blocks": "Blocks",
     "manage.sync": "Calendar sync",
     "manage.late": "Late hours",
+    "manage.events": "Public events",
+    "events.top": "Create and update events that appear on the public site.",
+    "events.add": "Add event",
+    "events.empty": "No events yet. Add the first one when you are ready.",
+    "events.published": "Published",
+    "events.draft": "Draft",
+    "events.edit": "Edit",
+    "events.delete": "Delete",
+    "events.delete_confirm": "Delete this event? This cannot be undone.",
+    "event.new": "New event",
+    "event.edit": "Edit event",
+    "event.title": "Event title",
+    "event.date": "Date",
+    "event.time": "Time",
+    "event.place": "Place",
+    "event.description": "Description",
+    "event.image": "Image or flyer",
+    "event.image_help": "Choose a PNG, JPEG, or WebP image up to 1 MB.",
+    "event.signup": "Sign-up link, optional",
+    "event.price": "Price text, optional",
+    "event.status": "Status",
+    "event.save_draft": "Save draft",
+    "event.publish": "Publish event",
+    "event.save": "Save changes",
+    "event.saving": "Saving",
+    "event.saved": "Event saved.",
+    "event.delete_done": "Event deleted.",
+    "event.error_title_required": "Add a title.",
+    "event.error_date_invalid": "Choose a valid date.",
+    "event.error_time_required": "Add a time.",
+    "event.error_place_required": "Add a place.",
+    "event.error_description_required": "Add a short description.",
+    "event.error_signup_link_invalid": "Use a full http link or a site path.",
+    "event.error_image_invalid": "Use a PNG, JPEG, or WebP image up to 1 MB.",
+    "event.error_status_invalid": "Choose draft or published.",
+    "event.error_time_invalid": "Use a valid time, such as 18:00.",
 
     "late.normal_close": "Courts normally close at {close}.",
     "late.intro": "Extend one day to 21:00, for an event or a tournament. It applies to courts only and to that day only.",
@@ -1155,6 +1191,102 @@
   };
 
   // ---------------------------------------------------------------
+  // Public events editor
+  // ---------------------------------------------------------------
+  window.ownerEvents = function () {
+    return {
+      state: "loading",
+      events: [],
+      async init() {
+        await this.load();
+      },
+      async load() {
+        this.state = "loading";
+        const res = await PortalApi.get("/api/portal/owner/events");
+        if (!res.ok) {
+          this.state = classify(res);
+          return;
+        }
+        this.events = res.data || [];
+        this.state = this.events.length ? "ok" : "empty";
+      },
+      statusLabel(event) {
+        return event.status === "published" ? window.t("events.published") : window.t("events.draft");
+      },
+      async remove(event) {
+        if (!window.confirm(window.t("events.delete_confirm"))) return;
+        const res = await PortalApi.del("/api/portal/owner/events/" + encodeURIComponent(event.id));
+        if (res.ok) await this.load();
+      },
+    };
+  };
+
+  window.ownerEventEditor = function () {
+    return {
+      state: "loading",
+      form: { title: "", event_date: "", event_time: "", place: "Jungle Pickleball, Ojochal", description: "", image_url: "", image_data: "", signup_url: "", price_text: "", status: "draft" },
+      saveState: "idle",
+      error: "",
+      imagePreview: "",
+      id() {
+        return (window.ownerRouteParam && window.ownerRouteParam()) || "";
+      },
+      async init() {
+        const id = this.id();
+        if (!id) {
+          this.state = "ok";
+          return;
+        }
+        const res = await PortalApi.get("/api/portal/owner/events/" + encodeURIComponent(id));
+        if (!res.ok) {
+          this.state = classify(res);
+          return;
+        }
+        this.form = Object.assign({}, this.form, res.data || {});
+        this.imagePreview = this.form.image_data || this.form.image_url || "";
+        this.state = "ok";
+      },
+      readImage(inputEvent) {
+        const file = inputEvent.target.files && inputEvent.target.files[0];
+        if (!file) return;
+        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
+          this.error = "image_invalid";
+          inputEvent.target.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          this.form.image_data = String(reader.result || "");
+          this.form.image_url = "";
+          this.imagePreview = this.form.image_data;
+          this.error = "";
+        };
+        reader.readAsDataURL(file);
+      },
+      messageFor(error) {
+        const key = "event.error_" + error;
+        const value = window.t(key);
+        return value === key ? window.t("state.error_body") : value;
+      },
+      async save(status) {
+        this.error = "";
+        this.saveState = "saving";
+        const body = Object.assign({}, this.form, { status });
+        const id = this.id();
+        const res = id
+          ? await PortalApi.patch("/api/portal/owner/events/" + encodeURIComponent(id), body)
+          : await PortalApi.post("/api/portal/owner/events", body);
+        if (!res.ok) {
+          this.saveState = "error";
+          this.error = res.error || "save_failed";
+          return;
+        }
+        window.location.hash = "#/events";
+      },
+    };
+  };
+
+  // ---------------------------------------------------------------
   // Router
   // ---------------------------------------------------------------
   const ROUTES = [
@@ -1168,6 +1300,9 @@
     [/^#\/manage\/blocks$/, "owner-blocks"],
     [/^#\/manage\/late-hours$/, "owner-late-hours"],
     [/^#\/manage\/sync$/, "owner-sync"],
+    [/^#\/events\/new$/, "owner-event-editor"],
+    [/^#\/events\/([^/?]+)/, "owner-event-editor"],
+    [/^#\/events$/, "owner-events"],
     [/^#\/manage$/, "owner-manage"],
   ];
 

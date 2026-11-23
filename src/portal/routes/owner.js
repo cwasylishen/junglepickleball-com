@@ -40,6 +40,7 @@ import {
 } from "../owner.js";
 import { listDayExtensions, setDayExtension, clearDayExtension } from "../day-hours.js";
 import { staffCalendar } from "../staff.js";
+import { listOwnerEvents, getOwnerEvent, createOwnerEvent, updateOwnerEvent, deleteOwnerEvent } from "../events.js";
 
 // Maps a handler's { error } result to its documented HTTP status. Most
 // are 400/404/409; a handler may override with its own `status`.
@@ -294,6 +295,35 @@ async function getStaffCalendar(ctx) {
   return json(result.events ? result.events : []);
 }
 
+// ---------- public event editor ----------
+
+async function getEvents(ctx) {
+  return json(await listOwnerEvents(ctx.db));
+}
+
+async function getEvent(ctx) {
+  const event = await getOwnerEvent(ctx.db, ctx.params.id);
+  return event ? json(event) : json({ error: "not_found" }, 404);
+}
+
+async function postEvent(ctx) {
+  const result = await createOwnerEvent(ctx.db, ctx.account.id, await readJson(ctx.request));
+  if (result.error) return errorResponse(result);
+  return json(result.event, 201);
+}
+
+async function patchEvent(ctx) {
+  const result = await updateOwnerEvent(ctx.db, ctx.account.id, ctx.params.id, await readJson(ctx.request));
+  if (result.error) return errorResponse(result);
+  return json(result.event);
+}
+
+async function deleteEvent(ctx) {
+  const result = await deleteOwnerEvent(ctx.db, ctx.account.id, ctx.params.id);
+  if (result.error) return errorResponse(result);
+  return json({ ok: true });
+}
+
 export const ROUTES = [
   { method: "PATCH", path: "/api/portal/me", class: "own", handler: patchMe },
   { method: "GET", path: "/api/portal/me/household", class: "own", handler: getMyHousehold },
@@ -336,6 +366,12 @@ export const ROUTES = [
 
   { method: "GET", path: "/api/portal/owner/outbox", class: "owner", handler: getOutbox },
   { method: "GET", path: "/api/portal/owner/overlaps", class: "owner", handler: getOverlaps },
+
+  { method: "GET", path: "/api/portal/owner/events", class: "owner", handler: getEvents },
+  { method: "GET", path: "/api/portal/owner/events/:id", class: "owner", handler: getEvent },
+  { method: "POST", path: "/api/portal/owner/events", class: "owner", handler: postEvent },
+  { method: "PATCH", path: "/api/portal/owner/events/:id", class: "owner", handler: patchEvent },
+  { method: "DELETE", path: "/api/portal/owner/events/:id", class: "owner", handler: deleteEvent },
 
   { method: "GET", path: "/api/portal/staff/calendar", class: "staff-own", handler: getStaffCalendar },
 ];

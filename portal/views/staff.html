@@ -48,13 +48,13 @@
           </template>
           <template x-if="r.kind === 'blocked'">
             <div class="rounded-lg p-2 min-h-[72px] flex items-center justify-between bg-[#f1f5f9] text-slate-500">
-              <span x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
+              <span x-text="crTime(r.start) + ' to ' + crTime(r.end)"></span>
               <span x-text="t('slot.blocked')"></span>
             </div>
           </template>
           <template x-if="r.kind === 'booking'">
             <div class="rounded-lg border border-slate-200 bg-white p-2 min-h-[72px] flex items-center justify-between">
-              <span class="font-heading text-lg text-jpteal" x-text="crTime(r.start) + '–' + crTime(r.end)"></span>
+              <span class="font-heading text-lg text-jpteal" x-text="crTime(r.start) + ' to ' + crTime(r.end)"></span>
               <span class="text-sm font-semibold" x-text="r.display_name"></span>
               <span x-show="r.length_label" class="text-xs uppercase font-heading px-2 py-1 rounded-full bg-slate-100 text-slate-600" x-text="r.length_label"></span>
               <span x-show="r.state !== 'confirmed'" class="text-xs uppercase font-heading px-2 py-1 rounded-full" :class="chipClass(r.state)" x-text="r.state === 'held' ? t('staff.awaiting') : t('chip.' + r.state)"></span>

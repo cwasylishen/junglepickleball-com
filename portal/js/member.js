@@ -86,7 +86,7 @@ window.PortalApp.mergeStrings({
   "home.upcoming_label": "Coming up",
   "home.all_bookings": "All bookings",
   "home.empty_title": "No bookings yet",
-  "home.empty_body": "Courts are open {open}–{close} every day.",
+  "home.empty_body": "Courts are open from {open} to {close} every day.",
   "nc.stripe_title": "Payments are not switched on yet",
   "nc.stripe_billing_body": "When they are, you'll manage your card and membership here.",
   "nc.stripe_history_body": "Your payment history will show here once they are.",
